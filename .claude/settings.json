@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel --version)",
+      "Bash(railway --version)",
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(npm list:*)",
+      "Bash(npm config:*)",
+      "Read(//c/Users/Marcos/AppData/Roaming/npm/**)",
+      "Bash(cmd /c \"npm install -g vercel @railway/cli 2>&1\")",
+      "Bash(powershell -Command \"npm install -g vercel @railway/cli\")",
+      "Bash(npx --yes vercel --version)",
+      "Bash(npx --yes vercel login)"
+    ]
+  }
+}

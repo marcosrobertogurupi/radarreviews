@@ -1,0 +1,225 @@
+{
+  "name": "Reputei – Escalada de Alerta Crítico",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reputei-escalation",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook Reputei",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 320],
+      "webhookId": "reputei-escalation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-email",
+              "leftValue": "={{ $json.admin_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Tem e-mail?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-whatsapp",
+              "leftValue": "={{ $json.admin_whatsapp }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Tem WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 460]
+    },
+    {
+      "parameters": {
+        "fromEmail": "alertas@reputei.com.br",
+        "toEmail": "={{ $('Webhook Reputei').item.json.admin_email }}",
+        "subject": "=🚨 Alerta crítico sem resposta — {{ $('Webhook Reputei').item.json.tenant_name }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #f9fafb;\">\n  <div style=\"background: #dc2626; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;\">\n    <h2 style=\"margin: 0; font-size: 20px;\">🚨 Alerta Crítico Sem Resposta</h2>\n    <p style=\"margin: 4px 0 0; opacity: 0.9; font-size: 13px;\">Reputei · Escalada Automática</p>\n  </div>\n  <div style=\"background: white; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none;\">\n    <p style=\"color: #374151; font-size: 15px;\">Olá,</p>\n    <p style=\"color: #374151;\">Um review crítico está sem ação há mais de <strong>{{ $('Webhook Reputei').item.json.hours_without_action }} horas</strong> para a empresa <strong>{{ $('Webhook Reputei').item.json.tenant_name }}</strong>.</p>\n\n    <div style=\"background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 16px 0;\">\n      <p style=\"margin: 0 0 8px; font-size: 13px; color: #991b1b; font-weight: 600;\">⚠️ Ação Recomendada</p>\n      <p style=\"margin: 0; color: #7f1d1d; font-size: 14px;\">{{ $('Webhook Reputei').item.json.alert_reason }}</p>\n    </div>\n\n    <table style=\"width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0;\">\n      <tr style=\"background: #f3f4f6;\">\n        <td style=\"padding: 8px 12px; font-weight: 600; color: #6b7280; width: 35%;\">Autor</td>\n        <td style=\"padding: 8px 12px; color: #111827;\">{{ $('Webhook Reputei').item.json.review_author || '(anônimo)' }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: 600; color: #6b7280;\">Canal</td>\n        <td style=\"padding: 8px 12px; color: #111827;\">{{ $('Webhook Reputei').item.json.review_channel }}</td>\n      </tr>\n      <tr style=\"background: #f3f4f6;\">\n        <td style=\"padding: 8px 12px; font-weight: 600; color: #6b7280;\">Publicado em</td>\n        <td style=\"padding: 8px 12px; color: #111827;\">{{ $('Webhook Reputei').item.json.review_published_at }}</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 8px 12px; font-weight: 600; color: #6b7280;\">Disparado em</td>\n        <td style=\"padding: 8px 12px; color: #111827;\">{{ $('Webhook Reputei').item.json.triggered_at }}</td>\n      </tr>\n    </table>\n\n    <div style=\"background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;\">\n      <p style=\"margin: 0 0 6px; font-size: 12px; color: #6b7280; font-weight: 600;\">RESUMO DO REVIEW</p>\n      <p style=\"margin: 0; color: #374151; font-size: 14px; line-height: 1.6;\">{{ $('Webhook Reputei').item.json.sentiment_summary || $('Webhook Reputei').item.json.review_body_preview }}</p>\n    </div>\n\n    {{ $('Webhook Reputei').item.json.review_url ? '<a href=\"' + $('Webhook Reputei').item.json.review_url + '\" style=\"display: inline-block; background: #4f46e5; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px;\">🔗 Ver review original</a>' : '' }}\n\n    <hr style=\"border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;\">\n    <p style=\"color: #9ca3af; font-size: 12px; margin: 0;\">Reputei · Monitoramento de Reputação · Este e-mail foi enviado automaticamente.</p>\n  </div>\n</div>",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Enviar E-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 100],
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURE_SEU_SMTP",
+          "name": "SMTP Reputei"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://netservice.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "fbe5bfbb-226a-47a2-9d1d-6b657933318c"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Webhook Reputei').item.json.admin_whatsapp.replace(/\\D/g, '') }}\",\n  \"message\": \"🚨 *ALERTA CRÍTICO — Reputei*\\n\\n*Empresa:* {{ $('Webhook Reputei').item.json.tenant_name }}\\n*Autor:* {{ $('Webhook Reputei').item.json.review_author || 'Anônimo' }}\\n*Canal:* {{ $('Webhook Reputei').item.json.review_channel }}\\n\\n*⚠️ Ação recomendada:*\\n{{ $('Webhook Reputei').item.json.alert_reason }}\\n\\n*Resumo:*\\n{{ $('Webhook Reputei').item.json.sentiment_summary || $('Webhook Reputei').item.json.review_body_preview }}\\n\\n{{ $('Webhook Reputei').item.json.review_url ? '🔗 ' + $('Webhook Reputei').item.json.review_url : '' }}\\n\\n_Sem ação há {{ $('Webhook Reputei').item.json.hours_without_action }}h · Reputei_\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Enviar WhatsApp (UazAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"event_id\": $('Webhook Reputei').item.json.event_id }",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [980, 280]
+    }
+  ],
+  "connections": {
+    "Webhook Reputei": {
+      "main": [
+        [
+          {
+            "node": "Tem e-mail?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Tem WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem e-mail?": {
+      "main": [
+        [
+          {
+            "node": "Enviar E-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (UazAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar E-mail": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp (UazAPI)": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "reputei-v2",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "reputei-escalation-workflow"
+  },
+  "id": "reputei-escalation-001",
+  "tags": [
+    {
+      "createdAt": "2026-04-14T00:00:00.000Z",
+      "updatedAt": "2026-04-14T00:00:00.000Z",
+      "id": "tag-reputei",
+      "name": "reputei"
+    }
+  ]
+}

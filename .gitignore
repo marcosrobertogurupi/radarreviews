@@ -1,0 +1,30 @@
+# Radar de Reviews — arquivos a ignorar no controle de versão
+
+# Variáveis de ambiente (nunca versionar)
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+*.js.map
+
+# Dependências
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# TypeScript cache
+tsconfig.tsbuildinfo
