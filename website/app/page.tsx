@@ -102,6 +102,88 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Planos e Preços ───────────────────────────── */}
+      <section id="planos" className="py-32 px-4 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-600/5 rounded-full blur-[120px] pointer-events-none" />
+        
+        <div className="max-w-7xl mx-auto relative z-10">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-5xl font-black font-outfit mb-6">Investimento Simples e Transparente</h2>
+            <p className="text-gray-400 max-w-2xl mx-auto">Escolha o plano que melhor se adapta ao tamanho da sua operação.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {/* Plano Basic */}
+            <div className="p-10 bg-gray-900/50 border border-gray-800 rounded-[2.5rem] hover:border-gray-700 transition-all flex flex-col">
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold mb-2">Plano Basic</h3>
+                <p className="text-gray-400 text-sm">Ideal para pequenos negócios locais.</p>
+              </div>
+              <div className="mb-10 flex items-baseline gap-2">
+                <span className="text-5xl font-black font-outfit">R$ 119</span>
+                <span className="text-gray-500 text-lg">/mês</span>
+              </div>
+              <ul className="space-y-4 mb-10 flex-1">
+                {[
+                  'Monitoramento Google Maps',
+                  'Frequência de atualização Diária',
+                  'Análise de Sentimento Básica',
+                  'Suporte via Chat/E-mail',
+                  '1 Unidade de Negócio'
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-3 text-gray-300">
+                    <Check size={18} className="text-indigo-500 flex-shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link 
+                href="https://radarreviews-spnb.vercel.app" 
+                className="w-full py-4 bg-gray-800 hover:bg-gray-700 text-white rounded-2xl font-bold text-center transition-all"
+              >
+                Começar agora
+              </Link>
+            </div>
+
+            {/* Plano Complete */}
+            <div className="p-10 bg-indigo-600/10 border-2 border-indigo-600 rounded-[2.5rem] relative hover:bg-indigo-600/15 transition-all flex flex-col">
+              <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-black uppercase tracking-widest px-6 py-2 rounded-full shadow-lg shadow-indigo-500/40">
+                Mais Vendido
+              </div>
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold mb-2 text-white">Plano Complete</h3>
+                <p className="text-indigo-300 text-sm opacity-80">Monitoramento total e IA avançada.</p>
+              </div>
+              <div className="mb-10 flex items-baseline gap-2">
+                <span className="text-5xl font-black font-outfit text-white">R$ 239</span>
+                <span className="text-indigo-300 text-lg opacity-80">/mês</span>
+              </div>
+              <ul className="space-y-4 mb-10 flex-1">
+                {[
+                  'Tudo do Plano Basic',
+                  'Reclame Aqui & Consumidor.gov',
+                  'Redes Sociais & TripAdvisor',
+                  'Alertas Críticos em Real-time',
+                  'Análise Avançada com Gemini 2.0',
+                  'Relatórios de Auditoria'
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-3 text-white">
+                    <Check size={18} className="text-indigo-400 flex-shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link 
+                href="https://radarreviews-spnb.vercel.app" 
+                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-center transition-all shadow-xl shadow-indigo-500/20"
+              >
+                Assinar Plano Complete
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Footer ────────────────────────────────────── */}
       <footer className="pt-20 pb-10 px-4 border-t border-gray-900">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-10 text-center md:text-left">
