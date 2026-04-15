@@ -277,6 +277,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ── Main ──────────────────────────────────────────────────────────
 
+import Navbar from '../../components/Navbar'
+
 export default function ParceiroPage() {
   const [tipo,    setTipo]    = useState<TipoKey>('agencia')
   const [planKey, setPlanKey] = useState<PlanKey>('complete_tri')
@@ -316,7 +318,8 @@ export default function ParceiroPage() {
   const labelCls = 'block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2'
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans">
+    <div className="min-h-screen bg-gray-950 text-white font-sans selection:bg-indigo-500/30">
+      <Navbar />
 
       {/* ══════════════════════════════════════════════════════════
           HERO
