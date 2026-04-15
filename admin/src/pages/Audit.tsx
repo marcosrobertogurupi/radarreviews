@@ -11,6 +11,7 @@ interface QuietFailure {
 
 export default function Audit() {
   const [errorConnectors, setErrorConnectors] = useState<Connector[]>([])
+  const [healingConnectors, setHealingConnectors] = useState<Connector[]>([])
   const [recentJobs, setRecentJobs] = useState<SyncJob[]>([])
   const [quietFailures, setQuietFailures] = useState<QuietFailure[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,7 +27,7 @@ export default function Audit() {
     setLoading(true)
 
     // 1. Buscar conectores em ERRO explicito
-    const { data: errConns } = await supabase
+    const { data: allErrors } = await supabase
       .from('channel_connectors')
       .select('*, monitored_businesses(name)')
       .eq('status', 'error')
@@ -40,21 +41,34 @@ export default function Audit() {
       .limit(50)
 
     // 3. Detectar "Falhas Silenciosas"
-    // Pegar todos os conectores ativos
     const { data: allActive } = await supabase
       .from('channel_connectors')
       .select('*, monitored_businesses(name)')
       .eq('status', 'active')
 
+    // Separar em Críticos vs Autocura (Carência de 24h)
+    const now = new Date()
+    const critical: Connector[] = []
+    const healing: Connector[] = []
+
+    if (allErrors) {
+      allErrors.forEach(c => {
+        const firstError = c.first_error_at ? new Date(c.first_error_at) : new Date(c.updated_at || c.created_at)
+        const hoursDiff = (now.getTime() - firstError.getTime()) / (1000 * 60 * 60)
+        
+        // Se erro é de autenticação OU já passou 24h, é CRÍTICO
+        if (c.is_auth_error || hoursDiff >= 24) {
+          critical.push(c)
+        } else {
+          healing.push(c)
+        }
+      })
+    }
+
     const qFailures: QuietFailure[] = []
-    
     if (allActive && jobs) {
       for (const conn of allActive) {
-        // Encontrar os ultimos 3 jobs deste conector
         const connJobs = jobs.filter(j => j.connector_id === conn.id).slice(0, 3)
-        
-        // Se houver pelo menos 2 jobs e todos trouxeram 0 reviews novos e 0 buscados 
-        // em canais de scraping (Reclame Aqui)
         if (connJobs.length >= 2 && conn.channel === 'reclame_aqui') {
            const allZero = connJobs.every(j => j.reviews_fetched === 0)
            if (allZero) {
@@ -64,7 +78,8 @@ export default function Audit() {
       }
     }
 
-    setErrorConnectors(errConns || [])
+    setErrorConnectors(critical)
+    setHealingConnectors(healing)
     setRecentJobs(jobs || [])
     setQuietFailures(qFailures)
     setLoading(false)
@@ -81,16 +96,16 @@ export default function Audit() {
         <div className="card kpi-card" style={{ '--kpi-color': '#f87171' } as any}>
           <div className="kpi-label">Falhas Críticas</div>
           <div className="kpi-value">{errorConnectors.length}</div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Conectores com erro explícito</p>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Erros reais (>24h)</p>
         </div>
-        <div className="card kpi-card" style={{ '--kpi-color': '#fbbf24' } as any}>
-          <div className="kpi-label">Falhas Silenciosas</div>
-          <div className="kpi-value">{quietFailures.length}</div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Capturando 0 reviews (Suspeito)</p>
+        <div className="card kpi-card" style={{ '--kpi-color': '#60a5fa' } as any}>
+          <div className="kpi-label">Em Autocura</div>
+          <div className="kpi-value">{healingConnectors.length}</div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tentando recuperar (<24h)</p>
         </div>
         <div className="card kpi-card" style={{ '--kpi-color': '#34d399' } as any}>
           <div className="kpi-label">Saúde Global</div>
-          <div className="kpi-value">{loading ? '...' : (100 - (errorConnectors.length * 5)).toFixed(0)}%</div>
+          <div className="kpi-value">{loading ? '...' : Math.max(0, 100 - (errorConnectors.length * 5)).toFixed(0)}%</div>
           <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Disponibilidade dos robôs</p>
         </div>
       </div>
@@ -102,11 +117,11 @@ export default function Audit() {
           
           <section>
             <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ShieldAlert size={20} color="#f87171" /> Falhas Críticas em Aberto
+              <ShieldAlert size={20} color="#f87171" /> Falhas Críticas (Ação Necessária)
             </h3>
             {errorConnectors.length === 0 ? (
               <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
-                ✅ Nenhum erro crítico detectado no momento.
+                ✅ Nenhuma falha crítica no momento.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -117,10 +132,41 @@ export default function Audit() {
                       <span className="badge badge-critical">{CHANNEL_ICONS[c.channel]} {CHANNEL_LABELS[c.channel]}</span>
                     </div>
                     <div style={{ fontSize: 13, color: '#fca5a5', background: 'rgba(239,68,68,0.1)', padding: 8, borderRadius: 4, fontFamily: 'monospace' }}>
-                      {c.error_message || 'Erro desconhecido na extração'}
+                      {c.is_auth_error ? '🚨 Falha de Autenticação / Senha Incorreta' : (c.error_message || 'Erro na extração')}
                     </div>
                     <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                      Foco do Desastre: {formatDate(c.updated_at ?? c.last_sync_at ?? c.created_at)} ({timeAgo(c.updated_at ?? c.last_sync_at ?? c.created_at)})
+                      Primeira falha: {formatDate(c.first_error_at ?? c.updated_at ?? c.created_at)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Clock size={20} color="#60a5fa" /> Robôs em Autocura (Aguardando Retries)
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+              Canais com erros temporários. O sistema tentará se recuperar por 24h antes de escalar.
+            </p>
+            {healingConnectors.length === 0 ? (
+              <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+                💤 Nenhum robô em processo de recuperação.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {healingConnectors.map(c => (
+                  <div key={c.id} className="card" style={{ padding: 16, borderLeft: '4px solid #3b82f6' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{c.monitored_businesses?.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{CHANNEL_ICONS[c.channel]} {CHANNEL_LABELS[c.channel]}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      🔄 Em recuperação: {c.error_message?.slice(0, 60)}...
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: '#60a5fa' }}>
+                      Tentativa #{c.error_count ?? 1} | Início: {timeAgo(c.first_error_at ?? c.updated_at)}
                     </div>
                   </div>
                 ))}

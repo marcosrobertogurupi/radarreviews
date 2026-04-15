@@ -39,9 +39,17 @@ const DEFAULT_DELAY_MS = 6_000
 const DEFAULT_LIMIT = 25
 const DEFAULT_SINCE_DAYS = 30
 
-// User-Agent descritivo exigido pelo Reddit para endpoints públicos.
-// Inclui e-mail de contato para conformidade com as políticas de "Good Bot".
-const USER_AGENT = 'Reputei/1.0 (monitoramento de reputacao para PMEs brasileiras; contato: marcosroberto_gurupi@hotmail.com)'
+// User-Agents de navegadores reais para evitar bloqueios do Reddit
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36'
+]
+
+function getRandomUA() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+}
 
 // ── Função principal exportada ────────────────────────────────────
 
@@ -188,13 +196,13 @@ async function fetchPublic(
   url: string,
   retries = 3,
   delayMs = DEFAULT_DELAY_MS
-): Promise<{ posts: RedditPost[]; nextAfter: string | null; error?: string }> {
+): Promise<{ posts: RedditPost[]; nextAfter: string | null; error?: string, error_type?: 'transient' | 'fatal' }> {
   for (let attempt = 0; attempt < retries; attempt++) {
     let status = 0
     try {
       const resp = await fetch(url, {
         headers: {
-          'User-Agent':      USER_AGENT,
+          'User-Agent':      getRandomUA(),
           'Accept':          'application/json',
           'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
           'Cache-Control':   'no-cache',
@@ -217,7 +225,7 @@ async function fetchPublic(
         const delay = Math.pow(2, attempt + 1) * delayMs
         logger.warn(`[${CHANNEL}] 403 Forbidden — possível bloqueio de IP. Aguardando ${delay}ms para retry`, { url, attempt })
         if (attempt < retries - 1) { await sleep(delay); continue }
-        return { posts: [], nextAfter: null, error: `403 Forbidden: ${url}` }
+        return { posts: [], nextAfter: null, error: `403 Forbidden: ${url}`, error_type: 'transient' }
       }
 
       // 429 — rate limit (muito comum em modo público)

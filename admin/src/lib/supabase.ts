@@ -92,6 +92,11 @@ export interface Connector {
   last_sync_at?: string
   next_sync_at?: string
   error_message?: string
+  error_count?: number
+  first_error_at?: string
+  is_auth_error?: boolean
+  is_healing?: boolean
+  last_healing_at?: string
   config: Record<string, unknown>
   created_at: string
   updated_at?: string
