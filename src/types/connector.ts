@@ -51,6 +51,10 @@ export interface ChannelConnector {
   next_sync_at: string | null
   /** Mensagem do último erro, se houver */
   error_message: string | null
+  /** Contador de erros consecutivos para autocura */
+  error_count: number
+  /** Timestamp do primeiro erro consecutivo */
+  first_error_at: string | null
   /** Timestamp de criação do conector */
   created_at: string
   /** Timestamp da última atualização */
@@ -70,4 +74,8 @@ export interface JobResult {
   reviews_updated: number
   /** Mensagem de erro, se o job falhou */
   error?: string
+  /** Tipo do erro para decidir estratégia de cura */
+  error_type?: 'transient' | 'fatal'
+  /** Sinaliza se é um erro que exige nova autenticação */
+  is_auth_error?: boolean
 }

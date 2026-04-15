@@ -15,6 +15,7 @@
 import 'dotenv/config'
 import { supabase } from '../lib/supabase.js'
 import { logger } from '../lib/logger.js'
+import { systemNotifications } from '../lib/system-notifications.js'
 import type { ChannelConnector } from '../types/connector.js'
 import type { JobResult } from '../types/connector.js'
 
@@ -126,6 +127,9 @@ async function runOnce(): Promise<void> {
  * Join com monitored_businesses para obter tenant_id.
  */
 async function fetchDueConnectors(): Promise<ChannelConnector[]> {
+  const now = new Date().toISOString()
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
   const { data, error } = await supabase
     .from('channel_connectors')
     .select(`
@@ -137,9 +141,11 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
         is_active
       )
     `)
-    .eq('status', 'active')
+    .in('status', ['active', 'error']) // Buscar ativos OU em erro (para tentar a cura)
     .eq('monitored_businesses.is_active', true)
-    .or(`next_sync_at.lte.${new Date().toISOString()},next_sync_at.is.null`)
+    // Regra: ativo OU (erro MAS o primeiro erro foi há menos de 24h)
+    .or(`status.eq.active,and(status.eq.error,first_error_at.gte.${yesterday})`)
+    .or(`next_sync_at.lte.${now},next_sync_at.is.null`)
     .order('next_sync_at', { ascending: true, nullsFirst: true })
 
   if (error) {
@@ -219,35 +225,60 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
       reviews_new: result.reviews_new,
       reviews_updated: result.reviews_updated,
       ...(result.error
-        ? { error_detail: { message: result.error } }
+        ? { error_detail: { message: result.error, type: result.error_type, is_auth: result.is_auth_error } }
         : {}),
     })
     .eq('id', jobId)
 
-  // Atualizar channel_connector com próxima sync
-  const intervalMinutes =
-    (connector.config['interval_minutes'] as number | undefined) ?? 60
+  // Lógica de Autocura e Alertas
+  if (success) {
+    if (wasInError) {
+      await systemNotifications.notifyRecovery(connector)
+    }
 
-  await supabase
-    .from('channel_connectors')
-    .update({
-      status: success ? 'active' : 'error',
-      last_sync_at: new Date().toISOString(),
-      next_sync_at: new Date(Date.now() + intervalMinutes * 60_000).toISOString(),
-      error_message: result.error ?? null,
-    })
-    .eq('id', connector.id)
+    const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 60
+    await supabase
+      .from('channel_connectors')
+      .update({
+        status: 'active',
+        last_sync_at: new Date().toISOString(),
+        next_sync_at: new Date(Date.now() + intervalMinutes * 60_000).toISOString(),
+        error_message: null,
+        error_count: 0,
+        first_error_at: null,
+      })
+      .eq('id', connector.id)
+
+  } else {
+    const isAuth = !!result.is_auth_error || result.error_type === 'fatal'
+    const errorCount = (connector.error_count ?? 0) + 1
+    const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
+    const isWithin24h = (Date.now() - new Date(firstErrorAt).getTime()) < 24 * 60 * 60 * 1000
+
+    const backoffMinutes = Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
+    const shouldAlert = isAuth || !isWithin24h
+
+    if (shouldAlert) {
+      await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
+    }
+
+    await supabase
+      .from('channel_connectors')
+      .update({
+        status: 'error',
+        error_message: result.error ?? null,
+        error_count: errorCount,
+        first_error_at: firstErrorAt,
+        next_sync_at: new Date(Date.now() + backoffMinutes * 60_000).toISOString(),
+      })
+      .eq('id', connector.id)
+  }
 
   logger.info(`[scheduler] Sync concluído`, {
     connector_id: connector.id,
     channel: connector.channel,
     job_id: jobId,
     success,
-    duration_ms: durationMs,
-    reviews_fetched: result.reviews_fetched,
-    reviews_new: result.reviews_new,
-    reviews_updated: result.reviews_updated,
-    error: result.error,
   })
 }
 

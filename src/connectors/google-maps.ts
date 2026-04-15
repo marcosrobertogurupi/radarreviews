@@ -87,11 +87,20 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     result.reviews_fetched = rawItems.length
 
     if (rawItems.length === 0) {
-      logger.info(`[${CHANNEL}] Nenhum review retornado pela API`, {
+      logger.info(`[${CHANNEL}] Nenhum review retornado pela API. Nota: a API pública Places (New) tem um limite de 5 reviews por local.`, {
         connector_id: connector.id,
         place_id: connector.external_id,
+        count: 0
       })
       return result
+    }
+
+    if (rawItems.length >= 5) {
+      logger.info(`[${CHANNEL}] API retornou o limite máximo de 5 reviews públicos. Histórico completo exige Business Profile API.`, {
+        connector_id: connector.id,
+        place_id: connector.external_id,
+        count: rawItems.length
+      })
     }
 
     // Normalizar para NormalizedReview

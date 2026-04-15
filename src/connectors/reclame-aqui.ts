@@ -140,6 +140,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     const page = await context.newPage()
     page.setDefaultTimeout(timeoutMs)
 
+    // Aumentar o timeout de navegação para evitar falhas por lentidão
+    page.setDefaultNavigationTimeout(timeoutMs * 2)
+
     const allComplaints: ReclameAquiComplaint[] = []
 
     // Iterar pelas páginas
@@ -152,10 +155,10 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       })
 
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
 
-        // Aguardar o Next.js terminar de renderizar
-        await page.waitForTimeout(2000)
+        // Aguardar o Next.js terminar de renderizar (aumentado para estabilidade)
+        await page.waitForTimeout(5000)
 
         // Estratégia 1: Extrair do __NEXT_DATA__ (SSR — mais confiável)
         const nextDataComplaints = await extractFromNextData(page, slug)

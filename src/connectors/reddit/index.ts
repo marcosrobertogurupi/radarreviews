@@ -87,9 +87,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         // quando credenciais forem aprovadas. Ver comentário no topo do arquivo.
         await sleep(delayMs)
 
-        const { posts, nextAfter, error } = await fetchPublic(url, 3, delayMs)
+        const { posts, nextAfter, error, error_type } = await fetchPublic(url, 3, delayMs)
 
         if (error) {
+          result.error = error
+          result.error_type = error_type
           logger.warn(`[${CHANNEL}] ${error}`, { connector_id: connector.id, url })
           break
         }
@@ -224,7 +226,7 @@ async function fetchPublic(
         const delay = Math.pow(2, attempt) * delayMs
         logger.warn(`[${CHANNEL}] 429 Rate Limit — aguardando ${delay}ms`, { url, attempt })
         if (attempt < retries - 1) { await sleep(delay); continue }
-        return { posts: [], nextAfter: null, error: `429 Rate limit excedido após ${retries} tentativas: ${url}` }
+        return { posts: [], nextAfter: null, error: `429 Rate limit excedido após ${retries} tentativas: ${url}`, error_type: 'transient' }
       }
 
       // 404 — subreddit não existe
