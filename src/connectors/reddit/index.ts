@@ -51,7 +51,7 @@ const USER_AGENTS = [
 
 function getRandomUA(): string {
   const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
-  return ua || USER_AGENTS[0]
+  return (ua || USER_AGENTS[0]) as string
 }
 
 // ── Configuração do Proxy (Cloudflare Worker) ───────────────────
@@ -366,7 +366,7 @@ async function fetchRSS(url: string): Promise<{ posts: RedditPost[]; error?: str
         is_self: true,
         over_18: false,
         stickied: false
-      })
+      } as RedditPost)
     })
 
     return { posts }
