@@ -1,8 +1,17 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL  as string
-const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL  as string | undefined
+const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+
+if (!supabaseUrl || !supabaseKey) {
+  document.body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#070b14;color:#f0f4ff;font-family:Inter,sans-serif;flex-direction:column;gap:12px">
+      <strong style="font-size:18px">Erro de configuração</strong>
+      <p style="color:#8892aa;font-size:14px">Variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY não definidas.</p>
+    </div>`
+  throw new Error('Missing Supabase env vars: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY')
+}
 
 // Usa anon key — RLS garante isolamento automático por tenant autenticado
 export const supabase = createClient(supabaseUrl, supabaseKey)
