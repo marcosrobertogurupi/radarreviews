@@ -238,13 +238,22 @@ ${text.slice(0, 800)}
 """
 
 RETORNE APENAS este JSON (nenhum texto extra, nenhum markdown):
-{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["atendimento|produto|cobrança|entrega|app_plataforma|cancelamento|dados_privados|reembolso|elogio|outro"],"summary":"frase curta em português","alert_reason":"ação recomendada ou null"}
+{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["atendimento|produto|cobrança|entrega|app_plataforma|cancelamento|dados_privados|reembolso|elogio|outro"],"summary":"...","alert_reason":"ação recomendada ou null"}
 
-REGRAS:
+REGRAS DE SENTIMENTO:
 - critical=ameaça judicial/fraude/não consegue cancelar
 - negative=insatisfeito com problema real
 - neutral=misto/mediano
 - positive=satisfeito/elogio
+
+REGRAS DO CAMPO summary (MUITO IMPORTANTE):
+- Máximo 12 palavras, em português, iniciando com letra maiúscula, sem ponto final
+- Descreva o PROBLEMA ESPECÍFICO mencionado: o que aconteceu + produto/serviço envolvido
+- NÃO use palavras genéricas como "cliente insatisfeito", "problema relatado", "reclamação sobre"
+- NÃO mencione o nome da plataforma (Reclame Aqui, Google, etc.)
+- USE verbos concretos: cobrado, bloqueado, cancelado, não entregue, não reembolsado, etc.
+- Exemplos RUINS: "Cliente insatisfeito sobre cobrança", "Problema relatado pelo usuário"
+- Exemplos BONS: "Cobrança indevida após cancelamento sem reembolso", "Cartão bloqueado sem aviso e sem solução", "Internet não ativada após 15 dias de pagamento"
 `.trim()
 
   const response = await model.generateContent(prompt)
