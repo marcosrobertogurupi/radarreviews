@@ -50,7 +50,8 @@ const USER_AGENTS = [
 ]
 
 function getRandomUA(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)] || USER_AGENTS[0]
+  const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+  return ua || USER_AGENTS[0]
 }
 
 // ── Configuração do Proxy (Cloudflare Worker) ───────────────────
@@ -350,14 +351,21 @@ async function fetchRSS(url: string): Promise<{ posts: RedditPost[]; error?: str
       
       posts.push({
         id,
+        name: `t3_${id}`,
         title: entry.find('title').text(),
         author: entry.find('author name').text() || 'anonymous',
         subreddit: entry.find('category').attr('label') || 'unknown',
-        selftext: entry.find('content').text().replace(/<[^>]*>?/gm, ''), // strip html
+        subreddit_name_prefixed: `r/${entry.find('category').attr('label') || 'unknown'}`,
+        selftext: entry.find('content').text().replace(/<[^>]*>?/gm, ''),
         permalink: link.replace('https://www.reddit.com', ''),
+        url: link,
         created_utc: Math.floor(new Date(entry.find('updated').text()).getTime() / 1000),
         score: 0,
-        num_comments: 0
+        upvote_ratio: 1,
+        num_comments: 0,
+        is_self: true,
+        over_18: false,
+        stickied: false
       })
     })
 
