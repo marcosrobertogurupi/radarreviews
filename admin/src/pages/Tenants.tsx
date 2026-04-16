@@ -11,6 +11,7 @@ interface Tenant {
   admin_whatsapp?: string
   admin_email?: string
   critical_alert_hours?: number
+  cnpj?: string // Campo virtual para facilidade de edição
 }
 
 interface Business {
@@ -112,6 +113,16 @@ export default function Tenants() {
       admin_email: editingTenant.admin_email || null,
       critical_alert_hours: editingTenant.critical_alert_hours || null,
     }).eq('id', editingTenant.id)
+
+    if (!error && editingTenant.cnpj !== undefined) {
+      // Atualizar o CNPJ da primeira empresa vinculada para facilitar a vida do usuário
+      const tenantBusinesses = businesses[editingTenant.id] || []
+      if (tenantBusinesses.length > 0) {
+        await supabase.from('monitored_businesses')
+          .update({ cnpj: editingTenant.cnpj || null })
+          .eq('id', tenantBusinesses[0].id)
+      }
+    }
 
     if (error) {
       if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
@@ -235,7 +246,10 @@ export default function Tenants() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => setEditingTenant(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Editar assinante">
+                  <button onClick={() => {
+                    const b = businesses[t.id]?.[0]
+                    setEditingTenant({ ...t, cnpj: b?.cnpj || '' })
+                  }} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Editar assinante">
                     <Edit size={14} color="#60a5fa" />
                   </button>
                   <button onClick={() => { setCredentialsTenant(t); setCredentials({ email: '', password: '' }) }} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Alterar e-mail / senha do portal">
@@ -466,6 +480,17 @@ export default function Tenants() {
                   value={editingTenant.slug}
                   onChange={e => setEditingTenant(prev => prev ? { ...prev, slug: e.target.value } : null)}
                   style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 4, fontFamily: 'monospace' }}
+                />
+              </div>
+
+              <div className="modal-section">
+                <label className="modal-label">CNPJ da Empresa (Principal)</label>
+                <input
+                  required
+                  value={editingTenant.cnpj ?? ''}
+                  onChange={e => setEditingTenant(prev => prev ? { ...prev, cnpj: e.target.value } : null)}
+                  placeholder="Somente números"
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4, fontFamily: 'monospace' }}
                 />
               </div>
 
