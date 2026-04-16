@@ -12,9 +12,6 @@ RUN npm ci
 # Copia o restante do código
 COPY . .
 
-# Build do TypeScript
-RUN npm run build
-
 # Configurações de tempo de execução
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV NODE_ENV=production
@@ -22,5 +19,5 @@ ENV NODE_ENV=production
 # A porta será definida pelo Railway via variável de ambiente PORT
 EXPOSE 3001
 
-# Comando para iniciar o servidor API + Scheduler
-CMD ["node", "dist/api/server.js"]
+# Executa o servidor TypeScript diretamente via tsx
+CMD ["npx", "tsx", "src/api/server.ts"]

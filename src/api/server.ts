@@ -314,7 +314,7 @@ async function handleCopilot(
     const ctx    = await getTenantContext(auth.tenantId)
     const genAI  = getGemini()
     const model  = genAI.getGenerativeModel({
-      model: 'models/gemini-2.0-flash-exp',
+      model: 'models/gemini-2.0-flash',
       generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
       systemInstruction: buildSystemPrompt(ctx),
     })

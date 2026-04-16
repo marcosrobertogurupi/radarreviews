@@ -38,15 +38,20 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoadingSession(false)
+      if (session) {
+        supabase.from('tenants').select('id, name').order('name').then(({ data }) => {
+          setTenants(data ?? [])
+        })
+      }
     })
 
     const authSub = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-    })
-
-    // Carregar lista de tenants para o filtro
-    supabase.from('tenants').select('id, name').order('name').then(({ data }) => {
-      setTenants(data ?? [])
+      if (session) {
+        supabase.from('tenants').select('id, name').order('name').then(({ data }) => {
+          setTenants(data ?? [])
+        })
+      }
     })
 
     // Antena Real-Time global para toda a schema 'public'
