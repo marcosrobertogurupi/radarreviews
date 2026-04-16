@@ -5,7 +5,7 @@ import Navbar from '../components/Navbar'
 import { 
   ShieldCheck, MessageSquare, TrendingUp, Search, 
   MapPin, Radio, LayoutDashboard, Instagram, 
-  Facebook, AlertCircle, Sparkles, MessageCircle
+  Facebook, AlertCircle, Sparkles, MessageCircle, Check
 } from 'lucide-react'
 import Link from 'next/link'
 
