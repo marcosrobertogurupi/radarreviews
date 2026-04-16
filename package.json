@@ -12,7 +12,7 @@
     "dev:api": "tsx watch src/api/server.ts",
     "dev:portal": "cd portal && npm run dev",
     "dev:admin": "cd admin && npm run dev",
-    "build": "tsc",
+    "build": "npm run build --prefix website && npm run build --prefix admin && npm run build --prefix portal",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

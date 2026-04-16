@@ -45,7 +45,7 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link 
-              href="https://radarreviews-spnb.vercel.app" 
+              href="/portal" 
               className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xl font-bold transition-all shadow-2xl shadow-indigo-500/40 transform hover:-translate-y-1"
             >
               Assine Reputei
@@ -138,7 +138,7 @@ export default function Home() {
                 ))}
               </ul>
               <Link 
-                href="https://radarreviews-spnb.vercel.app" 
+                href="/portal" 
                 className="w-full py-4 bg-gray-800 hover:bg-gray-700 text-white rounded-2xl font-bold text-center transition-all"
               >
                 Começar agora
@@ -174,7 +174,7 @@ export default function Home() {
                 ))}
               </ul>
               <Link 
-                href="https://radarreviews-spnb.vercel.app" 
+                href="/portal" 
                 className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-center transition-all shadow-xl shadow-indigo-500/20"
               >
                 Assinar Plano Complete
@@ -199,7 +199,7 @@ export default function Home() {
            <div className="flex gap-10 text-sm font-medium text-gray-400">
               <Link href="/" className="hover:text-white">Home</Link>
               <Link href="/parceiros" className="hover:text-white">Parceiros</Link>
-              <Link href="https://radarreviews-spnb.vercel.app" className="hover:text-white text-indigo-400">Login Cliente</Link>
+              <Link href="/portal" className="hover:text-white text-indigo-400">Login Cliente</Link>
            </div>
            <div className="text-gray-500 text-sm">
               &copy; 2026 Reputei SaaS. Todos os direitos reservados.

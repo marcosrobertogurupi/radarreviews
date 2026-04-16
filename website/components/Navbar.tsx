@@ -23,13 +23,13 @@ export default function Navbar() {
             <Link href="/" className="text-gray-300 hover:text-white transition-colors">Home</Link>
             <Link href="/parceiros" className="text-gray-300 hover:text-white transition-colors">Parceiros</Link>
             <Link 
-              href="https://radarreviews-spnb.vercel.app" 
+              href="/portal" 
               className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full transition-all border border-gray-700 font-medium"
             >
               Portal do Cliente
             </Link>
             <Link 
-              href="https://radarreviews-e6sq.vercel.app" 
+              href="/admin" 
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all shadow-lg shadow-indigo-500/20 font-medium"
             >
               Painel Admin
