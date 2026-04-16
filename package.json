@@ -6,18 +6,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "workspaces": [
-    "admin",
-    "portal",
-    "website"
-  ],
   "scripts": {
     "start": "tsx src/api/server.ts",
     "dev": "tsx watch src/scheduler/index.ts",
-    "dev:api": "tsx watch src/api/server.ts",
-    "dev:portal": "cd portal && npm run dev",
-    "dev:admin": "cd admin && npm run dev",
-    "build": "npm run build --prefix website && npm run build --prefix admin && npm run build --prefix portal",
+    "build": "cd admin && npm install && npm run build && mkdir -p ../website/public/admin && cp -r dist/* ../website/public/admin && cd ../portal && npm install && npm run build && mkdir -p ../website/public/portal && cp -r dist/* ../website/public/portal && cd ../website && npm install && npm run build"
+  },
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,16 +1,20 @@
 {
   "rewrites": [
     {
-      "source": "/admin/(.*)",
-      "destination": "/admin/dist/$1"
+      "source": "/admin/:path*",
+      "destination": "/admin/:path*"
     },
     {
-      "source": "/portal/(.*)",
-      "destination": "/portal/dist/$1"
+      "source": "/admin/:path*",
+      "destination": "/admin/index.html"
     },
     {
-      "source": "/((?!admin|portal).*)",
-      "destination": "/website/$1"
+      "source": "/portal/:path*",
+      "destination": "/portal/:path*"
+    },
+    {
+      "source": "/portal/:path*",
+      "destination": "/portal/index.html"
     }
   ]
 }
