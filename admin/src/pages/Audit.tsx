@@ -95,17 +95,17 @@ export default function Audit() {
       <div className="kpi-grid">
         <div className="card kpi-card" style={{ '--kpi-color': '#f87171' } as any}>
           <div className="kpi-label">Falhas Críticas</div>
-          <div className="kpi-value">{errorConnectors.length}</div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Erros reais (>24h)</p>
+          <div className="kpi-value">{(errorConnectors || []).length}</div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Erros reais (&gt;24h)</p>
         </div>
         <div className="card kpi-card" style={{ '--kpi-color': '#60a5fa' } as any}>
           <div className="kpi-label">Em Autocura</div>
-          <div className="kpi-value">{healingConnectors.length}</div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tentando recuperar (<24h)</p>
+          <div className="kpi-value">{(healingConnectors || []).length}</div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Tentando recuperar (&lt;24h)</p>
         </div>
         <div className="card kpi-card" style={{ '--kpi-color': '#34d399' } as any}>
           <div className="kpi-label">Saúde Global</div>
-          <div className="kpi-value">{loading ? '...' : Math.max(0, 100 - (errorConnectors.length * 5)).toFixed(0)}%</div>
+          <div className="kpi-value">{loading ? '...' : Math.max(0, 100 - ((errorConnectors || []).length * 5)).toFixed(0)}%</div>
           <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Disponibilidade dos robôs</p>
         </div>
       </div>
