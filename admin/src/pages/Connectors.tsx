@@ -59,7 +59,36 @@ export default function Connectors() {
     loadAll()
     const handleRefresh = () => loadAll()
     window.addEventListener('refresh_data', handleRefresh)
-    return () => window.removeEventListener('refresh_data', handleRefresh)
+    
+    // ──────────────────────────────────────────────────────────────
+    // Supabase Realtime - Atualizar status sem F5
+    // ──────────────────────────────────────────────────────────────
+    const channel = supabase
+      .channel('public:channel_connectors')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'channel_connectors' },
+        (payload) => {
+          console.log('[Realtime] Mudança detectada no conector:', payload.new)
+          const updated = payload.new as Connector
+          
+          setConnectors(current => 
+            current.map(c => {
+              if (c.id === updated.id) {
+                // Preservar joins (monitored_businesses) que não vêm no payload do realtime
+                return { ...c, ...updated }
+              }
+              return c
+            })
+          )
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('refresh_data', handleRefresh)
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   useEffect(() => {
