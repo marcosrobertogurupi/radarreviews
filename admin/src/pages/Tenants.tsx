@@ -70,7 +70,7 @@ export default function Tenants() {
     e.preventDefault()
     setSaving(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api-production.up.railway.app'
 
     try {
       const res = await fetch(`${apiUrl}/api/onboarding`, {
@@ -156,7 +156,7 @@ export default function Tenants() {
     if (!credentials.email && !credentials.password) return alert('Informe ao menos e-mail ou senha.')
     setSavingCreds(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api-production.up.railway.app'
     try {
       const res = await fetch(`${apiUrl}/api/admin/credentials`, {
         method: 'POST',

@@ -99,4 +99,3 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(r) + '☆'.repeat(5 - r)
 }
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
