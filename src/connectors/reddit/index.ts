@@ -23,6 +23,8 @@
 //   4. Aumentar delay_ms para 1000ms (60 req/min com OAuth)
 //   5. Remover limite de MAX_PAGES ou aumentar para 10
 
+import axios from 'axios'
+import * as cheerio from 'cheerio'
 import 'dotenv/config'
 import { logger } from '../../lib/logger.js'
 import { ingestReviews } from '../../lib/ingest.js'
@@ -98,6 +100,21 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         const { posts, nextAfter, error, error_type } = await fetchPublic(url, 3, delayMs)
 
         if (error) {
+          // Fallback para RSS se o JSON for bloqueado (403)
+          if (error_type === 'transient' && error.includes('403')) {
+            logger.info(`[${CHANNEL}] JSON bloqueado (403). Tentando fallback via RSS...`, { connector_id: connector.id, url })
+            const rssResult = await fetchRSS(url.replace('.json', '.rss'))
+            
+            if (rssResult.posts.length > 0) {
+              const valid = rssResult.posts.filter(p => new Date(p.created_utc * 1000) >= cutoff)
+              allPosts.push(...valid)
+              logger.info(`[${CHANNEL}] Sucesso via RSS Fallback`, { total: rssResult.posts.length, valid: valid.length })
+              continue // Próxima página ou fim
+            } else if (rssResult.error) {
+               logger.warn(`[${CHANNEL}] RSS Fallback também falhou: ${rssResult.error}`)
+            }
+          }
+
           result.error = error
           result.error_type = error_type
           logger.warn(`[${CHANNEL}] ${error}`, { connector_id: connector.id, url })
@@ -286,6 +303,48 @@ function mapPostToReview(post: RedditPost, connector: ChannelConnector): Normali
   }
 
   return review
+}
+
+/**
+ * Fallback para buscar posts via RSS do Reddit.
+ * Útil quando o endpoint JSON retorna 403 (bloqueio de IP/Bot detection).
+ */
+async function fetchRSS(url: string): Promise<{ posts: RedditPost[]; error?: string }> {
+  try {
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    const { data } = await axios.get(url, { 
+      headers: { 'User-Agent': ua },
+      timeout: 10000 
+    })
+    
+    const $ = cheerio.load(data, { xmlMode: true })
+    const posts: RedditPost[] = []
+
+    $('entry').each((_, el) => {
+      const entry = $(el)
+      const link = entry.find('link').attr('href') || ''
+      
+      // ID do post no Reddit (ex: t3_xxxx)
+      const id = entry.find('id').text().split('/').pop() || Math.random().toString(36).slice(2)
+      
+      posts.push({
+        id,
+        title: entry.find('title').text(),
+        author: entry.find('author name').text() || 'anonymous',
+        subreddit: entry.find('category').attr('label') || 'unknown',
+        selftext: entry.find('content').text().replace(/<[^>]*>?/gm, ''), // strip html
+        permalink: link.replace('https://www.reddit.com', ''),
+        created_utc: Math.floor(new Date(entry.find('updated').text()).getTime() / 1000),
+        score: 0,
+        num_comments: 0
+      })
+    })
+
+    return { posts }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { posts: [], error: msg }
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
