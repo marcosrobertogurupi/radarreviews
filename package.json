@@ -9,7 +9,7 @@
   "scripts": {
     "start": "tsx src/api/server.ts",
     "dev": "tsx watch src/scheduler/index.ts",
-    "build": "cd admin && npm install && npm run build && mkdir -p ../website/public/admin && cp -r dist/* ../website/public/admin && cd ../portal && npm install && npm run build && mkdir -p ../website/public/portal && cp -r dist/* ../website/public/portal && cd ../website && npm install && npm run build",
+    "build": "cd admin && npm install && npm run build && cd ../portal && npm install && npm run build && cd ../website && npm install && npm run build && cd .. && rm -rf dist && mkdir -p dist/admin dist/portal && cp -rv website/out/* dist/ && cp -rv admin/dist/* dist/admin/ && cp -rv portal/dist/* dist/portal/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
