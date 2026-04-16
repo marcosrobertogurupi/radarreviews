@@ -6,6 +6,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "workspaces": [
+    "admin",
+    "portal",
+    "website"
+  ],
   "scripts": {
     "start": "tsx src/api/server.ts",
     "dev": "tsx watch src/scheduler/index.ts",
