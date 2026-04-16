@@ -1,6 +1,3 @@
 {
-  "installCommand": "npm install --prefix admin",
-  "buildCommand": "npm run build --prefix admin",
-  "outputDirectory": "admin/dist",
-  "framework": "vite"
+  "rootDirectory": "admin"
 }
