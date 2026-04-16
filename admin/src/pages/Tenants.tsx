@@ -30,6 +30,10 @@ export default function Tenants() {
   const [saving, setSaving] = useState(false)
   
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null)
+  
+  // Edição de empresa específica
+  const [editingBusiness, setEditingBusiness] = useState<Business | null>(null)
+
   const [credentialsTenant, setCredentialsTenant] = useState<Tenant | null>(null)
   const [credentials, setCredentials] = useState({ email: '', password: '' })
   const [savingCreds, setSavingCreds] = useState(false)
@@ -161,6 +165,25 @@ export default function Tenants() {
     }
   }
 
+  async function handleUpdateBusiness(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingBusiness) return
+    setSaving(true)
+
+    const { error } = await supabase.from('monitored_businesses').update({
+      name: editingBusiness.name,
+      cnpj: editingBusiness.cnpj || null
+    }).eq('id', editingBusiness.id)
+
+    if (error) {
+      alert('Erro ao atualizar empresa: ' + error.message)
+    } else {
+      setEditingBusiness(null)
+      loadAll()
+    }
+    setSaving(false)
+  }
+
   async function handleDelete(t: Tenant) {
     const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n\nEsta ação NÃO PODE SER DESFEITA.`)
     if (!pass) return
@@ -231,9 +254,21 @@ export default function Tenants() {
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
                 <h4 style={{ margin: '0 0 8px 0', fontSize: 11, color: 'var(--text-muted)' }}>Empresas Monitoradas:</h4>
                 {businesses[t.id]?.length ? (
-                  <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', fontSize: 13 }}>
                     {businesses[t.id].map(b => (
-                      <li key={b.id}>{b.name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{b.cnpj && `(${b.cnpj})`}</span></li>
+                      <li key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <div>
+                          {b.name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{b.cnpj && `(${b.cnpj})`}</span>
+                        </div>
+                        <button 
+                          onClick={() => setEditingBusiness(b)} 
+                          className="btn-icon" 
+                          style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
+                          title="Editar CNPJ / Nome"
+                        >
+                          <Edit size={12} color="#60a5fa" />
+                        </button>
+                      </li>
                     ))}
                   </ul>
                 ) : (
@@ -353,6 +388,47 @@ export default function Tenants() {
                 <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setCredentialsTenant(null)}>Cancelar</button>
                 <button type="submit" disabled={savingCreds} className="btn" style={{ background: '#7c3aed', opacity: savingCreds ? 0.6 : 1 }}>
                   <KeyRound size={16} /> {savingCreds ? 'Salvando...' : 'Salvar Credenciais'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingBusiness && (
+        <div className="modal-overlay" onClick={() => setEditingBusiness(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">
+              <span>Editar Dados da Empresa</span>
+              <button className="modal-close" onClick={() => setEditingBusiness(null)}><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={handleUpdateBusiness}>
+              <div className="modal-section">
+                <label className="modal-label">Nome da Empresa</label>
+                <input 
+                  autoFocus required
+                  value={editingBusiness.name}
+                  onChange={e => setEditingBusiness(prev => prev ? { ...prev, name: e.target.value } : null)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                />
+              </div>
+
+              <div className="modal-section">
+                <label className="modal-label">CNPJ (chave do buscador Consumidor.gov)</label>
+                <input
+                  required
+                  value={editingBusiness.cnpj ?? ''}
+                  onChange={e => setEditingBusiness(prev => prev ? { ...prev, cnpj: e.target.value } : null)}
+                  placeholder="Apenas números"
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4, fontFamily: 'monospace' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+                <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setEditingBusiness(null)}>Cancelar</button>
+                <button type="submit" disabled={saving} className="btn" style={{ background: 'var(--accent)', opacity: saving ? 0.6 : 1 }}>
+                   <Save size={16} /> {saving ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
             </form>
