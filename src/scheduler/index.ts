@@ -231,6 +231,7 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
     .eq('id', jobId)
 
   // Lógica de Autocura e Alertas
+  const wasInError = connector.status !== 'active' && connector.status !== 'idle'
   if (success) {
     if (wasInError) {
       await systemNotifications.notifyRecovery(connector)

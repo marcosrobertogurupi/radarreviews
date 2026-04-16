@@ -49,8 +49,8 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36'
 ]
 
-function getRandomUA() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+function getRandomUA(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)] || USER_AGENTS[0]
 }
 
 // ── Configuração do Proxy (Cloudflare Worker) ───────────────────
@@ -245,7 +245,7 @@ async function fetchPublic(
         logger.info(`[${CHANNEL}] Usando Proxy Relay`, { redditPath })
       }
 
-      const resp = await fetch(finalUrl, { headers })
+      const resp = await fetch(finalUrl as string, { headers })
 
       status = resp.status
 
