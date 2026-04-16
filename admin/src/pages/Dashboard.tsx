@@ -128,7 +128,10 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
 
   async function loadRecentReviews() {
-    let q = supabase.from('reviews').select('*').order('published_at', { ascending: false }).limit(5)
+    let q = supabase.from('reviews')
+      .select('*, monitored_businesses(name)')
+      .order('published_at', { ascending: false })
+      .limit(5)
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
 
@@ -360,7 +363,9 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
             </div>
           ) : (
             <div className="review-list">
-              {recentReviews.map(r => (
+              {recentReviews.map(r => {
+                const tenantName = tenants.find(t => t.id === r.tenant_id)?.name
+                return (
                 <div key={r.id} className="card review-item">
                   <div className="review-header">
                     <span className={`badge badge-${r.sentiment}`}>
@@ -373,6 +378,23 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
                       <span>{timeAgo(r.published_at)}</span>
                     </div>
                   </div>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
+                    {r.author_name && (
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        👤 {r.author_name}
+                      </span>
+                    )}
+                    {tenantName && (
+                      <span style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+                        🏢 {tenantName}
+                      </span>
+                    )}
+                    {r.monitored_businesses?.name && (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        · {r.monitored_businesses.name}
+                      </span>
+                    )}
+                  </div>
                   {r.body && (
                     <div className="review-body">{r.body}</div>
                   )}
@@ -382,7 +404,8 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
