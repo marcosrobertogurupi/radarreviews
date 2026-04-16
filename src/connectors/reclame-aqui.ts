@@ -112,7 +112,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     // Inicializar browser com configurações de stealth
     browser = await chromium.launch({
       headless: true,
-      executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || chromium.executablePath(),
+      executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || 
+                      process.env.PLAYWRIGHT_CHROMIUM_PATH || 
+                      chromium.executablePath(),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',

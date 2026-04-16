@@ -235,12 +235,16 @@ async function fetchPublic(
       // Se o proxy estiver configurado, redirecionar a chamada
       if (PROXY_URL && PROXY_KEY) {
         const urlObj = new URL(url)
-        const redditPath = urlObj.pathname + (urlObj.pathname.endsWith('/') ? '' : '')
-        
+        const redditPath = urlObj.pathname
         const proxyParams = new URLSearchParams(urlObj.search)
         proxyParams.set('path', redditPath)
+
+        let proxyBase = PROXY_URL.trim()
+        if (!proxyBase.startsWith('http')) {
+          proxyBase = `https://${proxyBase}`
+        }
         
-        finalUrl = `${PROXY_URL}?${proxyParams.toString()}`
+        finalUrl = `${proxyBase}?${proxyParams.toString()}`
         headers['X-Proxy-Key'] = PROXY_KEY
         
         logger.info(`[${CHANNEL}] Usando Proxy Relay`, { redditPath })
