@@ -118,9 +118,12 @@ export default function Tenants() {
       // Atualizar o CNPJ da primeira empresa vinculada para facilitar a vida do usuário
       const tenantBusinesses = businesses[editingTenant.id] || []
       if (tenantBusinesses.length > 0) {
-        await supabase.from('monitored_businesses')
-          .update({ cnpj: editingTenant.cnpj || null })
-          .eq('id', tenantBusinesses[0].id)
+        const firstBusiness = tenantBusinesses[0]
+        if (firstBusiness?.id) {
+          await supabase.from('monitored_businesses')
+            .update({ cnpj: editingTenant.cnpj || null })
+            .eq('id', firstBusiness.id)
+        }
       }
     }
 
