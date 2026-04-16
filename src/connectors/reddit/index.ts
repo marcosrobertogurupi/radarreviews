@@ -37,16 +37,21 @@ import type { RedditPublicConfig, RedditPost, RedditListing } from './types.js'
 const CHANNEL = 'reddit' as const
 const BASE_URL = 'https://www.reddit.com'
 const MAX_PAGES = 3        // limite conservador para modo público (10 req/min)
-const DEFAULT_DELAY_MS = 6_000
+const DEFAULT_DELAY_MS = 10_000
 const DEFAULT_LIMIT = 25
 const DEFAULT_SINCE_DAYS = 30
 
-// User-Agents de navegadores reais para evitar bloqueios do Reddit
+// User-Agents de navegadores reais (expandidos para evitar padrões)
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36'
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/123.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Android 14; Mobile; rv:124.0) Gecko/124.0 Firefox/124.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:124.0) Gecko/20100101 Firefox/124.0',
+  'Mozilla/5.0 (iPad; CPU OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1'
 ]
 
 function getRandomUA(): string {
@@ -221,6 +226,13 @@ async function fetchPublic(
   retries = 3,
   delayMs = DEFAULT_DELAY_MS
 ): Promise<{ posts: RedditPost[]; nextAfter: string | null; error?: string, error_type?: 'transient' | 'fatal' }> {
+  // Jitter aleatório (0 a 5 segundos) para evitar que vários robôs batam no mesmo instante
+  const jitter = Math.floor(Math.random() * 5000)
+  if (jitter > 0) {
+    logger.info(`[${CHANNEL}] Aplicando Jitter de segurança: ${jitter}ms`, { url: url.split('?')[0] })
+    await sleep(jitter)
+  }
+
   for (let attempt = 0; attempt < retries; attempt++) {
     let status = 0
     try {
@@ -273,9 +285,11 @@ async function fetchPublic(
 
       // 429 — rate limit (muito comum em modo público)
       if (status === 429) {
-        // Backoff exponencial agressivo para 429: 6s, 12s, 24s...
-        const delay = Math.pow(2, attempt) * delayMs
-        logger.warn(`[${CHANNEL}] 429 Rate Limit — aguardando ${delay}ms`, { url, attempt })
+        // Backoff exponencial agressivo para 429: 10s, 40s, 160s...
+        const baseDelay = Math.max(delayMs, 10_000)
+        const backoffMultiplier = 4
+        const delay = Math.pow(backoffMultiplier, attempt) * baseDelay
+        logger.warn(`[${CHANNEL}] 429 Rate Limit — aguardando ${delay}ms para retry`, { url, attempt })
         if (attempt < retries - 1) { await sleep(delay); continue }
         return { posts: [], nextAfter: null, error: `429 Rate limit excedido após ${retries} tentativas: ${url}`, error_type: 'transient' }
       }
