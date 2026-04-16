@@ -53,6 +53,10 @@ function getRandomUA() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
 }
 
+// ── Configuração do Proxy (Cloudflare Worker) ───────────────────
+const PROXY_URL = process.env.REDDIT_PROXY_URL
+const PROXY_KEY = process.env.REDDIT_PROXY_SECRET_KEY
+
 // ── Função principal exportada ────────────────────────────────────
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
@@ -217,14 +221,29 @@ async function fetchPublic(
   for (let attempt = 0; attempt < retries; attempt++) {
     let status = 0
     try {
-      const resp = await fetch(url, {
-        headers: {
-          'User-Agent':      getRandomUA(),
-          'Accept':          'application/json',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
-          'Cache-Control':   'no-cache',
-        },
-      })
+      let finalUrl = url
+      const headers: Record<string, string> = {
+        'User-Agent':      getRandomUA(),
+        'Accept':          'application/json',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+        'Cache-Control':   'no-cache',
+      }
+
+      // Se o proxy estiver configurado, redirecionar a chamada
+      if (PROXY_URL && PROXY_KEY) {
+        const urlObj = new URL(url)
+        const redditPath = urlObj.pathname + (urlObj.pathname.endsWith('/') ? '' : '')
+        
+        const proxyParams = new URLSearchParams(urlObj.search)
+        proxyParams.set('path', redditPath)
+        
+        finalUrl = `${PROXY_URL}?${proxyParams.toString()}`
+        headers['X-Proxy-Key'] = PROXY_KEY
+        
+        logger.info(`[${CHANNEL}] Usando Proxy Relay`, { redditPath })
+      }
+
+      const resp = await fetch(finalUrl, { headers })
 
       status = resp.status
 
