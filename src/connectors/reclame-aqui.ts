@@ -109,12 +109,10 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
   let browser = null
   try {
-    // Inicializar browser com configurações de stealth
     browser = await chromium.launch({
       headless: true,
-      executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || 
-                      process.env.PLAYWRIGHT_CHROMIUM_PATH || 
-                      chromium.executablePath(),
+      // No Docker do Playwright, o navegador é detectado automaticamente 
+      // desde que não haja variáveis de ambiente conflitantes.
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
