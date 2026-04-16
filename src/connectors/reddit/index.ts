@@ -120,7 +120,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           }
 
           result.error = error
-          result.error_type = error_type
+          if (error_type) {
+            result.error_type = error_type
+          }
           logger.warn(`[${CHANNEL}] ${error}`, { connector_id: connector.id, url })
           break
         }
