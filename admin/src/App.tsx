@@ -136,7 +136,7 @@ export default function App() {
             <span className="btn-sidebar-label">Sair</span>
           </button>
           <p className="sidebar-footer-text" style={{ marginTop: 4 }}>
-            Reputei · v0.4.0
+            Reputei · v0.4.1
           </p>
         </div>
       </aside>
