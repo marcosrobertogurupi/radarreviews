@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { Radio } from 'lucide-react'
 
+const ADMIN_URL  = process.env.NEXT_PUBLIC_ADMIN_URL  ?? 'https://reputei-admin.vercel.app'
+const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://reputei-portal.vercel.app'
+
 export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-md border-b border-gray-800">
@@ -22,18 +25,18 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <Link href="/" className="text-gray-300 hover:text-white transition-colors">Home</Link>
             <Link href="/parceiros" className="text-gray-300 hover:text-white transition-colors">Parceiros</Link>
-            <Link 
-              href="/portal" 
+            <a
+              href={PORTAL_URL}
               className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full transition-all border border-gray-700 font-medium"
             >
               Portal do Cliente
-            </Link>
-            <Link 
-              href="/admin" 
+            </a>
+            <a
+              href={ADMIN_URL}
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all shadow-lg shadow-indigo-500/20 font-medium"
             >
               Painel Admin
-            </Link>
+            </a>
           </div>
 
           {/* Mobile Menu Placeholder (simplificado para o MVP) */}
