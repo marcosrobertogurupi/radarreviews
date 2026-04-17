@@ -108,35 +108,31 @@ export default function Dashboard() {
     const handler = () => load()
     window.addEventListener('refresh_data', handler)
 
-    // Assinaturas em tempo real
+    // Realtime via WebSocket
     const reviewChannel = supabase
       .channel('portal:dashboard:reviews')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'reviews' },
-        () => {
-          console.log('[Realtime] Mudança em reviews detectada, atualizando dashboard...')
-          load()
-        }
-      )
-      .subscribe()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => {
+        console.log('[Realtime] reviews atualizado')
+        load()
+      })
+      .subscribe((status) => console.log('[Realtime] portal reviews:', status))
 
     const alertChannel = supabase
       .channel('portal:dashboard:alerts')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'alert_events' },
-        () => {
-          console.log('[Realtime] Mudança em alertas detectada, atualizando dashboard...')
-          load()
-        }
-      )
-      .subscribe()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => {
+        console.log('[Realtime] alertas atualizado')
+        load()
+      })
+      .subscribe((status) => console.log('[Realtime] portal alerts:', status))
+
+    // Fallback: polling a cada 30s
+    const poll = setInterval(() => load(), 30_000)
 
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
+      clearInterval(poll)
     }
   }, [])
 

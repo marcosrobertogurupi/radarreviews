@@ -67,7 +67,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const handler = () => loadAll()
     window.addEventListener('refresh_data', handler)
 
-    // Assinaturas em tempo real
+    // Realtime via WebSocket
     const reviewChannel = supabase
       .channel('admin:dashboard:reviews')
       .on(
@@ -78,7 +78,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           loadAll()
         }
       )
-      .subscribe()
+      .subscribe((status) => console.log('[Realtime] reviews status:', status))
 
     const alertChannel = supabase
       .channel('admin:dashboard:alerts')
@@ -90,12 +90,19 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           loadAll()
         }
       )
-      .subscribe()
+      .subscribe((status) => console.log('[Realtime] alerts status:', status))
+
+    // Fallback: polling a cada 30s caso WebSocket não conecte
+    const poll = setInterval(() => {
+      console.log('[Poll] Atualizando dashboard por polling...')
+      loadAll()
+    }, 30_000)
 
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
+      clearInterval(poll)
     }
   }, [selectedTenantId])
 
