@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Teste Supabase Realtime</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    body {
+      font-family: monospace;
+      background: #0a0f1e;
+      color: #f0f4ff;
+      padding: 30px;
+    }
+
+    .status {
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .ok {
+      background: #052e1a;
+      border-left: 4px solid #10b981;
+    }
+
+    .erro {
+      background: #2e0505;
+      border-left: 4px solid #ef4444;
+    }
+
+    .info {
+      background: #0d1a30;
+      border-left: 4px solid #6366f1;
+    }
+
+    h2 {
+      color: #a5b4fc;
+    }
+
+    #log {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>🔌 Diagnóstico Supabase Realtime</h2>
+  <div id="log"></div>
+
+  <script>
+    // ⚠️ Substitua pelos valores reais do seu projeto
+    const SUPABASE_URL = 'https://lkwahbipteiqqzkmfrac.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MTM4MjcsImV4cCI6MjA5MTQ4OTgyN30.tTEK34V1G1aIPDggdzv2lPx07eOOE2_umrRLoXErN6U'
+
+    const log = (msg, tipo = 'info') => {
+      const el = document.createElement('div')
+      el.className = `status ${tipo}`
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+      document.getElementById('log').appendChild(el)
+      console.log(msg)
+    }
+
+    log('Inicializando cliente Supabase...')
+
+    const { createClient } = supabase
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: { params: { eventsPerSecond: 10 } }
+    })
+
+    log('Criando canal de assinatura...')
+
+    const channel = client
+      .channel('test-realtime-diagnose')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'reviews' },
+        (payload) => {
+          log(`✅ EVENTO RECEBIDO! Tipo: ${payload.eventType} | ID: ${payload.new?.id || payload.old?.id}`, 'ok')
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          log('✅ WebSocket CONECTADO! Realtime funcionando.', 'ok')
+        } else if (status === 'CHANNEL_ERROR') {
+          log(`❌ ERRO no canal: ${JSON.stringify(err)}`, 'erro')
+        } else if (status === 'TIMED_OUT') {
+          log('❌ TIMEOUT — WebSocket não respondeu.', 'erro')
+        } else if (status === 'CLOSED') {
+          log('⚠️ Canal FECHADO.', 'erro')
+        } else {
+          log(`Status: ${status}`, 'info')
+        }
+      })
+
+    log('Aguardando resposta do WebSocket (até 15 segundos)...')
+
+    setTimeout(() => {
+      const state = channel.state
+      log(`Estado final do canal após 15s: ${state}`, state === 'joined' ? 'ok' : 'erro')
+    }, 15000)
+  </script>
+</body>
+
+</html>

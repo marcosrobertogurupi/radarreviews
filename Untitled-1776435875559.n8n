@@ -1,11 +1,43 @@
 {
+  "updatedAt": "2026-04-17T14:24:41.697Z",
+  "createdAt": "2026-04-17T14:24:41.697Z",
   "id": "VpNC39G3nt4RUZRC",
   "name": "Untitled-1776435875559",
+  "description": null,
+  "active": false,
+  "isArchived": false,
   "nodes": [],
   "connections": {},
   "settings": {
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "active": false
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "0ddc0de5-e4ae-4c59-8eaa-7d833accb1d1",
+  "activeVersionId": null,
+  "versionCounter": 1,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-17T14:24:41.702Z",
+      "createdAt": "2026-04-17T14:24:41.702Z",
+      "role": "workflow:owner",
+      "workflowId": "VpNC39G3nt4RUZRC",
+      "projectId": "I48mAj1lB79xbEKr",
+      "project": {
+        "updatedAt": "2025-09-16T14:13:45.899Z",
+        "createdAt": "2025-09-16T13:57:29.625Z",
+        "id": "I48mAj1lB79xbEKr",
+        "name": "NetService Software <marcosroberto_gurupi@hotmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "1b726335-ecc8-44d5-84f9-25e7a8705c59"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
 }

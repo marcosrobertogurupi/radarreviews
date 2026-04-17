@@ -67,41 +67,41 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const handler = () => loadAll()
     window.addEventListener('refresh_data', handler)
 
-    // Realtime via WebSocket
-    const reviewChannel = supabase
-      .channel('admin:dashboard:reviews')
+    const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
+    console.log(`[Realtime] Iniciando conexão no canal: ${channelId}`)
+
+    // Realtime via WebSocket - Escutando TUDO para garantir
+    const dashChannel = supabase
+      .channel(channelId)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reviews' },
-        () => {
-          console.log('[Realtime] Mudança em reviews detectada, atualizando dashboard...')
+        (payload) => {
+          console.log('[Realtime] Review alterado!', payload)
           loadAll()
         }
       )
-      .subscribe((status) => console.log('[Realtime] reviews status:', status))
-
-    const alertChannel = supabase
-      .channel('admin:dashboard:alerts')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'alert_events' },
         () => {
-          console.log('[Realtime] Mudança em alertas detectada, atualizando dashboard...')
+          console.log('[Realtime] Alerta alterado!')
           loadAll()
         }
       )
-      .subscribe((status) => console.log('[Realtime] alerts status:', status))
+      .subscribe((status) => {
+        console.log(`[Realtime] Status do canal ${channelId}:`, status)
+      })
 
-    // Fallback: polling a cada 30s caso WebSocket não conecte
+    // Fallback: polling a cada 30s
     const poll = setInterval(() => {
-      console.log('[Poll] Atualizando dashboard por polling...')
+      console.log('[Poll] Atualizando dashboard...')
       loadAll()
     }, 30_000)
 
     return () => {
       window.removeEventListener('refresh_data', handler)
-      supabase.removeChannel(reviewChannel)
-      supabase.removeChannel(alertChannel)
+      supabase.removeChannel(dashChannel)
       clearInterval(poll)
     }
   }, [selectedTenantId])
