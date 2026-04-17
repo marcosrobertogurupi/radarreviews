@@ -211,6 +211,40 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       return result
     }
 
+    // Buscar corpo completo das reclamações que só têm título
+    const fetchBody = (connector.config['fetch_body'] as boolean) ?? true
+    if (fetchBody) {
+      const withoutBody = allComplaints.filter(c => !c.description && c.url && c.url.includes('/reclamacao/'))
+      const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 20
+      const toFetch = withoutBody.slice(0, MAX_BODY_FETCH)
+
+      if (toFetch.length > 0) {
+        logger.info(`[${CHANNEL}] Buscando corpo de ${toFetch.length} reclamações`)
+        for (const complaint of toFetch) {
+          try {
+            await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+            await page.waitForTimeout(2000)
+            const body = await page.evaluate(() => {
+              const nextEl = document.getElementById('__NEXT_DATA__')
+              if (nextEl) {
+                try {
+                  const data = JSON.parse(nextEl.textContent ?? '')
+                  const pp = data?.props?.pageProps
+                  const desc = pp?.complaint?.description ?? pp?.complaint?.text ?? pp?.initialData?.complaint?.description
+                  if (desc) return String(desc)
+                } catch { /* continua */ }
+              }
+              const el = document.querySelector('[class*="complaint-description"], [class*="ComplaintDescription"], [class*="description"], [data-testid*="description"]')
+              return el?.textContent?.trim() ?? null
+            })
+            if (body) complaint.description = body
+          } catch {
+            // Ignora erros individuais de página
+          }
+        }
+      }
+    }
+
     // Normalizar e ingerir
     const normalized = allComplaints.map(c => normalize(c, connector))
     const ingest = await ingestReviews(

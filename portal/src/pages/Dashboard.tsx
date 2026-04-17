@@ -215,10 +215,9 @@ export default function Dashboard() {
                       {r.rating != null && <span className="stars">{ratingStars(r.rating)}</span>}
                     </div>
                   </div>
-                  {r.sentiment_summary ? (
+                  <div className="review-body">{r.body || r.title || '(sem texto)'}</div>
+                  {r.sentiment_summary && (
                     <div className="review-ai-summary">🤖 {r.sentiment_summary}</div>
-                  ) : (
-                    <div className="review-body">{r.body || r.title || '(sem texto)'}</div>
                   )}
                 </div>
               ))}
