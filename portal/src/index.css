@@ -110,7 +110,7 @@ html, body, #root {
 .nav-chevron { opacity: 0 !important; transition: opacity 0.2s ease !important; }
 .sidebar:hover .nav-item.active .nav-chevron { opacity: 0.5 !important; }
 
-.sidebar-footer { padding: 16px 16px 0; border-top: 1px solid var(--border); }
+.sidebar-footer { padding: 16px 16px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .sidebar-footer-text { font-size: 11px; color: var(--text-muted); opacity: 0; transition: opacity 0.2s ease; }
 .sidebar:hover .sidebar-footer-text { opacity: 1; }
 .btn-sidebar-label { opacity: 0; transition: opacity 0.2s ease; display: inline-block; }

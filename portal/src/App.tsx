@@ -147,7 +147,7 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button className="btn-refresh" style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }} onClick={refresh}>
+          <button className="btn-refresh" style={{ width: '100%', justifyContent: 'center' }} onClick={refresh}>
             <RefreshCw size={14} style={{ flexShrink: 0 }} />
             <span className="btn-sidebar-label">Atualizar</span>
           </button>
