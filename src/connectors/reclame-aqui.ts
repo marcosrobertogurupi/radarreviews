@@ -224,20 +224,28 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           try {
             await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
             await page.waitForTimeout(2000)
-            const body = await page.evaluate(() => {
+            const pageData = await page.evaluate(() => {
               const nextEl = document.getElementById('__NEXT_DATA__')
               if (nextEl) {
                 try {
                   const data = JSON.parse(nextEl.textContent ?? '')
                   const pp = data?.props?.pageProps
-                  const desc = pp?.complaint?.description ?? pp?.complaint?.text ?? pp?.initialData?.complaint?.description
-                  if (desc) return String(desc)
+                  const c = pp?.complaint ?? pp?.initialData?.complaint
+                  if (c) return {
+                    body: String(c.description ?? c.text ?? ''),
+                    date: String(c.createdDate ?? c.date ?? c.data ?? ''),
+                  }
                 } catch { /* continua */ }
               }
               const el = document.querySelector('[class*="complaint-description"], [class*="ComplaintDescription"], [class*="description"], [data-testid*="description"]')
-              return el?.textContent?.trim() ?? null
+              const timeEl = document.querySelector('time[datetime], [class*="date"], [class*="Date"]')
+              return {
+                body: el?.textContent?.trim() ?? null,
+                date: timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? null,
+              }
             })
-            if (body) complaint.description = body
+            if (pageData.body) complaint.description = pageData.body
+            if (pageData.date && !complaint.date) complaint.date = pageData.date
           } catch {
             // Ignora erros individuais de página
           }
@@ -428,7 +436,7 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
     connector_id: connector.id,
     channel: CHANNEL,
     external_id,
-    published_at: raw.date ? parseDate(raw.date) : new Date().toISOString(),
+    published_at: (raw.date ? parseDate(raw.date) : null) ?? new Date().toISOString(),
     body: raw.description ?? raw.title,
     title: raw.title,
     sentiment: 'unanalyzed',
@@ -448,19 +456,36 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
 // Helpers
 // -----------------------------------------------------------------------------
 
-function parseDate(dateStr: string): string {
-  // Tentar ISO 8601 padrão
+function parseDate(dateStr: string): string | null {
+  if (!dateStr || dateStr.trim() === '') return null
+
+  // ISO 8601 (ex: "2024-04-17T15:30:00.000Z" ou "2024-04-17")
   try {
     const d = new Date(dateStr)
-    if (!isNaN(d.getTime())) return d.toISOString()
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.toISOString()
   } catch { /* continua */ }
 
-  // Tentar formato brasileiro: DD/MM/YYYY
+  // Formato brasileiro com hora: "17/04/2024 às 15:30" ou "17/04/2024 15:30"
+  const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})[^\d]*(\d{2}):(\d{2})/)
+  if (brDateTime) {
+    const [, day, month, year, hour, min] = brDateTime
+    const d = new Date(`${year}-${month}-${day}T${hour}:${min}:00-03:00`)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  }
+
+  // Formato brasileiro simples: "17/04/2024"
   const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/)
   if (brMatch) {
     const [, day, month, year] = brMatch
-    return new Date(`${year}-${month}-${day}`).toISOString()
+    const d = new Date(`${year}-${month}-${day}T12:00:00-03:00`)
+    if (!isNaN(d.getTime())) return d.toISOString()
   }
 
-  return new Date().toISOString()
+  // Timestamp unix em milissegundos (ex: 1713369600000)
+  if (/^\d{13}$/.test(dateStr.trim())) {
+    const d = new Date(parseInt(dateStr, 10))
+    if (!isNaN(d.getTime())) return d.toISOString()
+  }
+
+  return null
 }
