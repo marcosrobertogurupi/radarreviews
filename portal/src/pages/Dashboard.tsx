@@ -42,14 +42,28 @@ export default function Dashboard() {
 
     const reviews = rvRes.data ?? []
 
-    // KPIs
-    const total         = reviews.length
-    const negCritCount  = reviews.filter(r => r.sentiment === 'negative' || r.sentiment === 'critical').length
-    const critCount     = reviews.filter(r => r.sentiment === 'critical').length
-    const rated         = reviews.filter(r => r.rating != null)
-    const avgRating     = rated.length ? rated.reduce((s, r) => s + (r.rating as number), 0) / rated.length : 0
-    const scored        = reviews.filter(r => r.dissatisfaction_score != null)
-    const avgScore      = scored.length ? scored.reduce((s, r) => s + (r.dissatisfaction_score as number), 0) / scored.length : 0
+    // KPIs com contagem nativa para evitar limites de fetch
+    const [totalRes, negCritRes, critRes] = await Promise.all([
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30).eq('sentiment', 'critical'),
+    ])
+
+    const total = totalRes.count ?? 0
+    const negCritCount = negCritRes.count ?? 0
+    const critCount = critRes.count ?? 0
+
+    // Para média e score, ainda buscamos uma amostra
+    const { data: metricsData } = await supabase
+      .from('reviews')
+      .select('rating, dissatisfaction_score')
+      .gte('published_at', since30)
+      .limit(1000)
+
+    const rated = (metricsData || []).filter(r => r.rating != null)
+    const avgRating = rated.length ? rated.reduce((s, r) => s + (r.rating as number), 0) / rated.length : 0
+    const scored = (metricsData || []).filter(r => r.dissatisfaction_score != null)
+    const avgScore = scored.length ? scored.reduce((s, r) => s + (r.dissatisfaction_score as number), 0) / scored.length : 0
 
     setKpi({
       total,

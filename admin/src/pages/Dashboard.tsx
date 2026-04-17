@@ -112,16 +112,28 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
 
   async function loadKPIs() {
-    let q = supabase.from('reviews').select('sentiment, dissatisfaction_score')
-    if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
-    const { data } = await q
+    // 1. Contagem Total de Reviews
+    let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true })
+    if (selectedTenantId) qTotal = qTotal.eq('tenant_id', selectedTenantId)
+    const { count: totalCount } = await qTotal
 
-    if (!data) return
+    // 2. Contagem de Negativos/Críticos
+    let qNeg = supabase.from('reviews').select('id', { count: 'exact', head: true })
+      .in('sentiment', ['negative', 'critical'])
+    if (selectedTenantId) qNeg = qNeg.eq('tenant_id', selectedTenantId)
+    const { count: negCount } = await qNeg
 
-    const total = data.length
-    const negOrCrit = data.filter(r => r.sentiment === 'negative' || r.sentiment === 'critical').length
-    const critical = data.filter(r => r.sentiment === 'critical').length
-    const scores = data.filter(r => r.dissatisfaction_score != null).map(r => r.dissatisfaction_score as number)
+    // 3. Contagem de Críticos
+    let qCrit = supabase.from('reviews').select('id', { count: 'exact', head: true })
+      .eq('sentiment', 'critical')
+    if (selectedTenantId) qCrit = qCrit.eq('tenant_id', selectedTenantId)
+    const { count: critCount } = await qCrit
+
+    // 4. Score Médio (aqui ainda precisamos de alguns dados, mas podemos limitar)
+    let qScore = supabase.from('reviews').select('dissatisfaction_score').not('dissatisfaction_score', 'is', null)
+    if (selectedTenantId) qScore = qScore.eq('tenant_id', selectedTenantId)
+    const { data: scoresData } = await qScore.limit(1000)
+    const scores = (scoresData || []).map(r => r.dissatisfaction_score as number)
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
 
     const { count: connCount } = await supabase
@@ -135,17 +147,21 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       .is('resolved_at', null)
 
     setKpis({
-      totalReviews: total,
-      negativeRate: total ? Math.round((negOrCrit / total) * 100) : 0,
-      criticalCount: critical,
+      totalReviews: totalCount ?? 0,
+      negativeRate: totalCount ? Math.round(((negCount ?? 0) / totalCount) * 100) : 0,
+      criticalCount: critCount ?? 0,
       activeConnectors: connCount ?? 0,
       pendingAlerts: alertCount ?? 0,
       avgScore: avg,
     })
 
-    // Distribuição de sentimento
+    // 5. Distribuição de sentimento (buscar apenas uma amostra recente para a pizza)
+    let qDist = supabase.from('reviews').select('sentiment')
+    if (selectedTenantId) qDist = qDist.eq('tenant_id', selectedTenantId)
+    const { data: distData } = await qDist.limit(1000)
+    
     const dist: Record<string, number> = {}
-    for (const r of data) {
+    for (const r of distData ?? []) {
       dist[r.sentiment] = (dist[r.sentiment] || 0) + 1
     }
 
