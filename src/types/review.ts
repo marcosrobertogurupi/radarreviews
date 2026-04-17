@@ -25,6 +25,9 @@ export type SentimentTopic =
   | 'cancelamento'
   | 'dados_privados'
   | 'reembolso'
+  | 'prazo'
+  | 'suporte_inexistente'
+  | 'cancelamento_nao_efetivado'
   | 'elogio'
   | 'outro'
 

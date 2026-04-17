@@ -35,7 +35,29 @@ export default function Reviews({ onNavigateCopilot }: Props) {
     setLoading(false)
   }
 
-  useEffect(() => { load(); const h = () => load(); window.addEventListener('refresh_data', h); return () => window.removeEventListener('refresh_data', h) }, [])
+  useEffect(() => { 
+    load()
+    const h = () => load()
+    window.addEventListener('refresh_data', h)
+
+    // Assinatura em tempo real para novos reviews
+    const channel = supabase
+      .channel('portal:reviews')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reviews' },
+        (payload) => {
+          console.log('[Realtime] Novo review detectado no portal:', payload.new)
+          load()
+        }
+      )
+      .subscribe()
+
+    return () => { 
+      window.removeEventListener('refresh_data', h)
+      supabase.removeChannel(channel)
+    } 
+  }, [])
 
   // Aplicar filtros
   useEffect(() => {

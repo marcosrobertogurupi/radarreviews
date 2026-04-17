@@ -61,26 +61,30 @@ export default function Connectors() {
     window.addEventListener('refresh_data', handleRefresh)
     
     // ──────────────────────────────────────────────────────────────
-    // Supabase Realtime - Atualizar status sem F5
+    // Supabase Realtime - Atualizar status, criação e remoção sem F5
     // ──────────────────────────────────────────────────────────────
     const channel = supabase
       .channel('public:channel_connectors')
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'channel_connectors' },
+        { event: '*', schema: 'public', table: 'channel_connectors' },
         (payload) => {
-          console.log('[Realtime] Mudança detectada no conector:', payload.new)
-          const updated = payload.new as Connector
+          console.log('[Realtime] Mudança detectada no conector:', payload.eventType, payload.new || payload.old)
           
-          setConnectors(current => 
-            current.map(c => {
-              if (c.id === updated.id) {
-                // Preservar joins (monitored_businesses) que não vêm no payload do realtime
-                return { ...c, ...updated }
-              }
-              return c
-            })
-          )
+          if (payload.eventType === 'INSERT') {
+            loadAll() // Recarregar tudo para pegar joins
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Connector
+            setConnectors(current => 
+              current.map(c => {
+                if (c.id === updated.id) return { ...c, ...updated }
+                return c
+              })
+            )
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as any).id
+            setConnectors(current => current.filter(c => c.id !== deletedId))
+          }
         }
       )
       .subscribe()

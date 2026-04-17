@@ -81,19 +81,54 @@ Contexto: Review em plataforma verificada de avaliações B2C (Trustpilot).
 - Presença aqui indica problema sistemático (clientes não reclamam por capricho).`.trim(),
 
   reclame_aqui: `
-CONTEXTO CRÍTICO: Reclamação formal no Reclame Aqui.
-- TODO texto aqui é uma reclamação — não existe review positivo nesta plataforma.
-- Severidade base: elevada. O cliente foi ao Reclame Aqui porque não conseguiu resolver antes.
-- Foco na urgência: existe prazo legal para resposta da empresa.
-- Detecte se envolve questões financeiras (cobrança indevida, fraude, não reembolso).
-- Score de insatisfação deve começar em 50 no mínimo; problemas graves a partir de 75.`.trim(),
+CONTEXTO CRÍTICO: Reclamação formal no Reclame Aqui — plataforma de última instância do consumidor brasileiro.
+
+JORNADA DO CLIENTE: Quando chega ao Reclame Aqui, o cliente JÁ tentou resolver antes (SAC, chat, loja) e foi ignorado ou mal atendido. Este é o último recurso antes do Procon/Juizado.
+
+IMPACTO NO NEGÓCIO:
+- A empresa tem prazo para responder (geralmente 7-10 dias). A não-resposta penaliza o RA Index publicamente.
+- O RA Index (reputação calculada pelo Reclame Aqui) é exibido para milhões de consumidores na busca.
+- Uma resposta insatisfatória é tão prejudicial quanto a não-resposta.
+
+CATEGORIAS DE DOR MAIS COMUNS (identifique qual se aplica):
+- FINANCEIRO: cobrança indevida, cobrança após cancelamento, débito não autorizado, não reembolso, estorno negado
+- CANCELAMENTO: plano/assinatura que não cancela, taxa de cancelamento abusiva, prazo de fidelidade irregular
+- PRAZO: produto/serviço não entregue no prazo prometido, instalação que não aconteceu, ativação que não ocorreu
+- SUPORTE: impossível contatar a empresa, bot que não resolve, atendimento que não responde, transferências infinitas
+- DADOS: conta bloqueada indevidamente, dados alterados sem autorização, acesso negado à própria conta
+- FRAUDE: cobrança de serviço não contratado, golpe, clonagem
+
+CALIBRAÇÃO DE SCORE:
+- Problema financeiro (cobrança indevida, não reembolso): mínimo 70
+- Cancelamento não efetivado: mínimo 65
+- Prazo descumprido: mínimo 60
+- Suporte inexistente (meses sem resposta): mínimo 75
+- Fraude / ameaça judicial: mínimo 85
+- Qualquer outra reclamação: mínimo 50`.trim(),
 
   consumidor_gov: `
-CONTEXTO CRÍTICO: Reclamação formal ao Governo Federal (consumidor.gov.br).
-- Canal oficial do Ministério da Justiça. Empresa tem prazo legal para responder.
-- Denota falha grave: cliente foi ao governo após esgotar tentativas privadas.
-- Alto risco legal se não respondido. Alta probabilidade de ação judicial.
-- Score mínimo: 65. Problemas financeiros, de cancelamento ou dados: mínimo 80.`.trim(),
+CONTEXTO CRÍTICO: Reclamação formal ao Governo Federal — consumidor.gov.br (Senacon/Ministério da Justiça).
+
+JORNADA DO CLIENTE: O cliente foi ao governo porque ESGOTOU tentativas com a empresa (SAC, chat, loja, Reclame Aqui). Esta é a escalada máxima antes do Procon ou ação judicial.
+
+PESO LEGAL DA PLATAFORMA:
+- A empresa tem prazo OBRIGATÓRIO de 10 dias para responder. Não responder gera autuação pelo Senacon.
+- O histórico de reclamações é público e consultado por órgãos de defesa do consumidor.
+- Alta probabilidade de ação judicial se não resolvido — especialmente problemas financeiros e dados.
+- A nota dada pelo consumidor ao final (0-10) impacta o índice público da empresa.
+
+ASSUNTOS MAIS GRAVES (identifique qual se aplica):
+- FINANCEIRO: cobrança indevida, débito não autorizado, estorno negado, reembolso não pago, duplicidade de cobrança
+- CANCELAMENTO: plano que não cancela, portabilidade negada, fidelidade irregular, multa abusiva
+- DADOS PESSOAIS: conta bloqueada indevidamente, dados vazados, acesso negado à própria conta, alteração não autorizada
+- QUALIDADE: produto com defeito grave, serviço não prestado, propaganda enganosa
+- ENTREGA/PRAZO: produto não entregue, serviço não ativado, prazo prometido descumprido
+
+CALIBRAÇÃO DE SCORE (mais severa que o Reclame Aqui — este canal é o último recurso):
+- Problema financeiro (cobrança, reembolso, estorno): mínimo 75
+- Dados pessoais, cancelamento não efetivado: mínimo 80
+- Fraude, ameaça judicial, produto com defeito grave: mínimo 85
+- Qualquer outra reclamação: mínimo 65`.trim(),
 
   reddit: `
 Contexto: Menção espontânea em fórum público (Reddit).
@@ -116,6 +151,112 @@ Contexto: Comentário em post público do Instagram.
 - Comentários negativos em posts de produtos são especialmente prejudiciais.
 - Filtragem por palavras-chave pode ter capturado este comentário relevante.
 - Avalie se o sentimento negativo é pontual ou reflete insatisfação sistêmica.`.trim(),
+}
+
+// -----------------------------------------------------------------------------
+// Metadados extras para Reclame Aqui
+// Injetados no prompt além do contexto do canal para calibrar melhor a análise
+// -----------------------------------------------------------------------------
+
+function buildReclameAquiExtra(review: NormalizedReview): string {
+  const parts: string[] = []
+  const tags = review.tags ?? []
+  const fullText = [review.title ?? '', review.body ?? ''].join(' ').toLowerCase()
+
+  // Status da reclamação na plataforma
+  const isResolved = tags.some(t => /resolvido|avaliado/i.test(t))
+  const isInProgress = tags.some(t => /andamento|respondido/i.test(t))
+  const isUnresolved = tags.some(t => /n.o resolvido|n.o respondida|arquivado/i.test(t))
+
+  if (isResolved) {
+    parts.push('STATUS DA RECLAMAÇÃO: Resolvida — a empresa respondeu e o cliente avaliou como resolvido.')
+  } else if (isInProgress) {
+    parts.push('STATUS DA RECLAMAÇÃO: Em andamento — a empresa respondeu mas o caso ainda não foi encerrado.')
+  } else if (isUnresolved) {
+    parts.push('STATUS DA RECLAMAÇÃO: NÃO RESOLVIDA — a empresa não conseguiu resolver o problema. Penaliza gravemente o RA Index.')
+  } else {
+    parts.push('STATUS DA RECLAMAÇÃO: Aguardando resposta da empresa — prazo legal ainda não expirou.')
+  }
+
+  // Detectar menção a valor financeiro
+  if (/r\$\s*\d|reais|\d+,\d{2}|valor de|cobr(aram|ança|ado)|débito|estorno|reembolso/i.test(fullText)) {
+    parts.push('ALERTA FINANCEIRO: A reclamação menciona valor monetário ou cobrança — prioridade elevada.')
+  }
+
+  // Detectar ameaça legal
+  if (/procon|juizado|judicial|processo|anatel|bacen|banco central|ministerio|ministério|senacon/i.test(fullText)) {
+    parts.push('ALERTA LEGAL: O cliente menciona órgão regulador ou ação judicial — risco jurídico imediato.')
+  }
+
+  // Detectar tempo sem resolução
+  const monthsMatch = fullText.match(/(\d+)\s*mes(es)?|(\d+)\s*semana/i)
+  if (monthsMatch) {
+    parts.push(`TEMPO SEM RESOLUÇÃO: O cliente relata problema há ${monthsMatch[0]} — frustração acumulada elevada.`)
+  }
+
+  return parts.length > 0 ? '\n\nMETADADOS DA RECLAMAÇÃO:\n' + parts.join('\n') : ''
+}
+
+// -----------------------------------------------------------------------------
+// Metadados extras para Consumidor.gov
+// Aproveita os campos estruturados do CSV do governo federal:
+//   is_resolved, response_time_days, title (assunto), tags (area/segmento)
+// -----------------------------------------------------------------------------
+
+function buildConsumidorGovExtra(review: NormalizedReview): string {
+  const parts: string[] = []
+  const fullText = [review.title ?? '', review.body ?? ''].join(' ').toLowerCase()
+
+  // Status de resolução (vem diretamente do campo RESOLVIDO do CSV)
+  if (review.is_resolved === true) {
+    parts.push('STATUS: RESOLVIDA — a empresa resolveu o problema. A nota do consumidor reflete a qualidade da resolução.')
+  } else if (review.is_resolved === false) {
+    parts.push('STATUS: NÃO RESOLVIDA — a empresa não conseguiu resolver. Impacta severamente o índice público da empresa no Senacon.')
+  } else {
+    parts.push('STATUS: Aguardando resolução — prazo obrigatório de 10 dias em curso.')
+  }
+
+  // Tempo de resposta (campo estruturado do CSV)
+  if (review.response_time_days !== undefined) {
+    if (review.response_time_days === 0) {
+      parts.push('TEMPO DE RESPOSTA: Respondida no mesmo dia.')
+    } else if (review.response_time_days <= 3) {
+      parts.push(`TEMPO DE RESPOSTA: Respondida em ${review.response_time_days} dia(s) — dentro do prazo.`)
+    } else if (review.response_time_days <= 10) {
+      parts.push(`TEMPO DE RESPOSTA: Respondida em ${review.response_time_days} dias — no limite do prazo legal.`)
+    } else {
+      parts.push(`TEMPO DE RESPOSTA: ${review.response_time_days} dias — PRAZO EXPIRADO. Empresa pode ter sido autuada pelo Senacon.`)
+    }
+  }
+
+  // Assunto classificado pelo Senacon (campo ASSUNTO do CSV — vem no title)
+  if (review.title) {
+    parts.push(`ASSUNTO CLASSIFICADO: "${review.title}" — categoria oficial atribuída pelo Senacon ao registrar a reclamação.`)
+  }
+
+  // Segmento e área (vêm nas tags do CSV)
+  const tags = (review.tags ?? []).filter(t => t && !['consumidor_gov'].includes(t))
+  if (tags.length > 0) {
+    parts.push(`SEGMENTO/ÁREA: ${tags.join(' / ')} — contexto setorial da reclamação.`)
+  }
+
+  // Nota de satisfação (0-10 dada pelo consumidor ao fechar a reclamação)
+  if (review.rating !== undefined) {
+    const ratingLabel = review.rating <= 3 ? 'PÉSSIMO' : review.rating <= 6 ? 'RUIM' : 'REGULAR'
+    parts.push(`NOTA DE SATISFAÇÃO: ${review.rating}/10 (${ratingLabel}) — avaliação do consumidor sobre a resolução.`)
+  }
+
+  // Detectar menção a valor financeiro no texto
+  if (/r\$\s*\d|reais|\d+,\d{2}|cobr(aram|ança|ado)|débito|estorno|reembolso/i.test(fullText)) {
+    parts.push('ALERTA FINANCEIRO: A reclamação menciona valor monetário — risco de ação judicial por dano material.')
+  }
+
+  // Detectar ameaça legal
+  if (/procon|juizado|judicial|processo|anatel|bacen|banco central|senacon/i.test(fullText)) {
+    parts.push('ALERTA LEGAL: O cliente menciona ação judicial ou órgão regulador — risco jurídico imediato e iminente.')
+  }
+
+  return parts.length > 0 ? '\n\nMETADADOS ESTRUTURADOS DO GOVERNO:\n' + parts.join('\n') : ''
 }
 
 // -----------------------------------------------------------------------------
@@ -222,38 +363,69 @@ async function analyzeWithGemini(
   })
 
   const channelContext = CHANNEL_CONTEXT[review.channel]
+  const isReclameAqui = review.channel === 'reclame_aqui'
+  const isConsumidorGov = review.channel === 'consumidor_gov'
   const ratingContext = review.rating !== undefined
     ? `\nNota: ${review.rating}/5 estrelas.`
     : ''
 
+  // Para Reclame Aqui e Consumidor.gov: injeta metadados extras e amplia limite de texto
+  const extraContext = isReclameAqui 
+    ? buildReclameAquiExtra(review) 
+    : (isConsumidorGov ? buildConsumidorGovExtra(review) : '')
+  const textLimit = (isReclameAqui || isConsumidorGov) ? 2000 : 800
+
+  // Seção especializada de instruções apenas para Reclame Aqui
+  const raSpecificSection = isReclameAqui ? `
+
+INSTRUÇÕES ESPECÍFICAS PARA RECLAME AQUI:
+- Identifique a DOR CENTRAL: o que o cliente perdeu (dinheiro, tempo, acesso, serviço)?
+- Identifique o PADRÃO DE FALHA: a empresa cobrou indevidamente? Não cancelou? Não respondeu? Não entregou?
+- O dissatisfaction_score deve refletir: gravidade do problema + tempo sem resolução + impacto financeiro
+- Se há valor monetário mencionado (R$), eleve o score pelo menos 10 pontos
+- Se o cliente menciona meses sem resolução, eleve o score pelo menos 15 pontos
+- Se há ameaça legal (procon, juizado), classifique como "critical" e eleve score para no mínimo 85
+- alert_reason deve ser uma AÇÃO ESPECÍFICA: não use frases genéricas, diga o QUE fazer e POR QUÊ é urgente` : ''
+
+  // Seção especializada de instruções apenas para Consumidor.gov
+  const cgSpecificSection = isConsumidorGov ? `
+
+INSTRUÇÕES ESPECÍFICAS PARA CONSUMIDOR.GOV:
+- Este é um canal OFICIAL DO GOVERNO. A severidade deve ser TRATADA COMO MÁXIMA.
+- Analise os METADADOS ESTRUTURADOS: o tempo de resposta e o status de resolução são fundamentais.
+- Identifique se o problema envolve DIREITOS DO CONSUMIDOR básicos ou FALHA GRAVE de segurança/financeira.
+- O dissatisfaction_score deve ser calibrado de forma severa: este é o último recurso do cliente.
+- Se o prazo de 10 dias expirou, o score deve ser no mínimo 90.
+- alert_reason deve focar no RISCO LEGAL e na necessidade de resolução definitiva para evitar multas Senacon.` : ''
+
   const prompt = `
-Analise o sentimento deste review brasileiro e retorne JSON.
+Analise o sentimento desta reclamação brasileira e retorne JSON.
 
 CONTEXTO DO CANAL:
-${channelContext}${ratingContext}
+${channelContext}${ratingContext}${extraContext}${raSpecificSection}${cgSpecificSection}
 
-REVIEW:
+TEXTO DA RECLAMAÇÃO:
 """
-${text.slice(0, 800)}
+${text.slice(0, textLimit)}
 """
 
 RETORNE APENAS este JSON (nenhum texto extra, nenhum markdown):
-{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["atendimento|produto|cobrança|entrega|app_plataforma|cancelamento|dados_privados|reembolso|elogio|outro"],"summary":"...","alert_reason":"ação recomendada ou null"}
+{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["atendimento|produto|cobrança|entrega|app_plataforma|cancelamento|dados_privados|reembolso|prazo|suporte_inexistente|cancelamento_nao_efetivado|elogio|outro"],"summary":"...","alert_reason":"ação recomendada ou null"}
 
 REGRAS DE SENTIMENTO:
-- critical=ameaça judicial/fraude/não consegue cancelar
-- negative=insatisfeito com problema real
-- neutral=misto/mediano
+- critical=ameaça judicial/fraude/não consegue cancelar/bloqueio indevido de conta
+- negative=insatisfeito com problema real não resolvido
+- neutral=misto/mediano/dúvida
 - positive=satisfeito/elogio
 
 REGRAS DO CAMPO summary (MUITO IMPORTANTE):
 - Máximo 12 palavras, em português, iniciando com letra maiúscula, sem ponto final
-- Descreva o PROBLEMA ESPECÍFICO mencionado: o que aconteceu + produto/serviço envolvido
-- NÃO use palavras genéricas como "cliente insatisfeito", "problema relatado", "reclamação sobre"
+- Descreva o PROBLEMA ESPECÍFICO: o que aconteceu + produto/serviço + consequência
+- NÃO use frases genéricas: "cliente insatisfeito", "problema relatado", "reclamação sobre"
 - NÃO mencione o nome da plataforma (Reclame Aqui, Google, etc.)
-- USE verbos concretos: cobrado, bloqueado, cancelado, não entregue, não reembolsado, etc.
+- USE verbos concretos: cobrado, bloqueado, cancelado, não entregue, não reembolsado, ignorado
 - Exemplos RUINS: "Cliente insatisfeito sobre cobrança", "Problema relatado pelo usuário"
-- Exemplos BONS: "Cobrança indevida após cancelamento sem reembolso", "Cartão bloqueado sem aviso e sem solução", "Internet não ativada após 15 dias de pagamento"
+- Exemplos BONS: "Cobrança indevida após cancelamento sem reembolso", "Cartão bloqueado sem aviso e sem solução", "Internet não ativada 15 dias após pagamento", "Plano não cancela há 3 meses e continua cobrando"
 `.trim()
 
   const response = await model.generateContent(prompt)
@@ -296,13 +468,49 @@ REGRAS DO CAMPO summary (MUITO IMPORTANTE):
     throw new Error(`Sentimento inválido recebido do Gemini: ${String(parsed['sentiment'])}`)
   }
 
+  const topics = Array.isArray(parsed.topics) ? parsed.topics as SentimentTopic[] : ['outro']
+  let rawScore = Math.round(Math.max(0, Math.min(100, Number(parsed.dissatisfaction_score) || 0)))
+
+  // Aplicar floor de score mínimo por canal — a IA pode subestimar a gravidade
+  if (review.channel === 'reclame_aqui') {
+    const financialSet = new Set<string>(['cobrança', 'reembolso'])
+    const urgentSet = new Set<string>(['cancelamento_nao_efetivado', 'suporte_inexistente', 'dados_privados'])
+    const hasFinancial = topics.some(t => financialSet.has(t as string))
+    const hasUrgent = topics.some(t => urgentSet.has(t as string))
+    if (hasFinancial) rawScore = Math.max(rawScore, 70)
+    else if (hasUrgent) rawScore = Math.max(rawScore, 65)
+    else rawScore = Math.max(rawScore, 50)
+  } else if (review.channel === 'consumidor_gov') {
+    rawScore = Math.max(rawScore, 65)
+  }
+
+  // Enriquecer alert_reason para Reclame Aqui e Consumidor.gov com ação específica
+  let alertReason = parsed['alert_reason'] ? String(parsed['alert_reason']) : undefined
+  if (review.channel === 'reclame_aqui' && !alertReason) {
+    alertReason = buildReclameAquiAlertReason(topics, review.tags ?? [])
+  } else if (review.channel === 'consumidor_gov' && !alertReason) {
+    alertReason = buildConsumidorGovAlertReason(topics, review.tags ?? [], review.is_resolved, review.response_time_days)
+  } else if (review.channel === 'reclame_aqui' && alertReason) {
+    // Complementar com urgência do status se não mencionado
+    const tags = review.tags ?? []
+    const isUnresolved = tags.some(t => /n.o resolvido|n.o respondida|arquivado/i.test(t))
+    if (isUnresolved && !alertReason.toLowerCase().includes('índice')) {
+      alertReason += ' RA Index em risco — reclamação marcada como não resolvida.'
+    }
+  } else if (review.channel === 'consumidor_gov' && alertReason) {
+    // Complementar com risco legal se não mencionado
+    if (review.is_resolved === false && !alertReason.toLowerCase().includes('legal')) {
+      alertReason += ' Risco legal elevado — reclamação oficial marcada como não resolvida.'
+    }
+  }
+
   return {
     sentiment: parsed.sentiment as SentimentType,
-    dissatisfaction_score: Math.round(Math.max(0, Math.min(100, Number(parsed.dissatisfaction_score) || 0))),
+    dissatisfaction_score: rawScore,
     confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.8)),
-    topics: Array.isArray(parsed.topics) ? parsed.topics as SentimentTopic[] : ['outro'],
+    topics: topics as SentimentTopic[],
     summary: String(parsed.summary ?? ''),
-    ...(parsed['alert_reason'] ? { alert_reason: String(parsed['alert_reason']) } : {}),
+    ...(alertReason ? { alert_reason: alertReason } : {}),
     method: 'gemini',
   }
 }
@@ -329,11 +537,15 @@ const NEGATIVE_KEYWORDS: Array<[RegExp, number, SentimentTopic]> = [
   [/at[ea]ndimento (p[ée]ssimo|horrível|demor|ruim)/i, 2, 'atendimento'],
   [/n[ãa]o recebi|n[ãa]o chegou|extravio/i, 2, 'entrega'],
   [/reembolso|estorno (negado|n[ãa]o|recusado)/i, 2, 'reembolso'],
-  // Leve (peso 1)
+  // Léve (peso 1)
   [/decepcionante|decepcionado|insatisfeito|frustr/i, 1, 'outro'],
   [/demorou|demorada|demora|lento/i, 1, 'atendimento'],
   [/cuidado|aten[çc][ãa]o|cuidado|evitem/i, 1, 'outro'],
   [/ruim|mal|não gostei/i, 1, 'outro'],
+  // Novos tópicos específicos de Reclame Aqui
+  [/prazo|prometido|não ativou|não foi instalado|não foi entregue no prazo/i, 2, 'prazo'],
+  [/não consigo falar|não atende|ninguém responde|robô|bot|transfer[eê]ncia|fila de espera/i, 2, 'suporte_inexistente'],
+  [/não cancela|não foi cancelado|tenta cancelar|impossível cancelar|recusa cancelamento/i, 3, 'cancelamento_nao_efetivado'],
 ]
 
 const POSITIVE_KEYWORDS: RegExp[] = [
@@ -390,7 +602,6 @@ function analyzeByHeuristic(review: NormalizedReview, text: string): SentimentRe
     method: 'heuristic',
   }
 }
-
 // -----------------------------------------------------------------------------
 // Análise apenas por rating (camada 3 — mínima)
 // -----------------------------------------------------------------------------
@@ -487,7 +698,10 @@ function buildHeuristicSummary(
   const topicNames: Record<string, string> = {
     atendimento: 'atendimento', cobrança: 'cobrança', produto: 'produto',
     entrega: 'entrega', app_plataforma: 'app/plataforma', cancelamento: 'cancelamento',
-    dados_privados: 'dados pessoais', reembolso: 'reembolso', elogio: 'elogio', outro: '',
+    dados_privados: 'dados pessoais', reembolso: 'reembolso',
+    prazo: 'prazo não cumprido', suporte_inexistente: 'suporte inacessível',
+    cancelamento_nao_efetivado: 'cancelamento não efetivado',
+    elogio: 'elogio', outro: '',
   }
 
   if (sentiment === 'positive') return `Cliente satisfeito em ${channelName[channel]}.`
@@ -502,11 +716,15 @@ function buildHeuristicSummary(
 }
 
 function buildAlertReason(topics: SentimentTopic[], channel: SourceChannel): string {
-  const urgentTopics = ['cobrança', 'dados_privados', 'cancelamento', 'reembolso']
+  const urgentTopics = ['cobrança', 'dados_privados', 'cancelamento', 'reembolso', 'cancelamento_nao_efetivado']
   const hasUrgent = topics.some(t => urgentTopics.includes(t))
 
-  if (channel === 'reclame_aqui' || channel === 'consumidor_gov') {
-    return `Nova reclamação formal em ${channel === 'reclame_aqui' ? 'Reclame Aqui' : 'Consumidor.gov'}. Responda dentro do prazo para evitar penalidade.`
+  if (channel === 'reclame_aqui') {
+    return buildReclameAquiAlertReason(topics, [])
+  }
+
+  if (channel === 'consumidor_gov') {
+    return 'Reclamação formal ao governo — risco legal. Responda dentro do prazo obrigatório e resolva o problema documentado.'
   }
 
   if (hasUrgent) {
@@ -515,6 +733,75 @@ function buildAlertReason(topics: SentimentTopic[], channel: SourceChannel): str
   }
 
   return `Review negativo detectado em ${topics.join(', ')}. Avalie se requer resposta pública.`
+}
+
+/**
+ * Gera um alert_reason específico para reclações do Reclame Aqui.
+ * Baseado no tipo de problema detectado e no status atual da reclamação.
+ */
+function buildReclameAquiAlertReason(topics: string[], tags: string[]): string {
+  const isUnresolved = tags.some(t => /n.o resolvido|n.o respondida|arquivado/i.test(t))
+  const isInProgress = tags.some(t => /andamento|respondido/i.test(t))
+
+  // Prioridade: tipo de problema
+  if (topics.includes('cancelamento_nao_efetivado')) {
+    return 'URGENTE: Cliente não consegue cancelar — cobranças continuam. Cancele imediatamente e confirme por escrito no RA.'
+  }
+  if (topics.includes('dados_privados')) {
+    return 'URGENTE: Problema envolvendo dados pessoais ou acesso à conta — risco jurídico imediato. Acione equipe de segurança.'
+  }
+  if (topics.includes('cobrança') || topics.includes('reembolso')) {
+    const suffix = isUnresolved ? ' RA Index já penalizado — resolva e peça reavaliação.' : ''
+    return `Problema financeiro relatado — verifique cobrança e processe reembolso se devido.${suffix}`
+  }
+  if (topics.includes('suporte_inexistente')) {
+    return 'Cliente sem acesso ao suporte — frustração máxima. Responda com canal de contato direto e nome do responsável.'
+  }
+  if (topics.includes('prazo')) {
+    return 'Prazo prometido não cumprido — confirme nova data e ofereça compensação se aplicável.'
+  }
+
+  // Status como fallback
+  if (isUnresolved) {
+    return 'Reclamação marcada como NÃO RESOLVIDA — RA Index em risco. Retome contato e resolva ou justifique.'
+  }
+  if (isInProgress) {
+    return 'Reclamação em andamento — prossiga com a resolução e peça avaliação do cliente ao concluir.'
+  }
+
+  return 'Nova reclamação no Reclame Aqui — responda dentro do prazo (7-10 dias) para manter o RA Index.'
+}
+
+/**
+ * Gera um alert_reason específico para reclamações do Consumidor.gov.
+ * Baseado no tipo de problema e no status oficial do governo.
+ */
+function buildConsumidorGovAlertReason(
+  topics: string[],
+  tags: string[],
+  isResolved?: boolean,
+  responseTime?: number
+): string {
+  const isUnresolved = isResolved === false
+  const overdue = (responseTime ?? 0) > 10
+
+  if (topics.includes('dados_privados')) {
+    return 'CRÍTICO: Violação de dados ou acesso em canal oficial do governo. Acione jurídico e compliance imediatamente.'
+  }
+  if (topics.includes('cancelamento_nao_efetivado')) {
+    return 'URGENTE: Falha no cancelamento reportada ao governo. Risco de multa Senacon por descumprimento de norma setorial.'
+  }
+  if (topics.includes('cobrança') || topics.includes('reembolso')) {
+    return `Problema financeiro em canal governamental. Verifique se houve erro sistêmico e processe o estorno com prioridade.${isUnresolved ? ' Caso marcado como não resolvido.' : ''}`
+  }
+  if (overdue) {
+    return 'ALERTA: Prazo legal de 10 dias expirado nesta reclamação. Risco de autuação administrativa imediata.'
+  }
+  if (isUnresolved) {
+    return 'Reclamação oficial NÃO RESOLVIDA. Verifique se cabe proposta de acordo para evitar judicialização.'
+  }
+
+  return 'Nova reclamação no Consumidor.gov — canal oficial com prazo de 10 dias. Requer resposta técnica detalhada.'
 }
 
 // Exportar para uso nos testes

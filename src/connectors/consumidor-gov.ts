@@ -188,6 +188,24 @@ function normalize(row: any[], connector: ChannelConnector, cnpj: string): Norma
     raw_data: { csv_row: row } as any
   }
 
+  // Enriquecer tags com sinais de urgência detectados no texto
+  const fullText = [(row[COLS.ASSUNTO] || ''), (descricao || '')].join(' ')
+  const extraTags: string[] = []
+
+  if (/r\$\s*\d|cobr(aram|ança|ado)|d[eé]bito|estorno|reembolso|\d+,\d{2}/i.test(fullText)) {
+    extraTags.push('financeiro')
+  }
+  if (/procon|juizado|judicial|processo|anatel|bacen|banco central|senacon/i.test(fullText)) {
+    extraTags.push('ameaca_legal')
+  }
+  if (/n[aã]o (foi |)respondid|sem retorno|n[aã]o (me |)atend|ignorad|sem resposta/i.test(fullText)) {
+    extraTags.push('sem_retorno')
+  }
+
+  if (extraTags.length > 0) {
+    review.tags = [...(review.tags ?? []), ...extraTags]
+  }
+
   if (rating !== undefined && !isNaN(rating)) {
     review.rating = rating
   }

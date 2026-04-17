@@ -166,7 +166,29 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     loadReviews()
     const handleRefresh = () => loadReviews()
     window.addEventListener('refresh_data', handleRefresh)
-    return () => window.removeEventListener('refresh_data', handleRefresh)
+
+    // Assinatura em tempo real para novos reviews
+    const channel = supabase
+      .channel('public:reviews_admin')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reviews' },
+        (payload) => {
+          console.log('[Realtime] Novo review detectado:', payload.new)
+          // Se o review for do assinante selecionado (ou se nenhum estiver selecionado)
+          const newReview = payload.new as Review
+          if (!selectedTenantId || newReview.tenant_id === selectedTenantId) {
+            // Recarregar para garantir que joins e ordem estejam corretos
+            loadReviews()
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('refresh_data', handleRefresh)
+      supabase.removeChannel(channel)
+    }
   }, [sentiment, channel, selectedTenantId])
 
   useEffect(() => {

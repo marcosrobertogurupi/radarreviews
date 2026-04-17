@@ -98,6 +98,13 @@ export const systemNotifications = {
       return
     }
 
+    // Buscar contatos do Administrador do Sistema na tabela global
+    const { data: settings } = await supabase
+      .from('system_settings')
+      .select('admin_whatsapp, admin_email')
+      .eq('id', 'global')
+      .single()
+
     const payload = {
       event: 'system_health_alert',
       status,
@@ -107,7 +114,10 @@ export const systemNotifications = {
       message,
       is_auth_error: isAuth,
       timestamp: new Date().toISOString(),
-      admin_url: `https://reputei-admin.vercel.app/connectors/${connector.id}` // Link direto para o painel
+      admin_url: `https://reputei-admin.vercel.app/connectors/${connector.id}`,
+      // Dados para o n8n saber para quem disparar (Fluxo 2)
+      admin_whatsapp: settings?.admin_whatsapp || '',
+      admin_email: settings?.admin_email || ''
     }
 
     try {

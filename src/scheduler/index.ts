@@ -19,8 +19,11 @@ import { systemNotifications } from '../lib/system-notifications.js'
 import type { ChannelConnector } from '../types/connector.js'
 import type { JobResult } from '../types/connector.js'
 
+import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
+
 // Intervalo de verificação do loop (ms) — verificar a cada 60 segundos
 const POLL_INTERVAL_MS = 60_000
+const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -84,12 +87,23 @@ export async function startScheduler(): Promise<void> {
 
   // Executar imediatamente na inicialização, depois em loop
   await runOnce()
+  await checkCriticalAlerts().catch(err => {
+    logger.error('[scheduler] Erro ao verificar alertas críticos na inicialização', { error: err })
+  })
 
+  // Loop de Sincronização (Robôs)
   setInterval(async () => {
     await runOnce().catch(err => {
       logger.error('[scheduler] Erro no ciclo de polling', { error: err })
     })
   }, POLL_INTERVAL_MS)
+
+  // Loop de Alertas (Assinantes) — Rodar a cada 1 hora
+  setInterval(async () => {
+    await checkCriticalAlerts().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de alertas críticos', { error: err })
+    })
+  }, ALERT_CHECK_INTERVAL_MS)
 }
 
 /**

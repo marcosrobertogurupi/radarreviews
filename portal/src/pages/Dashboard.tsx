@@ -93,7 +93,37 @@ export default function Dashboard() {
     load()
     const handler = () => load()
     window.addEventListener('refresh_data', handler)
-    return () => window.removeEventListener('refresh_data', handler)
+
+    // Assinaturas em tempo real
+    const reviewChannel = supabase
+      .channel('portal:dashboard:reviews')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reviews' },
+        () => {
+          console.log('[Realtime] Mudança em reviews detectada, atualizando dashboard...')
+          load()
+        }
+      )
+      .subscribe()
+
+    const alertChannel = supabase
+      .channel('portal:dashboard:alerts')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'alert_events' },
+        () => {
+          console.log('[Realtime] Mudança em alertas detectada, atualizando dashboard...')
+          load()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('refresh_data', handler)
+      supabase.removeChannel(reviewChannel)
+      supabase.removeChannel(alertChannel)
+    }
   }, [])
 
   if (loading) return (

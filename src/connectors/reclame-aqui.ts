@@ -445,6 +445,25 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
     raw_data: raw as unknown as Record<string, unknown>,
   }
 
+  // Enriquecer tags com sinais de urgência detectados no texto
+  // Estes tags são consumidos por buildReclameAquiExtra() no motor de sentimento
+  const fullText = [raw.title, raw.description ?? ''].join(' ')
+  const extraTags: string[] = []
+
+  if (/r\$\s*\d|cobr(aram|ança|ado)|d[eé]bito|estorno|reembolso|\d+,\d{2}/i.test(fullText)) {
+    extraTags.push('financeiro')
+  }
+  if (/procon|juizado|judicial|processo|anatel|bacen|banco central|senacon/i.test(fullText)) {
+    extraTags.push('ameaca_legal')
+  }
+  if (/n[aã]o (foi |)respondid|sem retorno|n[aã]o (me |)atend|ignorad|sem resposta/i.test(fullText)) {
+    extraTags.push('sem_retorno')
+  }
+
+  if (extraTags.length > 0) {
+    review.tags = [...(review.tags ?? []), ...extraTags]
+  }
+
   if (rating !== undefined)  review.rating = rating
   if (raw.author)            review.author_name = raw.author
   if (raw.score !== undefined) review.upvotes = Math.round(raw.score)

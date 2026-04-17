@@ -1,0 +1,88 @@
+{
+  "name": "Reputei – Alerta Técnico (Saúde do Sistema)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reputei-system-health",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
+      },
+      "id": "b1c2d3e4-0001-0001-0001-000000000001",
+      "name": "Webhook Técnico",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "reputei-system-health"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "cond-whats",
+              "leftValue": "={{ $json.admin_whatsapp }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "b1c2d3e4-0002-0002-0002-000000000002",
+      "name": "Tem Whats?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://netservice.uazapi.com/send/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "token", "value": "fbe5bfbb-226a-47a2-9d1d-6b657933318c" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $('Webhook Técnico').item.json.admin_whatsapp.replace(/\\D/g, '') }}\",\n  \"message\": \"🤖 *Reputei - Alerta Técnico*\\n\\n❌ *Falha no robô:* {{ $('Webhook Técnico').item.json.channel.toUpperCase() }}\\n📝 *Erro:* {{ $('Webhook Técnico').item.json.message }}\\n🔑 *Tipo:* {{ $('Webhook Técnico').item.json.is_auth_error ? '🚨 AUTENTICAÇÃO' : '🔌 CONEXÃO' }}\\n\\n🔗 *Painel Admin:* {{ $('Webhook Técnico').item.json.admin_url }}\\n\\n_Reputei System Health_\"\n}",
+        "options": {}
+      },
+      "id": "b1c2d3e4-0003-0003-0003-000000000003",
+      "name": "Whats Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "suporte@reputei.com.br",
+        "toEmail": "={{ $('Webhook Técnico').item.json.admin_email }}",
+        "subject": "=🚨 Falha no Robô: {{ $('Webhook Técnico').item.json.channel }}",
+        "emailType": "html",
+        "message": "=<div style=\"font-family: sans-serif; padding: 20px;\">\n  <h2 style=\"color: #dc2626;\">Reputei - Alerta de Sistema</h2>\n  <p>Ocorreu uma falha na sincronização de um canal:</p>\n  <ul>\n    <li><b>Canal:</b> {{ $('Webhook Técnico').item.json.channel }}</li>\n    <li><b>Status:</b> {{ $('Webhook Técnico').item.json.status }}</li>\n    <li><b>Mensagem:</b> {{ $('Webhook Técnico').item.json.message }}</li>\n  </ul>\n  <p><a href=\"{{ $('Webhook Técnico').item.json.admin_url }}\" style=\"background: #4f46e5; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px;\">Ver no Painel Admin</a></p>\n</div>"
+      },
+      "id": "b1c2d3e4-0004-0004-0004-000000000004",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Técnico": { "main": [[{ "node": "Tem Whats?", "type": "main", "index": 0 }]] },
+    "Tem Whats?": { 
+      "main": [
+        [{ "node": "Whats Admin", "type": "main", "index": 0 }],
+        [{ "node": "Email Admin", "type": "main", "index": 0 }] 
+      ] 
+    }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "system-v1",
+  "id": "reputei-system-001"
+}

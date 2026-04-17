@@ -64,8 +64,39 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
   useEffect(() => {
     loadAll()
-    window.addEventListener('refresh_data', loadAll)
-    return () => window.removeEventListener('refresh_data', loadAll)
+    const handler = () => loadAll()
+    window.addEventListener('refresh_data', handler)
+
+    // Assinaturas em tempo real
+    const reviewChannel = supabase
+      .channel('admin:dashboard:reviews')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reviews' },
+        () => {
+          console.log('[Realtime] Mudança em reviews detectada, atualizando dashboard...')
+          loadAll()
+        }
+      )
+      .subscribe()
+
+    const alertChannel = supabase
+      .channel('admin:dashboard:alerts')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'alert_events' },
+        () => {
+          console.log('[Realtime] Mudança em alertas detectada, atualizando dashboard...')
+          loadAll()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.removeEventListener('refresh_data', handler)
+      supabase.removeChannel(reviewChannel)
+      supabase.removeChannel(alertChannel)
+    }
   }, [selectedTenantId])
 
   async function loadAll() {

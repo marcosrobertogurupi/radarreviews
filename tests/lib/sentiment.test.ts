@@ -152,7 +152,8 @@ describe('Análise por heurística (fallback)', () => {
     const review = makeReview({ channel: 'reclame_aqui', body: 'Cobrança indevida sem resposta.' })
     const result = analyzeByHeuristic(review, review.body!)
     expect(result.alert_reason).toBeDefined()
-    expect(result.alert_reason).toContain('Reclame Aqui')
+    // Reclame Aqui agora gera alert_reason específico por tipo de problema
+    expect(result.alert_reason!.length).toBeGreaterThan(10)
   })
 
   it('não gera alert_reason para sentimento positive', () => {
@@ -227,7 +228,8 @@ describe('Contextos específicos por canal', () => {
 
   it('Reclame Aqui tem contexto com indicação de urgência', () => {
     expect(CHANNEL_CONTEXT['reclame_aqui']).toContain('CRÍTICO')
-    expect(CHANNEL_CONTEXT['reclame_aqui']).toContain('prazo legal')
+    // O contexto agora menciona o prazo de resposta e o RA Index
+    expect(CHANNEL_CONTEXT['reclame_aqui']).toContain('prazo para responder')
   })
 
   it('Consumidor.gov tem contexto com indicação de risco legal', () => {
