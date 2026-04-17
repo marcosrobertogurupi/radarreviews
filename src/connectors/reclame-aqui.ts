@@ -277,6 +277,10 @@ async function extractFromNextData(page: import('playwright-core').Page, company
 
     return complaintsRaw
       .map((c: Record<string, unknown>) => {
+        const url = String(c['complaintUrl'] ?? c['url'] ?? `https://www.reclameaqui.com.br/empresa/${companySlug}`)
+        // Rejeita reclamações cujo URL pertence a outra empresa
+        if (url.includes('/empresa/') && !url.includes(`/empresa/${companySlug}/`)) return null
+
         const parsed = ReclameAquiComplaintSchema.safeParse({
           id: String(c['id'] ?? c['_id'] ?? ''),
           title: String(c['title'] ?? c['titulo'] ?? ''),
@@ -284,7 +288,7 @@ async function extractFromNextData(page: import('playwright-core').Page, company
           status: String(c['status'] ?? ''),
           author: String(c['demanderName'] ?? c['author'] ?? c['nome'] ?? ''),
           date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? ''),
-          url: String(c['complaintUrl'] ?? c['url'] ?? `https://www.reclameaqui.com.br/empresa/${companySlug}`),
+          url,
           isResolved: Boolean(c['evaluated'] ?? false),
         })
         return parsed.success ? parsed.data : null
@@ -305,32 +309,45 @@ async function extractFromDom(page: import('playwright-core').Page, companySlug:
     const listExists = await page.locator('a[href*="/reclamacao/"]').count()
     if (listExists === 0) return []
 
-    const complaints = await page.evaluate((baseUrl: string) => {
+    const complaints = await page.evaluate((args: { baseUrl: string; slug: string }) => {
+      const { slug } = args
       const links = Array.from(document.querySelectorAll('a[href*="/reclamacao/"]'))
 
-      return links.map(link => {
-        const container = link.closest('li, article, div[class*="item"], div[class*="Item"]') ?? link
+      return links
+        // Filtra apenas reclamações do container principal da lista desta empresa
+        // Exclui links de sidebar, empresas sugeridas e seções relacionadas
+        .filter(link => {
+          const href = (link as HTMLAnchorElement).href
+          // O link deve pertencer ao contexto desta empresa:
+          // formato /empresa/{slug}/reclamacao/... ou conter o slug no path
+          const inCompanyContext = href.includes(`/empresa/${slug}/`) ||
+            !!link.closest('[class*="complain-list"], [class*="ComplainList"], main, [role="main"]')
+          const inSidebar = !!link.closest('aside, [class*="sidebar"], [class*="Sidebar"], [class*="related"], [class*="Related"], [class*="suggest"], [class*="Suggest"]')
+          return inCompanyContext && !inSidebar
+        })
+        .map(link => {
+          const container = link.closest('li, article, div[class*="item"], div[class*="Item"]') ?? link
 
-        const titleEl = container.querySelector('h4, h3, [class*="title"], [class*="Title"]')
-        const dateEl = container.querySelector('time, [class*="date"], [class*="Date"]')
-        const statusEl = container.querySelector('[class*="status"], [class*="Status"], [class*="badge"]')
+          const titleEl = container.querySelector('h4, h3, [class*="title"], [class*="Title"]')
+          const dateEl = container.querySelector('time, [class*="date"], [class*="Date"]')
+          const statusEl = container.querySelector('[class*="status"], [class*="Status"], [class*="badge"]')
 
-        const href = (link as HTMLAnchorElement).href
-        // Extrair o ID/slug da URL: /reclamacao/empresa/titulo-XXXXXXXX/
-        const urlParts = href.split('/')
-        const lastPart = urlParts[urlParts.length - 2] ?? ''
-        const idMatch = lastPart.match(/-([A-Z0-9]+)$/)
-        const id = idMatch ? idMatch[1] : lastPart
+          const href = (link as HTMLAnchorElement).href
+          // Extrair o ID/slug da URL: /reclamacao/empresa/titulo-XXXXXXXX/
+          const urlParts = href.split('/')
+          const lastPart = urlParts[urlParts.length - 2] ?? ''
+          const idMatch = lastPart.match(/-([A-Z0-9]+)$/)
+          const id = idMatch ? idMatch[1] : lastPart
 
-        return {
-          id,
-          title: titleEl?.textContent?.trim() ?? '',
-          date: dateEl?.getAttribute('datetime') ?? dateEl?.textContent?.trim() ?? '',
-          status: statusEl?.textContent?.trim() ?? '',
-          url: href,
-        }
-      }).filter(c => c.title.length > 0)
-    }, BASE_URL)
+          return {
+            id,
+            title: titleEl?.textContent?.trim() ?? '',
+            date: dateEl?.getAttribute('datetime') ?? dateEl?.textContent?.trim() ?? '',
+            status: statusEl?.textContent?.trim() ?? '',
+            url: href,
+          }
+        }).filter(c => c.title.length > 0)
+    }, { baseUrl: BASE_URL, slug: companySlug })
 
     return complaints
       .map(c => {
