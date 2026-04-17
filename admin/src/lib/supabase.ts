@@ -9,7 +9,13 @@ if (!supabaseUrl || !supabaseKey) {
   console.info('Por favor, adicione VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY nas Settings do Vercel.')
 }
 
-export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder')
+export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder', {
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+})
 
 // ──────────────────────────────────────────────────────────────
 // Tipos de dados vindos do Supabase

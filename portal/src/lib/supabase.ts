@@ -14,7 +14,13 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 // Usa anon key — RLS garante isolamento automático por tenant autenticado
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+})
 
 // ──────────────────────────────────────────────────────────────
 // Tipos de dados
