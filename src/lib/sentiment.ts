@@ -410,7 +410,22 @@ ${text.slice(0, textLimit)}
 """
 
 RETORNE APENAS este JSON (nenhum texto extra, nenhum markdown):
-{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["atendimento|produto|cobrança|entrega|app_plataforma|cancelamento|dados_privados|reembolso|prazo|suporte_inexistente|cancelamento_nao_efetivado|elogio|outro"],"summary":"...","alert_reason":"ação recomendada ou null"}
+{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["topic1","topic2"],"summary":"...","alert_reason":"ação recomendada ou null"}
+
+TÓPICOS DISPONÍVEIS (escolha 1 a 3, os mais específicos):
+- atendimento = mau atendimento, ignorado, sem resposta, funcionário rude, manutenção não feita, suporte precário
+- produto = produto defeituoso, qualidade ruim do produto/serviço entregue, estrutura física deteriorada
+- cobrança = cobrança indevida, valor errado, taxa abusiva, propaganda enganosa de preço, divergência de valores
+- entrega = produto/serviço não entregue, entrega errada, atraso na entrega
+- app_plataforma = app travando, site fora do ar, plataforma com erro, problema técnico no sistema
+- cancelamento = não consegue cancelar, cancelamento negado, impossível encerrar contrato/reserva
+- dados_privados = vazamento de dados, uso indevido de informações pessoais
+- reembolso = dinheiro não devolvido, estorno negado, crédito não recebido após cancelamento ou devolução
+- prazo = demora excessiva, promessa de prazo não cumprida, aguardando resolução há muito tempo
+- suporte_inexistente = impossível falar com suporte, nenhum canal de atendimento funciona, empresa não responde
+- cancelamento_nao_efetivado = solicitou cancelamento mas continua sendo cobrado ou contrato ativo
+- elogio = experiência positiva, satisfeito, recomenda, agradece
+- outro = APENAS quando NENHUM dos tópicos acima se encaixa — evite ao máximo
 
 REGRAS DE SENTIMENTO:
 - critical=ameaça judicial/fraude/não consegue cancelar/bloqueio indevido de conta
