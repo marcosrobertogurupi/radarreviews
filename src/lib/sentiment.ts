@@ -443,7 +443,16 @@ function buildReviewText(review: NormalizedReview): string {
   const parts: string[] = []
   if (review.title) parts.push(review.title)
   if (review.body) parts.push(review.body)
-  return parts.join('\n\n').trim()
+  return stripHtml(parts.join('\n\n').trim())
+}
+
+function stripHtml(text: string): string {
+  return text
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function scoreToSentiment(score: number): SentimentType {
@@ -475,13 +484,20 @@ function buildHeuristicSummary(
     instagram: 'Instagram',
   }
 
-  if (sentiment === 'positive') return `Cliente satisfeito em ${channelName[channel]}.`
-  if (sentiment === 'neutral') return `Feedback misto detectado em ${channelName[channel]}.`
+  const topicNames: Record<string, string> = {
+    atendimento: 'atendimento', cobrança: 'cobrança', produto: 'produto',
+    entrega: 'entrega', app_plataforma: 'app/plataforma', cancelamento: 'cancelamento',
+    dados_privados: 'dados pessoais', reembolso: 'reembolso', elogio: 'elogio', outro: '',
+  }
 
-  const topicLabel = topics.length > 0
-    ? ` sobre ${topics.slice(0, 2).join(' e ')}`
+  if (sentiment === 'positive') return `Cliente satisfeito em ${channelName[channel]}.`
+  if (sentiment === 'neutral') return `Feedback misto em ${channelName[channel]}.`
+
+  const meaningfulTopics = topics.map(t => topicNames[t] ?? '').filter(Boolean)
+  const topicLabel = meaningfulTopics.length > 0
+    ? ` — problema de ${meaningfulTopics.slice(0, 2).join(' e ')}`
     : ''
-  const prefix = sentiment === 'critical' ? 'Cliente muito insatisfeito' : 'Cliente insatisfeito'
+  const prefix = sentiment === 'critical' ? 'Reclamação grave' : 'Reclamação'
   return `${prefix}${topicLabel} em ${channelName[channel]}.`
 }
 
