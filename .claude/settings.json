@@ -11,7 +11,16 @@
       "Bash(cmd /c \"npm install -g vercel @railway/cli 2>&1\")",
       "Bash(powershell -Command \"npm install -g vercel @railway/cli\")",
       "Bash(npx --yes vercel --version)",
-      "Bash(npx --yes vercel login)"
+      "Bash(npx --yes vercel login)",
+      "Bash(xargs grep *)",
+      "Bash(curl -s -X POST https://lkwahbipteiqqzkmfrac.supabase.co/rest/v1/rpc/exec_sql -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'Content-Type: application/json' -w '\\\\nHTTP:%{http_code}')",
+      "Bash(supabase --version)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(ls railway.json railway.toml Dockerfile nixpacks.toml)",
+      "Bash(cat railway.json)",
+      "Bash(cat railway.toml)"
     ]
   }
 }

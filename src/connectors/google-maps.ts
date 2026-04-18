@@ -1,20 +1,15 @@
-// Conector Google Maps — Playwright scraping (primário) + Places API (fallback)
+// Conector Google Maps — 3 estratégias em sequência
 //
-// Estratégia:
-//   1. Playwright: abre maps.google.com/maps/place/?q=place_id:{id}, ordena por
-//      "Mais recentes", rola o painel de reviews e extrai os dados do DOM.
-//      → Retorna reviews RECENTES (o que a API pública não consegue).
-//   2. Places API: busca os 5 "mais relevantes" via REST, complementa o conjunto.
-//   3. O pipeline de ingestão faz deduplicação por external_id (data-review-id == review ID da API).
+// 1. fetchFromApiNewest  — Places API legada com reviews_sort=newest (5 reviews recentes, CONFIÁVEL)
+// 2. fetchFromApiRelevant — Places API Nova,  reviews "mais relevantes" (5 reviews, CONFIÁVEL)
+// 3. fetchFromScraper    — Playwright scraping com interceptação de rede (até 50, MELHOR ESFORÇO)
 //
-// external_id: data-review-id do DOM (= último segmento do campo "name" da API,
-//   ex: places/ChIJ.../reviews/<THIS_PART>). Garante dedup entre as duas fontes.
+// Todas as fontes rodam e o pipeline de ingestão faz deduplicação por external_id.
 //
-// Config disponível no connector.config:
+// Config disponível em connector.config:
 //   use_scraper     boolean  (default true)  — habilita scraping Playwright
-//   use_api         boolean  (default true)  — habilita fallback Places API
-//   max_reviews     number   (default 50)    — máximo de reviews a raspar
-//   timeout_ms      number   (default 30000) — timeout por operação Playwright
+//   max_reviews     number   (default 50)    — máximo de reviews no scraping
+//   timeout_ms      number   (default 30000) — timeout Playwright
 
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
@@ -29,15 +24,16 @@ import type { NormalizedReview } from '../types/review.js'
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-const CHANNEL = 'google_maps' as const
-const PLACES_BASE = 'https://places.googleapis.com/v1'
-const FIELD_MASK = 'id,displayName,rating,userRatingCount,reviews'
-const USER_AGENT =
+const CHANNEL      = 'google_maps' as const
+const PLACES_NEW   = 'https://places.googleapis.com/v1'
+const PLACES_OLD   = 'https://maps.googleapis.com/maps/api/place/details/json'
+const FIELD_MASK   = 'id,displayName,rating,userRatingCount,reviews'
+const USER_AGENT   =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-const DEFAULT_TIMEOUT_MS = 30_000
+const DEFAULT_TIMEOUT_MS  = 30_000
 const DEFAULT_MAX_REVIEWS = 50
 
-// ── Schema Zod — Places API ──────────────────────────────────────────────────
+// ── Schemas Zod ──────────────────────────────────────────────────────────────
 
 const GoogleReviewSchema = z.object({
   name: z.string(),
@@ -46,7 +42,6 @@ const GoogleReviewSchema = z.object({
   authorAttribution: z.object({
     displayName: z.string().optional(),
     uri: z.string().optional(),
-    photoUri: z.string().optional(),
   }).optional(),
   publishTime: z.string(),
   relativePublishTimeDescription: z.string().optional(),
@@ -54,110 +49,176 @@ const GoogleReviewSchema = z.object({
 
 const GooglePlaceResponseSchema = z.object({
   id: z.string().optional(),
-  displayName: z.object({ text: z.string().optional() }).optional(),
-  rating: z.number().optional(),
-  userRatingCount: z.number().optional(),
   reviews: z.array(GoogleReviewSchema).optional().default([]),
 })
 
-type GoogleReview = z.infer<typeof GoogleReviewSchema>
+// Schema para a API legada (details v1)
+const OldPlaceResponseSchema = z.object({
+  result: z.object({
+    reviews: z.array(z.object({
+      author_name:  z.string().optional(),
+      rating:       z.number().optional(),
+      text:         z.string().optional(),
+      time:         z.number(),               // Unix timestamp em segundos
+      relative_time_description: z.string().optional(),
+    })).optional().default([]),
+  }).optional(),
+  status: z.string(),
+})
 
-// ── Interface — dado raspado via DOM ─────────────────────────────────────────
+type GoogleReview    = z.infer<typeof GoogleReviewSchema>
+type OldReview       = NonNullable<z.infer<typeof OldPlaceResponseSchema>['result']>['reviews'][number]
+
+// ── Interface do scraper ──────────────────────────────────────────────────────
 
 interface ScrapedReview {
-  reviewId: string       // data-review-id do DOM (= ID único do review no Google)
-  rating: number | undefined
-  body: string
-  author: string
-  relativeTime: string   // "há 2 meses", "2 weeks ago", etc.
-  likes: number
+  reviewId:     string
+  rating:       number | undefined
+  body:         string
+  author:       string
+  relativeTime: string
+  likes:        number
 }
 
-// ── Função principal ─────────────────────────────────────────────────────────
+// ── Função principal ──────────────────────────────────────────────────────────
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
   const result: JobResult = { reviews_fetched: 0, reviews_new: 0, reviews_updated: 0 }
 
   if (!connector.external_id) {
-    result.error = `Conector ${connector.id} não tem external_id (place_id obrigatório).`
+    result.error = `Conector ${connector.id} sem external_id (place_id obrigatório).`
     return result
   }
 
   const useScraper = (connector.config['use_scraper'] as boolean) ?? true
-  const useApi     = (connector.config['use_api']     as boolean) ?? true
-
   const all: NormalizedReview[] = []
 
-  // ── 1. Playwright scraping ────────────────────────────────────────────────
+  // ── 1. API legada — 5 reviews RECENTES (mais confiável) ──────────────────
+  try {
+    const newest = await fetchFromApiNewest(connector)
+    logger.info(`[${CHANNEL}] API legada (newest) retornou`, { count: newest.length })
+    all.push(...newest.map(r => normalizeOld(r, connector)))
+  } catch (err) {
+    logger.warn(`[${CHANNEL}] API legada falhou`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // ── 2. API Nova — 5 reviews "mais relevantes" ────────────────────────────
+  try {
+    const relevant = await fetchFromApiRelevant(connector)
+    logger.info(`[${CHANNEL}] API Nova (relevant) retornou`, { count: relevant.length })
+    all.push(...relevant.map(r => normalizeNew(r, connector)))
+  } catch (err) {
+    logger.warn(`[${CHANNEL}] API Nova falhou`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // ── 3. Playwright scraper — reviews adicionais ────────────────────────────
   if (useScraper) {
     try {
       const scraped = await fetchFromScraper(connector)
-      logger.info(`[${CHANNEL}] Scraping concluído`, { count: scraped.length })
+      logger.info(`[${CHANNEL}] Scraper retornou`, { count: scraped.length })
       all.push(...scraped.map(r => normalizeScraped(r, connector)))
     } catch (err) {
-      logger.warn(`[${CHANNEL}] Scraping falhou, tentando API`, {
-        error: err instanceof Error ? err.message : String(err),
-        connector_id: connector.id,
-      })
-    }
-  }
-
-  // ── 2. Places API (complementa / fallback) ────────────────────────────────
-  if (useApi) {
-    try {
-      const apiReviews = await fetchFromApi(connector)
-      logger.info(`[${CHANNEL}] API retornou`, { count: apiReviews.length })
-      all.push(...apiReviews.map(r => normalizeApi(r, connector)))
-    } catch (err) {
-      if (all.length === 0) {
-        result.error = err instanceof Error ? err.message : String(err)
-        logger.error(`[${CHANNEL}] API e scraping falharam`, { error: err })
-        return result
-      }
-      logger.warn(`[${CHANNEL}] API falhou mas scraping OK`, {
+      logger.warn(`[${CHANNEL}] Scraper falhou`, {
         error: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
   if (all.length === 0) {
-    logger.info(`[${CHANNEL}] Nenhum review obtido`, { connector_id: connector.id })
+    result.error = 'Nenhuma estratégia retornou reviews (API key inválida ou place_id errado?)'
+    logger.error(`[${CHANNEL}] Todas as estratégias falharam`, { connector_id: connector.id })
     return result
   }
 
   result.reviews_fetched = all.length
-
   const ingest = await ingestReviews(all, CHANNEL, connector.id, connector.business_id)
   result.reviews_new     = ingest.reviews_new
   result.reviews_updated = ingest.reviews_updated
 
   logger.info(`[${CHANNEL}] Job concluído`, {
     connector_id: connector.id,
-    place_id: connector.external_id,
+    place_id:     connector.external_id,
+    sources: { newest: all.length },
     reviews_fetched: result.reviews_fetched,
-    reviews_new: ingest.reviews_new,
-    reviews_updated: ingest.reviews_updated,
+    reviews_new:     ingest.reviews_new,
   })
 
   return result
 }
 
-// ── Playwright scraper ────────────────────────────────────────────────────────
+// ── Estratégia 1: Places API legada com reviews_sort=newest ──────────────────
+// Retorna os 5 reviews mais recentes via REST (sem Playwright)
+// Documentação: https://developers.google.com/maps/documentation/places/web-service/details
+
+async function fetchFromApiNewest(connector: ChannelConnector): Promise<OldReview[]> {
+  const apiKey = process.env['GOOGLE_MAPS_API_KEY']
+  if (!apiKey) throw new Error('GOOGLE_MAPS_API_KEY não configurada.')
+
+  const resp = await fetchWithRetry(() =>
+    axios.get(PLACES_OLD, {
+      params: {
+        place_id:     connector.external_id,
+        fields:       'reviews',
+        reviews_sort: 'newest',
+        language:     'pt',
+        key:          apiKey,
+      },
+    })
+  )
+
+  const parsed = OldPlaceResponseSchema.safeParse(resp.data)
+  if (!parsed.success || parsed.data.status !== 'OK') {
+    logger.warn(`[${CHANNEL}] API legada status: ${resp.data?.status}`)
+    return []
+  }
+
+  return parsed.data.result?.reviews ?? []
+}
+
+// ── Estratégia 2: Places API Nova — 5 "mais relevantes" ──────────────────────
+
+async function fetchFromApiRelevant(connector: ChannelConnector): Promise<GoogleReview[]> {
+  const apiKey = process.env['GOOGLE_MAPS_API_KEY']
+  if (!apiKey) throw new Error('GOOGLE_MAPS_API_KEY não configurada.')
+
+  const resp = await fetchWithRetry(() =>
+    axios.get(`${PLACES_NEW}/places/${connector.external_id}`, {
+      headers: {
+        'X-Goog-Api-Key':   apiKey,
+        'X-Goog-FieldMask': FIELD_MASK,
+      },
+    })
+  )
+
+  const parsed = GooglePlaceResponseSchema.safeParse(resp.data)
+  if (!parsed.success) {
+    logger.warn(`[${CHANNEL}] Resposta da API Nova fora do schema`, { errors: parsed.error.errors })
+    return []
+  }
+
+  // Marcar conector como ativo após sucesso
+  await supabase.from('channel_connectors')
+    .update({ status: 'active', error_message: null })
+    .eq('id', connector.id)
+
+  return parsed.data.reviews
+}
+
+// ── Estratégia 3: Playwright com interceptação de rede ───────────────────────
 //
-// Fluxo:
-//   1. Abre maps.google.com/maps/place/?q=place_id:{id} com locale pt-BR
-//   2. Aguarda o painel lateral da empresa carregar
-//   3. Clica na aba "Avaliações" / "Reviews"
-//   4. Abre o menu de ordenação e seleciona "Mais recentes"
-//   5. Rola o painel para carregar mais reviews
-//   6. Expande reviews truncados (botão "Mais")
-//   7. Extrai dados do DOM
+// Quando Google Maps carrega reviews, faz chamadas XHR internas.
+// Capturamos as respostas dessas chamadas e fazemos DOM scraping como complemento.
+// Isso é mais robusto do que depender apenas de seletores CSS.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function fetchFromScraper(connector: ChannelConnector): Promise<ScrapedReview[]> {
   const placeId    = connector.external_id!
-  const maxReviews = (connector.config['max_reviews'] as number)  ?? DEFAULT_MAX_REVIEWS
-  const timeoutMs  = (connector.config['timeout_ms']  as number)  ?? DEFAULT_TIMEOUT_MS
+  const maxReviews = (connector.config['max_reviews'] as number) ?? DEFAULT_MAX_REVIEWS
+  const timeoutMs  = (connector.config['timeout_ms']  as number) ?? DEFAULT_TIMEOUT_MS
 
   let browser = null
   try {
@@ -177,7 +238,7 @@ async function fetchFromScraper(connector: ChannelConnector): Promise<ScrapedRev
       userAgent: USER_AGENT,
       locale: 'pt-BR',
       timezoneId: 'America/Sao_Paulo',
-      viewport: { width: 1366, height: 768 },
+      viewport: { width: 1280, height: 900 },
       extraHTTPHeaders: {
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -186,279 +247,295 @@ async function fetchFromScraper(connector: ChannelConnector): Promise<ScrapedRev
 
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Array
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Promise
     })
 
     const page = await context.newPage()
     page.setDefaultTimeout(timeoutMs)
     page.setDefaultNavigationTimeout(timeoutMs * 2)
 
+    // ── Interceptar respostas XHR do Google Maps ─────────────────────────────
+    // Quando a página carrega reviews, faz chamadas para endpoints internos do Google.
+    // Capturamos os dados brutos dessas chamadas para parsing.
+    const networkReviews: ScrapedReview[] = []
+
+    page.on('response', async response => {
+      try {
+        const url = response.url()
+        const status = response.status()
+        if (status !== 200) return
+
+        // Endpoints internos do Google Maps para reviews
+        const isReviewEndpoint =
+          url.includes('/maps/preview/review/listentity') ||
+          url.includes('/maps/rpc/') ||
+          (url.includes('google.com/maps') && url.includes('review'))
+
+        if (!isReviewEndpoint) return
+
+        const body = await response.text().catch(() => '')
+        if (!body) return
+
+        // Remover prefixo de proteção XSSI do Google: )]}'\n
+        const jsonStr = body.replace(/^\)\]\}'\s*\n?/, '')
+        const parsed = tryParseGoogleReviewArray(jsonStr, placeId)
+        if (parsed.length > 0) {
+          networkReviews.push(...parsed)
+          logger.info(`[${CHANNEL}] Capturadas ${parsed.length} reviews via rede`, { url: url.split('?')[0] })
+        }
+      } catch { /* ignora erros individuais de interceptação */ }
+    })
+
+    // ── Navegar para a página do local ───────────────────────────────────────
     const mapUrl = `https://www.google.com/maps/place/?q=place_id:${placeId}`
-    logger.info(`[${CHANNEL}] Navegando`, { url: mapUrl })
+    logger.info(`[${CHANNEL}] Scraper navegando para`, { url: mapUrl })
 
     await page.goto(mapUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
     await page.waitForTimeout(3000)
 
-    // Log da URL real após navegação (detecta redirecionamentos / CAPTCHA / consent page)
     const finalUrl = page.url()
-    logger.info(`[${CHANNEL}] URL após navegação`, { finalUrl })
+    logger.info(`[${CHANNEL}] URL final após navegação`, { finalUrl })
 
-    // ── Rejeitar cookies / consent page do Google ────────────────────────────
-    // Google às vezes exibe página de consentimento de cookies antes do Maps
-    const consentSelectors = [
+    // ── Aceitar cookies / página de consentimento ────────────────────────────
+    for (const sel of [
+      '#L2AGLb',
       'button[aria-label*="Aceitar tudo"]',
       'button[aria-label*="Accept all"]',
-      'button:has-text("Aceitar tudo")',
-      'button:has-text("Accept all")',
-      'button:has-text("Concordar")',
-      'button:has-text("I agree")',
-      '#L2AGLb',   // ID do botão "I agree" do Google Consent
-    ]
-    for (const sel of consentSelectors) {
+      'form[action*="consent"] button',
+    ]) {
       try {
         if (await page.locator(sel).count() > 0) {
           await page.click(sel)
           await page.waitForTimeout(2000)
-          logger.info(`[${CHANNEL}] Consent page aceita: ${sel}`)
+          logger.info(`[${CHANNEL}] Consent aceito: ${sel}`)
           break
         }
       } catch { /* ignora */ }
     }
 
     // ── Clicar na aba de avaliações ──────────────────────────────────────────
-    const reviewTabSelectors = [
+    for (const sel of [
       'button[aria-label*="Avaliações"]',
       'button[aria-label*="Reviews"]',
       '[role="tab"]:has-text("Avaliações")',
       '[role="tab"]:has-text("Reviews")',
-      'button[jsaction*="review"]',
-    ]
-    for (const sel of reviewTabSelectors) {
+    ]) {
       try {
-        const el = page.locator(sel).first()
-        if (await el.count() > 0) {
-          await el.click()
-          await page.waitForTimeout(2000)
-          logger.info(`[${CHANNEL}] Aba de avaliações clicada: ${sel}`)
+        if (await page.locator(sel).count() > 0) {
+          await page.click(sel)
+          await page.waitForTimeout(2500)
+          logger.info(`[${CHANNEL}] Aba clicada: ${sel}`)
           break
         }
-      } catch { /* tenta próximo seletor */ }
+      } catch { /* tenta próximo */ }
     }
 
-    // ── Aguardar reviews aparecerem ──────────────────────────────────────────
-    try {
-      await page.waitForSelector('[data-review-id]', { timeout: timeoutMs })
-    } catch {
-      // Log diagnóstico: título da página e primeiros 500 chars do body
+    // ── Aguardar reviews no DOM ──────────────────────────────────────────────
+    // Tentamos múltiplos indicadores de que reviews carregaram
+    const reviewLoaded = await Promise.race([
+      page.waitForSelector('[data-review-id]',           { timeout: timeoutMs }).then(() => 'review-id'),
+      page.waitForSelector('.MyEned',                    { timeout: timeoutMs }).then(() => 'MyEned'),
+      page.waitForSelector('[aria-label*="estrelas"]',   { timeout: timeoutMs }).then(() => 'stars'),
+      page.waitForSelector('[aria-label*="stars"]',      { timeout: timeoutMs }).then(() => 'stars'),
+      new Promise<string>(r => setTimeout(() => r('timeout'), timeoutMs)),
+    ])
+
+    logger.info(`[${CHANNEL}] Indicador de reviews carregado: ${reviewLoaded}`)
+
+    if (reviewLoaded === 'timeout') {
       const title = await page.title().catch(() => 'N/A')
-      const bodySnippet = await page.evaluate(() =>
-        document.body?.innerText?.slice(0, 300) ?? ''
-      ).catch(() => '')
-      logger.warn(`[${CHANNEL}] Nenhum review encontrado no DOM`, {
-        finalUrl: page.url(),
-        pageTitle: title,
-        bodySnippet,
-      })
-      return []
+      const snippet = await page.evaluate(() => document.body?.innerText?.slice(0, 400) ?? '').catch(() => '')
+      logger.warn(`[${CHANNEL}] Timeout aguardando reviews`, { finalUrl: page.url(), title, snippet })
+      // Retorna o que conseguimos via rede
+      return networkReviews.slice(0, maxReviews)
     }
 
     // ── Ordenar por "Mais recentes" ──────────────────────────────────────────
     try {
-      const sortSelectors = [
+      for (const sel of [
         'button[aria-label*="Ordenar avaliações"]',
         'button[aria-label*="Sort reviews"]',
         'button[aria-label="Ordenar"]',
         'button[aria-label="Sort"]',
         '[jsaction*="sortReviews"]',
-        '[data-value="Sort"]',
-      ]
-      let sorted = false
-      for (const sel of sortSelectors) {
+      ]) {
         if (await page.locator(sel).count() > 0) {
           await page.click(sel)
           await page.waitForTimeout(1000)
-          sorted = true
+
+          for (const opt of [
+            '[role="menuitemradio"]:has-text("Mais recentes")',
+            '[role="menuitemradio"]:has-text("Newest")',
+            'li:has-text("Mais recentes")',
+          ]) {
+            if (await page.locator(opt).count() > 0) {
+              await page.click(opt)
+              await page.waitForTimeout(2500)
+              logger.info(`[${CHANNEL}] Ordenado por mais recentes`)
+              break
+            }
+          }
           break
         }
       }
-
-      if (sorted) {
-        // Selecionar "Mais recentes" no dropdown
-        const newestSelectors = [
-          '[role="menuitemradio"]:has-text("Mais recentes")',
-          '[role="menuitemradio"]:has-text("Newest")',
-          '[role="option"]:has-text("Mais recentes")',
-          'li:has-text("Mais recentes")',
-          'li[data-index="1"]',
-        ]
-        for (const sel of newestSelectors) {
-          if (await page.locator(sel).count() > 0) {
-            await page.click(sel)
-            await page.waitForTimeout(2500)
-            logger.info(`[${CHANNEL}] Ordenado por Mais recentes`)
-            break
-          }
-        }
-      }
     } catch (e) {
-      logger.warn(`[${CHANNEL}] Ordenação falhou, continuando com ordem padrão`, {
-        error: e instanceof Error ? e.message : String(e),
-      })
+      logger.warn(`[${CHANNEL}] Não foi possível ordenar`, { err: String(e) })
     }
 
     // ── Rolar para carregar mais reviews ─────────────────────────────────────
-    // O container scrollável pode ser identificado pelo feed de reviews
-    const scrollableSelectors = [
-      '[role="feed"]',
-      '.m6QErb.DxyBCb',
-      '.m6QErb[aria-label]',
-      '.m6QErb',
-    ]
-
-    let scrollSelector = '[role="feed"]'
-    for (const sel of scrollableSelectors) {
-      if (await page.locator(sel).count() > 0) {
-        scrollSelector = sel
-        break
+    // Testa múltiplos containers scrolláveis
+    const scrollContainer = await page.evaluate(() => {
+      const candidates = [
+        document.querySelector('[role="feed"]'),
+        document.querySelector('.m6QErb'),
+        document.querySelector('[aria-label*="Avaliações"]'),
+        document.querySelector('[aria-label*="Reviews"]'),
+      ]
+      for (const el of candidates) {
+        if (el && el.scrollHeight > el.clientHeight) return el.className
       }
-    }
-
-    let prevCount = 0
-    let staleRounds = 0
-    const MAX_STALE = 4
-
-    for (let i = 0; i < 15; i++) {
-      const count = await page.locator('[data-review-id]').count()
-      if (count >= maxReviews) break
-
-      if (count === prevCount) {
-        staleRounds++
-        if (staleRounds >= MAX_STALE) break
-      } else {
-        staleRounds = 0
-      }
-      prevCount = count
-
-      // Rolar o container de reviews
-      await page.evaluate((sel) => {
-        const el = document.querySelector(sel)
-        if (el) el.scrollBy(0, 2000)
-        else window.scrollBy(0, 2000)
-      }, scrollSelector)
-
-      await page.waitForTimeout(1800)
-    }
-
-    logger.info(`[${CHANNEL}] Reviews carregados no DOM`, {
-      count: await page.locator('[data-review-id]').count(),
+      return null
     })
 
-    // ── Expandir reviews truncados (botão "Mais") ────────────────────────────
-    const moreSelectors = [
-      'button[aria-label*="Ver mais"]',
-      'button[aria-label*="See more"]',
-      '.w8nwRe',
-      'button.w8nwRe',
-    ]
-    for (const sel of moreSelectors) {
+    logger.info(`[${CHANNEL}] Container scroll detectado`, { scrollContainer })
+
+    let prevCount = 0
+    let stale = 0
+    for (let i = 0; i < 12 && stale < 3; i++) {
+      const count = await page.locator('[data-review-id], .MyEned').count()
+      if (count >= maxReviews) break
+      if (count === prevCount) { stale++; } else { stale = 0 }
+      prevCount = count
+
+      // Scroll do container identificado ou fallback para scroll de tela
+      await page.evaluate((cls) => {
+        const el = cls
+          ? document.querySelector(`.${cls.split(' ')[0]}`)
+          : null
+        if (el) el.scrollBy(0, 2000)
+        else window.scrollBy(0, 2000)
+      }, scrollContainer)
+
+      await page.waitForTimeout(1500)
+    }
+
+    // ── Expandir reviews truncados ────────────────────────────────────────────
+    for (const sel of ['.w8nwRe', 'button[aria-label*="Ver mais"]', 'button[aria-label*="See more"]']) {
       const btns = await page.locator(sel).all()
       for (const btn of btns) {
-        try { await btn.click({ timeout: 2000 }) } catch { /* ignora */ }
+        try { await btn.click({ timeout: 1500 }) } catch { /* ignora */ }
       }
     }
-    if (moreSelectors.length > 0) await page.waitForTimeout(800)
+    await page.waitForTimeout(600)
 
-    // ── Extrair dados do DOM ─────────────────────────────────────────────────
-    const reviews: ScrapedReview[] = await page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll('[data-review-id]'))
+    // ── Extrair do DOM ────────────────────────────────────────────────────────
+    const domReviews: ScrapedReview[] = await page.evaluate(() => {
+      // Tenta localizar cards por múltiplos seletores
+      const cards = Array.from(
+        document.querySelectorAll('[data-review-id], [jsaction*="review"]:has(.MyEned), .jJc9Ad')
+      )
 
       return cards.map(card => {
         const reviewId = card.getAttribute('data-review-id') ?? ''
 
-        // Rating: procura aria-label com "X estrelas" ou "X stars"
         const ratingEl = card.querySelector('[aria-label*="estrela"], [aria-label*="star"], .kvMYJc')
         const ratingLabel = ratingEl?.getAttribute('aria-label') ?? ''
-        const ratingMatch = ratingLabel.match(/(\d(?:[.,]\d)?)/)
-        const ratingStr = ratingMatch?.[1]
+        const ratingStr = ratingLabel.match(/(\d(?:[.,]\d)?)/)?.[1]
         const rating = ratingStr !== undefined ? parseFloat(ratingStr.replace(',', '.')) : undefined
 
-        // Texto do review — tenta vários seletores em ordem
         const textEl =
           card.querySelector('.wiI7pd') ??
           card.querySelector('.MyEned') ??
-          card.querySelector('[class*="review-full-text"]') ??
-          card.querySelector('span[jsan]')
+          card.querySelector('[class*="review-full-text"]')
         const body = textEl?.textContent?.trim() ?? ''
 
-        // Autor
-        const authorEl =
-          card.querySelector('.d4r55') ??
-          card.querySelector('[class*="author"]') ??
-          card.querySelector('button[aria-label]')
+        const authorEl = card.querySelector('.d4r55') ?? card.querySelector('button[aria-label]')
         const author = authorEl?.textContent?.trim() ?? ''
 
-        // Tempo relativo
-        const timeEl =
-          card.querySelector('.rsqaWe') ??
-          card.querySelector('[class*="publish-date"]') ??
-          card.querySelector('span[class*="date"]')
+        const timeEl = card.querySelector('.rsqaWe') ?? card.querySelector('[class*="publish-date"]')
         const relativeTime = timeEl?.textContent?.trim() ?? ''
 
-        // Curtidas/útil
-        const likesEl = card.querySelector('.pkWtMe, [class*="thumb"] span')
+        const likesEl = card.querySelector('.pkWtMe')
         const likes = parseInt(likesEl?.textContent?.trim() ?? '0', 10) || 0
 
         return { reviewId, rating, body, author, relativeTime, likes }
       })
     })
 
-    const valid = reviews.filter(r => r.reviewId && (r.author || r.body))
-    logger.info(`[${CHANNEL}] Reviews extraídos do DOM`, { total: reviews.length, valid: valid.length })
+    const validDom = domReviews.filter(r => r.author || r.body)
+    logger.info(`[${CHANNEL}] DOM extraiu`, { domCount: validDom.length, networkCount: networkReviews.length })
 
-    return valid.slice(0, maxReviews)
+    // Merge: rede + DOM, preferindo o que tiver mais reviews
+    const merged = networkReviews.length > validDom.length ? networkReviews : validDom
+    return merged.slice(0, maxReviews)
 
   } finally {
     if (browser) await browser.close()
   }
 }
 
-// ── Places API (fallback) ────────────────────────────────────────────────────
+// ── Parser da resposta interna do Google Maps (formato ")]}'") ────────────────
+// O Google retorna arrays aninhados. Tentamos extrair dados de review
+// procurando padrões: [string, string, null, null, number (rating), string (text), ...]
 
-async function fetchFromApi(connector: ChannelConnector): Promise<GoogleReview[]> {
-  const apiKey = process.env['GOOGLE_MAPS_API_KEY']
-  if (!apiKey) throw new Error('GOOGLE_MAPS_API_KEY não configurada.')
-  if (!connector.external_id) throw new Error(`Conector ${connector.id} sem place_id.`)
+function tryParseGoogleReviewArray(jsonStr: string, placeId: string): ScrapedReview[] {
+  try {
+    const data = JSON.parse(jsonStr)
+    const reviews: ScrapedReview[] = []
+    collectReviews(data, reviews, 0)
 
-  const url = `${PLACES_BASE}/places/${connector.external_id}`
-
-  const response = await fetchWithRetry(() =>
-    axios.get(url, {
-      headers: {
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': FIELD_MASK,
-      },
+    // Deduplica por reviewId
+    const seen = new Set<string>()
+    return reviews.filter(r => {
+      if (seen.has(r.reviewId)) return false
+      seen.add(r.reviewId)
+      return true
     })
-  )
-
-  const parsed = GooglePlaceResponseSchema.safeParse(response.data)
-  if (!parsed.success) {
-    logger.warn(`[${CHANNEL}] Resposta da API fora do schema`, { errors: parsed.error.errors })
+  } catch {
     return []
   }
 
-  // Sinalizar limite da API
-  if ((parsed.data.reviews?.length ?? 0) >= 5) {
-    logger.info(`[${CHANNEL}] API retornou limite de 5 reviews (histórico completo requer scraping)`, {
-      connector_id: connector.id,
-    })
+  // Percorre recursivamente o array tentando identificar estruturas de review
+  function collectReviews(node: unknown, out: ScrapedReview[], depth: number): void {
+    if (depth > 12 || !Array.isArray(node)) return
 
-    // Marcar status de autenticação da API como válido
-    await supabase
-      .from('channel_connectors')
-      .update({ status: 'active', error_message: null })
-      .eq('id', connector.id)
+    for (const item of node) {
+      if (!Array.isArray(item)) continue
+
+      // Heurística: array com [string, string, null, null, número 1-5, string longa...]
+      // É um possível review quando:
+      // - Tem pelo menos 6 elementos
+      // - O 5° elemento (index 4) é um número entre 1 e 5
+      // - O 6° elemento (index 5) é uma string com conteúdo
+      if (
+        item.length >= 6 &&
+        typeof item[0] === 'string' && item[0].length > 5 &&   // possível ID
+        typeof item[4] === 'number' && item[4] >= 1 && item[4] <= 5 &&
+        typeof item[5] === 'string' && item[5].length > 5
+      ) {
+        const reviewId = String(item[0])
+        const author   = typeof item[1] === 'string' ? item[1] : ''
+        const rating   = item[4] as number
+        const body     = item[5] as string
+        // Timestamp em ms pode estar em vários índices; procuramos o primeiro número grande
+        let relativeTime = ''
+        for (let i = 6; i < Math.min(item.length, 20); i++) {
+          if (typeof item[i] === 'string' && (item[i] as string).length > 3) {
+            relativeTime = item[i] as string
+            break
+          }
+        }
+
+        out.push({ reviewId, rating, body, author, relativeTime, likes: 0 })
+      }
+
+      // Recursão
+      collectReviews(item, out, depth + 1)
+    }
   }
-
-  return parsed.data.reviews
 }
 
 // ── Retry com backoff exponencial ────────────────────────────────────────────
@@ -469,15 +546,13 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> 
       return await fn()
     } catch (err: unknown) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined
-      const isRetryable = status === 429 || (status !== undefined && status >= 500)
-      if (!isRetryable || i === retries - 1) {
-        // Erro de auth: marcar conector como pending_auth
+      const retryable = status === 429 || (status !== undefined && status >= 500)
+
+      if (!retryable || i === retries - 1) {
         if (axios.isAxiosError(err) && (status === 401 || status === 403)) {
-          await supabase
-            .from('channel_connectors')
+          await supabase.from('channel_connectors')
             .update({ status: 'pending_auth', error_message: `Token inválido: ${(err as Error).message}` })
-            .eq('id', 'unknown') // connector_id não disponível aqui, tratado em run()
-            .throwOnError()
+            .eq('id', 'unknown')
         }
         throw err
       }
@@ -489,17 +564,14 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> 
   throw new Error('Máximo de tentativas excedido')
 }
 
-// ── Normalização — dado raspado (DOM) ────────────────────────────────────────
+// ── Normalização — API legada (places/details) ────────────────────────────────
 
-function normalizeScraped(raw: ScrapedReview, connector: ChannelConnector): NormalizedReview {
-  // Usa o data-review-id diretamente como external_id (= review ID no Google)
-  // Isso garante dedup com reviews obtidos via API (que usa o mesmo ID no campo "name")
-  const external_id = raw.reviewId || createHash('sha256')
-    .update(`${connector.business_id}:${raw.author}:${raw.relativeTime}`)
+function normalizeOld(raw: OldReview, connector: ChannelConnector): NormalizedReview {
+  // A API legada não retorna um ID de review; usamos hash autor+timestamp como ID estável
+  const external_id = createHash('sha256')
+    .update(`${connector.external_id}:${raw.author_name ?? ''}:${raw.time}`)
     .digest('hex')
-    .slice(0, 16)
-
-  const published_at = parseRelativeTime(raw.relativeTime) ?? new Date().toISOString()
+    .slice(0, 20)
 
   const review: NormalizedReview = {
     tenant_id:    connector.tenant_id,
@@ -507,24 +579,21 @@ function normalizeScraped(raw: ScrapedReview, connector: ChannelConnector): Norm
     connector_id: connector.id,
     channel:      CHANNEL,
     external_id,
-    published_at,
+    published_at: new Date(raw.time * 1000).toISOString(),
     sentiment:    'unanalyzed',
     raw_data:     raw as unknown as Record<string, unknown>,
   }
 
-  if (raw.rating !== undefined) review.rating      = raw.rating
-  if (raw.body)                 review.body        = raw.body
-  if (raw.author)               review.author_name = raw.author
-  if (raw.likes > 0)            review.upvotes     = raw.likes
+  if (raw.rating !== undefined)  review.rating      = raw.rating
+  if (raw.text?.trim())          review.body        = raw.text.trim()
+  if (raw.author_name?.trim())   review.author_name = raw.author_name.trim()
 
   return review
 }
 
-// ── Normalização — dado da API ────────────────────────────────────────────────
+// ── Normalização — API Nova (places.googleapis.com) ──────────────────────────
 
-function normalizeApi(raw: GoogleReview, connector: ChannelConnector): NormalizedReview {
-  // Extrai apenas o segmento de ID do review (ex: "places/XYZ/reviews/<ID>" → "<ID>")
-  // Isso garante que o external_id case com o data-review-id do DOM
+function normalizeNew(raw: GoogleReview, connector: ChannelConnector): NormalizedReview {
   const external_id = raw.name.includes('/reviews/')
     ? raw.name.split('/reviews/').pop()!
     : raw.name
@@ -540,7 +609,7 @@ function normalizeApi(raw: GoogleReview, connector: ChannelConnector): Normalize
     raw_data:     raw as unknown as Record<string, unknown>,
   }
 
-  const rating = normalizeRating(raw.rating)
+  const rating = raw.rating !== undefined ? Math.min(5, Math.max(0, raw.rating)) : undefined
   const body   = raw.text?.text?.trim() || undefined
   const lang   = raw.text?.languageCode ?? 'pt'
   const author = raw.authorAttribution?.displayName?.trim() || undefined
@@ -553,33 +622,43 @@ function normalizeApi(raw: GoogleReview, connector: ChannelConnector): Normalize
   return review
 }
 
-function normalizeRating(value: unknown): number | undefined {
-  if (value == null) return undefined
-  const num = Number(value)
-  if (isNaN(num)) return undefined
-  return Math.min(5, Math.max(0, num))
+// ── Normalização — Playwright scraper ────────────────────────────────────────
+
+function normalizeScraped(raw: ScrapedReview, connector: ChannelConnector): NormalizedReview {
+  const external_id = raw.reviewId || createHash('sha256')
+    .update(`${connector.business_id}:${raw.author}:${raw.relativeTime}`)
+    .digest('hex')
+    .slice(0, 16)
+
+  const review: NormalizedReview = {
+    tenant_id:    connector.tenant_id,
+    business_id:  connector.business_id,
+    connector_id: connector.id,
+    channel:      CHANNEL,
+    external_id,
+    published_at: parseRelativeTime(raw.relativeTime) ?? new Date().toISOString(),
+    sentiment:    'unanalyzed',
+    raw_data:     raw as unknown as Record<string, unknown>,
+  }
+
+  if (raw.rating !== undefined) review.rating      = raw.rating
+  if (raw.body)                 review.body        = raw.body
+  if (raw.author)               review.author_name = raw.author
+  if (raw.likes > 0)            review.upvotes     = raw.likes
+
+  return review
 }
 
 // ── Parser de tempo relativo ──────────────────────────────────────────────────
-// Converte "há 2 meses", "3 weeks ago", "ontem" etc. → ISO 8601
-// Erros de parsing retornam null (ingest usa new Date() como fallback)
 
 function parseRelativeTime(text: string): string | null {
   if (!text) return null
   const t = text.toLowerCase().trim()
   const now = Date.now()
 
-  // "hoje" / "today" / "agora" / "just now"
-  if (/^(hoje|today|agora|just now|neste momento)$/.test(t)) {
-    return new Date(now).toISOString()
-  }
+  if (/^(hoje|today|agora|just now|neste momento)$/.test(t)) return new Date(now).toISOString()
+  if (/^(ontem|yesterday)$/.test(t)) return new Date(now - 86_400_000).toISOString()
 
-  // "ontem" / "yesterday"
-  if (/^(ontem|yesterday)$/.test(t)) {
-    return new Date(now - 86_400_000).toISOString()
-  }
-
-  // "há X [unidade]" | "X [unit] ago"
   const match =
     t.match(/há\s+(\d+)\s+(segundo|minuto|hora|dia|semana|mês|mes|ano)/) ??
     t.match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/)
@@ -589,17 +668,13 @@ function parseRelativeTime(text: string): string | null {
     const unit = match[2]
     if (nStr !== undefined && unit !== undefined) {
       const n = parseInt(nStr, 10)
-
       const msMap: Record<string, number> = {
-        segundo: 1_000,           second: 1_000,
-        minuto:  60_000,          minute: 60_000,
-        hora:    3_600_000,       hour:   3_600_000,
-        dia:     86_400_000,      day:    86_400_000,
-        semana:  7 * 86_400_000,  week:   7 * 86_400_000,
-        mês: 30 * 86_400_000,  mes: 30 * 86_400_000,  month: 30 * 86_400_000,
-        ano: 365 * 86_400_000,                          year:  365 * 86_400_000,
+        segundo: 1_000, second: 1_000, minuto: 60_000, minute: 60_000,
+        hora: 3_600_000, hour: 3_600_000, dia: 86_400_000, day: 86_400_000,
+        semana: 7 * 86_400_000, week: 7 * 86_400_000,
+        mês: 30 * 86_400_000, mes: 30 * 86_400_000, month: 30 * 86_400_000,
+        ano: 365 * 86_400_000, year: 365 * 86_400_000,
       }
-
       const ms = msMap[unit]
       if (ms !== undefined) return new Date(now - n * ms).toISOString()
     }

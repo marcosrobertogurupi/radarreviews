@@ -2,7 +2,7 @@
   "mcpServers": {
     "supabase": {
       "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=lkwahbipteiqqzkmfrac"
+      "url": "https://mcp.supabase.com/mcp?project_ref=lkwahbipteiqqzkmfrac",
       "headers": {
         "Authorization": "Bearer sbp_7a331da4df986b596f53433ecfb2223542aee522"
       }
