@@ -198,6 +198,32 @@ async function fetchFromScraper(connector: ChannelConnector): Promise<ScrapedRev
     await page.goto(mapUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
     await page.waitForTimeout(3000)
 
+    // Log da URL real após navegação (detecta redirecionamentos / CAPTCHA / consent page)
+    const finalUrl = page.url()
+    logger.info(`[${CHANNEL}] URL após navegação`, { finalUrl })
+
+    // ── Rejeitar cookies / consent page do Google ────────────────────────────
+    // Google às vezes exibe página de consentimento de cookies antes do Maps
+    const consentSelectors = [
+      'button[aria-label*="Aceitar tudo"]',
+      'button[aria-label*="Accept all"]',
+      'button:has-text("Aceitar tudo")',
+      'button:has-text("Accept all")',
+      'button:has-text("Concordar")',
+      'button:has-text("I agree")',
+      '#L2AGLb',   // ID do botão "I agree" do Google Consent
+    ]
+    for (const sel of consentSelectors) {
+      try {
+        if (await page.locator(sel).count() > 0) {
+          await page.click(sel)
+          await page.waitForTimeout(2000)
+          logger.info(`[${CHANNEL}] Consent page aceita: ${sel}`)
+          break
+        }
+      } catch { /* ignora */ }
+    }
+
     // ── Clicar na aba de avaliações ──────────────────────────────────────────
     const reviewTabSelectors = [
       'button[aria-label*="Avaliações"]',
@@ -222,8 +248,16 @@ async function fetchFromScraper(connector: ChannelConnector): Promise<ScrapedRev
     try {
       await page.waitForSelector('[data-review-id]', { timeout: timeoutMs })
     } catch {
-      // Sem reviews no DOM
-      logger.warn(`[${CHANNEL}] Nenhum review encontrado no DOM após aguardar`)
+      // Log diagnóstico: título da página e primeiros 500 chars do body
+      const title = await page.title().catch(() => 'N/A')
+      const bodySnippet = await page.evaluate(() =>
+        document.body?.innerText?.slice(0, 300) ?? ''
+      ).catch(() => '')
+      logger.warn(`[${CHANNEL}] Nenhum review encontrado no DOM`, {
+        finalUrl: page.url(),
+        pageTitle: title,
+        bodySnippet,
+      })
       return []
     }
 

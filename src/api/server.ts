@@ -194,7 +194,7 @@ async function handleOnboarding(
   let body: {
     email?: string; password?: string
     businessName?: string; category?: string; cnpj?: string
-    channels?: string[]
+    channels?: string[]; plan?: string
   }
   try { body = JSON.parse(raw) } catch {
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
@@ -466,7 +466,7 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? '/'
 
   if (url === '/health') {
-    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString() })); return
+    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2025-04-18-scraper' })); return
   }
 
   if (url.startsWith('/api/copilot')) {
