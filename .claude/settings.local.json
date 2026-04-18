@@ -128,7 +128,18 @@
       "Bash(curl -s -w '\\\\nHTTP: %{http_code}\\\\n' https://api-production-24e1.up.railway.app/api/onboarding -X POST -H 'Origin: https://reputei-admin.vercel.app' -H 'Content-Type: application/json' -d '{\"email\":\"teste@exemplo.com\",\"password\":\"Teste123!\",\"businessName\":\"Empresa Teste\"}')",
       "Bash(curl -s -w \"\\\\nHTTP: %{http_code}\" https://api-production-24e1.up.railway.app/health)",
       "Bash(curl -s -w '\\\\nHTTP: %{http_code}' https://api-production-24e1.up.railway.app/api/onboarding -X OPTIONS -H 'Origin: https://reputei-admin.vercel.app' -H 'Access-Control-Request-Method: POST')",
-      "WebFetch(domain:developers.facebook.com)"
+      "WebFetch(domain:developers.facebook.com)",
+      "Bash(curl -s 'https://lkwahbipteiqqzkmfrac.supabase.co/rest/v1/?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg')",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s \"https://lkwahbipteiqqzkmfrac.supabase.co/rest/v1/?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg\")",
+      "Bash(python -c ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s 'https://lkwahbipteiqqzkmfrac.supabase.co/rest/v1/reviews?id=eq.61ff9d65-3189-401f-9858-dd215c2ff33f&select=*' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg')",
+      "Bash(curl -s -X DELETE 'https://lkwahbipteiqqzkmfrac.supabase.co/rest/v1/reviews?id=eq.61ff9d65-3189-401f-9858-dd215c2ff33f' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkxMzgyNywiZXhwIjoyMDkxNDg5ODI3fQ.iYi2mcZUrV2zwmkiFB_Uk7S9jphwRSXVIQWbahrR_vg' -H 'Prefer: return=representation' -w '\\\\nHTTP_STATUS:%{http_code}')"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Marcos\\.claude\\projects\\c--Users-Marcos--gemini-antigravity-scratch-radar-views\\memory"
     ]
   }
 }

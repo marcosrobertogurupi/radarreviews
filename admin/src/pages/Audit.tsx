@@ -15,16 +15,18 @@ export default function Audit() {
   const [recentJobs, setRecentJobs] = useState<SyncJob[]>([])
   const [quietFailures, setQuietFailures] = useState<QuietFailure[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     loadAuditData()
-    const handleRefresh = () => loadAuditData()
+    const handleRefresh = () => loadAuditData(true)
     window.addEventListener('refresh_data', handleRefresh)
     return () => window.removeEventListener('refresh_data', handleRefresh)
   }, [])
 
-  async function loadAuditData() {
-    setLoading(true)
+  async function loadAuditData(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
 
     // 1. Buscar conectores em ERRO explicito
     const { data: allErrors } = await supabase
@@ -83,6 +85,7 @@ export default function Audit() {
     setRecentJobs(jobs || [])
     setQuietFailures(qFailures)
     setLoading(false)
+    setRefreshing(false)
   }
 
   return (

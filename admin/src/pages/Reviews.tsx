@@ -153,6 +153,7 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
   const [reviews, setReviews] = useState<Review[]>([])
   const [filtered, setFiltered] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [selected, setSelected] = useState<Review | null>(null)
 
   // Filtros
@@ -164,7 +165,7 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
 
   useEffect(() => {
     loadReviews()
-    const handleRefresh = () => loadReviews()
+    const handleRefresh = () => loadReviews(true)
     window.addEventListener('refresh_data', handleRefresh)
 
     // Assinatura em tempo real para novos reviews
@@ -178,8 +179,8 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
           // Se o review for do assinante selecionado (ou se nenhum estiver selecionado)
           const newReview = payload.new as Review
           if (!selectedTenantId || newReview.tenant_id === selectedTenantId) {
-            // Recarregar para garantir que joins e ordem estejam corretos
-            loadReviews()
+            // Recarregar de forma silenciosa
+            loadReviews(true)
           }
         }
       )
@@ -195,8 +196,9 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     applySearch()
   }, [search, reviews])
 
-  async function loadReviews() {
-    setLoading(true)
+  async function loadReviews(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
     setPage(0)
 
     let query = supabase
@@ -212,6 +214,7 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     const { data } = await query
     setReviews(data ?? [])
     setLoading(false)
+    setRefreshing(false)
   }
 
   function applySearch() {

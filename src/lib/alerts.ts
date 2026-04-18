@@ -108,10 +108,22 @@ export async function checkAlerts(
   // Disparar webhooks para regras que têm notify_webhook configurado
   const rulesById = new Map((rules as AlertRule[]).map(r => [r.id, r]))
 
+  // Buscar dados do Tenant para incluir no webhook (contato do assinante)
+  const tenantId = reviews[0]?.tenant_id
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('admin_whatsapp, admin_email')
+    .eq('id', tenantId)
+    .single()
+
   for (const event of events) {
     const rule = rulesById.get(event.rule_id)
     if (rule?.notify_webhook) {
-      await fireWebhook(rule.notify_webhook, event, rule).catch(err => {
+      const extraData = {
+        subscriber_whatsapp: tenant?.admin_whatsapp || '',
+        subscriber_email: tenant?.admin_email || '',
+      }
+      await fireWebhook(rule.notify_webhook, event, rule, extraData).catch(err => {
         logger.warn('[alerts] Falha ao disparar webhook', {
           rule_id: rule.id,
           webhook_url: rule.notify_webhook,
@@ -121,6 +133,7 @@ export async function checkAlerts(
     }
   }
 }
+
 
 // -----------------------------------------------------------------------------
 // Avaliação de condições
@@ -217,7 +230,8 @@ function buildAlertDetail(
 async function fireWebhook(
   webhookUrl: string,
   event: Record<string, unknown>,
-  rule: AlertRule
+  rule: AlertRule,
+  extraData?: Record<string, string>
 ): Promise<void> {
   const detail = event['detail'] as Record<string, unknown>
 
@@ -228,6 +242,9 @@ async function fireWebhook(
     business_id: rule.business_id,
     channel: event['channel'],
     triggered_at: new Date().toISOString(),
+    // Dados para o n8n saber para quem disparar (Contato do Assinante)
+    subscriber_whatsapp: extraData?.subscriber_whatsapp || '',
+    subscriber_email: extraData?.subscriber_email || '',
     // Contexto do review
     review: {
       external_id: detail['review_external_id'],

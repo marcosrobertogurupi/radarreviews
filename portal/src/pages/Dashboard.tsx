@@ -27,9 +27,11 @@ export default function Dashboard() {
   const [recent, setRecent]     = useState<Review[]>([])
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
   const [loading, setLoading]   = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  async function load() {
-    setLoading(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
     const since7  = new Date(Date.now() -  7 * 86400_000).toISOString()
 
@@ -101,11 +103,12 @@ export default function Dashboard() {
     setRecent(recentRes.data ?? [])
     setAlerts(alertRes.data ?? [])
     setLoading(false)
+    setRefreshing(false)
   }
 
   useEffect(() => {
     load()
-    const handler = () => load()
+    const handler = () => load(true)
     window.addEventListener('refresh_data', handler)
 
     // Realtime via WebSocket
@@ -113,7 +116,7 @@ export default function Dashboard() {
       .channel('portal:dashboard:reviews')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => {
         console.log('[Realtime] reviews atualizado')
-        load()
+        load(true) // Silent
       })
       .subscribe((status) => console.log('[Realtime] portal reviews:', status))
 
@@ -121,18 +124,14 @@ export default function Dashboard() {
       .channel('portal:dashboard:alerts')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => {
         console.log('[Realtime] alertas atualizado')
-        load()
+        load(true) // Silent
       })
       .subscribe((status) => console.log('[Realtime] portal alerts:', status))
-
-    // Fallback: polling a cada 30s
-    const poll = setInterval(() => load(), 30_000)
 
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
-      clearInterval(poll)
     }
   }, [])
 

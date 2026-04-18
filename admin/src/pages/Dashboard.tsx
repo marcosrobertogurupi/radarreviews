@@ -59,18 +59,17 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [recentAlerts, setRecentAlerts] = useState<AlertEvent[]>([])
   const [trendData, setTrendData] = useState<any[]>([])
   const [channelData, setChannelData] = useState<any[]>([])
-  const [sentimentDist, setSentimentDist] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     loadAll()
-    const handler = () => loadAll()
-    window.addEventListener('refresh_data', handler)
+    const handleRefresh = () => loadAll(true)
+    window.addEventListener('refresh_data', handleRefresh)
 
     const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
     console.log(`[Realtime] Iniciando conexão no canal: ${channelId}`)
 
-    // Realtime via WebSocket - Escutando TUDO para garantir
     const dashChannel = supabase
       .channel(channelId)
       .on(
@@ -78,7 +77,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         { event: '*', schema: 'public', table: 'reviews' },
         (payload) => {
           console.log('[Realtime] Review alterado!', payload)
-          loadAll()
+          loadAll(true) // Silent refresh
         }
       )
       .on(
@@ -86,28 +85,23 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         { event: '*', schema: 'public', table: 'alert_events' },
         () => {
           console.log('[Realtime] Alerta alterado!')
-          loadAll()
+          loadAll(true) // Silent refresh
         }
       )
       .subscribe((status) => {
         console.log(`[Realtime] Status do canal ${channelId}:`, status)
       })
 
-    // Fallback: polling a cada 30s
-    const poll = setInterval(() => {
-      console.log('[Poll] Atualizando dashboard...')
-      loadAll()
-    }, 30_000)
-
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(dashChannel)
-      clearInterval(poll)
     }
   }, [selectedTenantId])
 
-  async function loadAll() {
-    setLoading(true)
+  async function loadAll(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
+
     await Promise.all([
       loadKPIs(),
       loadRecentReviews(),
@@ -115,7 +109,9 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       loadTrend(),
       loadChannelData(),
     ])
+    
     setLoading(false)
+    setRefreshing(false)
   }
 
   async function loadKPIs() {

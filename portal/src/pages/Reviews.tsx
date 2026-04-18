@@ -14,6 +14,7 @@ export default function Reviews({ onNavigateCopilot }: Props) {
   const [filtered, setFiltered]     = useState<Review[]>([])
   const [selected, setSelected]     = useState<Review | null>(null)
   const [loading, setLoading]       = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Filtros
   const [sentiment, setSentiment]   = useState('')
@@ -24,8 +25,9 @@ export default function Reviews({ onNavigateCopilot }: Props) {
   const [suggesting, setSuggesting]   = useState(false)
   const [suggestion, setSuggestion]   = useState('')
 
-  async function load() {
-    setLoading(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
     const { data } = await supabase
       .from('reviews')
       .select('*, monitored_businesses(name)')
@@ -33,11 +35,12 @@ export default function Reviews({ onNavigateCopilot }: Props) {
       .limit(300)
     setReviews(data ?? [])
     setLoading(false)
+    setRefreshing(false)
   }
 
   useEffect(() => { 
     load()
-    const h = () => load()
+    const h = () => load(true)
     window.addEventListener('refresh_data', h)
 
     // Assinatura em tempo real para novos reviews
@@ -48,7 +51,7 @@ export default function Reviews({ onNavigateCopilot }: Props) {
         { event: 'INSERT', schema: 'public', table: 'reviews' },
         (payload) => {
           console.log('[Realtime] Novo review detectado no portal:', payload.new)
-          load()
+          load(true) // Silent refresh
         }
       )
       .subscribe()
