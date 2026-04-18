@@ -59,6 +59,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [recentAlerts, setRecentAlerts] = useState<AlertEvent[]>([])
   const [trendData, setTrendData] = useState<any[]>([])
   const [channelData, setChannelData] = useState<any[]>([])
+  const [sentimentDist, setSentimentDist] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
