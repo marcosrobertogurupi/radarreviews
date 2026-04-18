@@ -93,7 +93,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       })
 
     return () => {
-      window.removeEventListener('refresh_data', handler)
+      window.removeEventListener('refresh_data', handleRefresh)
       supabase.removeChannel(dashChannel)
     }
   }, [selectedTenantId])
