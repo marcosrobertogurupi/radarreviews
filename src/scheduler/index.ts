@@ -34,7 +34,7 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
   // que é capturado pelo try/catch. O scheduler continua normalmente.
   try {
     if (channel === 'google_maps') {
-      const mod = await import('../connectors/google-maps.js')
+      const mod = await import('../connectors/google_maps/index.js')
       return mod.run
     }
     if (channel === 'tripadvisor') {
