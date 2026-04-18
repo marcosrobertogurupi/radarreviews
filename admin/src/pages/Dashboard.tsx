@@ -446,9 +446,6 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         </div>
       </div>
 
-        </div>
-      )}
-
       <div className="grid-2">
         {/* Ranking de Insatisfação */}
         <div className="card" style={{ padding: 20 }}>
