@@ -39,20 +39,24 @@ export default function App() {
       setSession(session)
       setLoadingSession(false)
       if (session) {
-        supabase.from('tenants').select('id, name').order('name').then(({ data }) => {
-          setTenants(data ?? [])
-        })
+        loadTenants()
       }
     })
 
     const authSub = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session) {
-        supabase.from('tenants').select('id, name').order('name').then(({ data }) => {
-          setTenants(data ?? [])
-        })
+        loadTenants()
       }
     })
+
+    async function loadTenants() {
+      const { data } = await supabase.from('tenants').select('id, name').order('name')
+      setTenants(data ?? [])
+    }
+
+    const handleRefresh = () => loadTenants()
+    window.addEventListener('refresh_data', handleRefresh)
 
     // Antena Real-Time global para toda a schema 'public'
     let debounceTimer: ReturnType<typeof setTimeout>
@@ -67,6 +71,7 @@ export default function App() {
 
     return () => {
       authSub.data.subscription.unsubscribe()
+      window.removeEventListener('refresh_data', handleRefresh)
       dbSub.unsubscribe()
     }
   }, [])
