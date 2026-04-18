@@ -2,16 +2,24 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound } from 'lucide-react'
 
+const PLAN_CONFIG: Record<string, { label: string; color: string; max_channels: number }> = {
+  trial:      { label: 'Trial',      color: '#6b7280', max_channels: 3  },
+  basico:     { label: 'Básico',     color: '#06b6d4', max_channels: 3  },
+  completo:   { label: 'Completo',   color: '#6366f1', max_channels: 8  },
+  enterprise: { label: 'Enterprise', color: '#f59e0b', max_channels: 99 },
+}
+
 interface Tenant {
   id: string
   name: string
   slug: string
+  plan?: string
   is_active?: boolean
   created_at: string
   admin_whatsapp?: string
   admin_email?: string
   critical_alert_hours?: number
-  cnpj?: string // Campo virtual para facilidade de edição
+  cnpj?: string
 }
 
 interface Business {
@@ -109,6 +117,7 @@ export default function Tenants() {
     const { error } = await supabase.from('tenants').update({
       name: editingTenant.name,
       slug: editingTenant.slug,
+      plan: editingTenant.plan || 'trial',
       admin_whatsapp: editingTenant.admin_whatsapp || null,
       admin_email: editingTenant.admin_email || null,
       critical_alert_hours: editingTenant.critical_alert_hours || null,
@@ -243,8 +252,21 @@ export default function Tenants() {
                     <Building2 size={24} color={isActive ? "#a5b4fc" : "#9ca3af"} />
                   </div>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name} {!isActive && <span style={{ fontSize: 11, color: '#fca5a5', marginLeft: 8 }}>[Paused]</span>}</h3>
-                    <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.slug}</code>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                      <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
+                      {!isActive && <span style={{ fontSize: 11, color: '#fca5a5' }}>[Paused]</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.slug}</code>
+                      {(() => {
+                        const p = PLAN_CONFIG[t.plan ?? 'trial'] ?? PLAN_CONFIG['trial']
+                        return (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: `${p.color}22`, color: p.color, border: `1px solid ${p.color}44` }}>
+                            {p.label}
+                          </span>
+                        )
+                      })()}
+                    </div>
                   </div>
                 </div>
 
@@ -495,6 +517,19 @@ export default function Tenants() {
                   placeholder="Somente números"
                   style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4, fontFamily: 'monospace' }}
                 />
+              </div>
+
+              <div className="modal-section">
+                <label className="modal-label">Plano</label>
+                <select
+                  value={editingTenant.plan ?? 'trial'}
+                  onChange={e => setEditingTenant(prev => prev ? { ...prev, plan: e.target.value } : null)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: `1px solid ${PLAN_CONFIG[editingTenant.plan ?? 'trial']?.color ?? 'var(--border)'}`, color: 'white', borderRadius: 4 }}
+                >
+                  {Object.entries(PLAN_CONFIG).map(([id, cfg]) => (
+                    <option key={id} value={id}>{cfg.label} — até {cfg.max_channels === 99 ? 'ilimitado' : cfg.max_channels} canal{cfg.max_channels !== 1 ? 'is' : ''}</option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ borderTop: '1px dashed var(--border)', margin: '16px 0' }} />

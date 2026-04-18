@@ -225,9 +225,20 @@ async function handleOnboarding(
       .from('tenants').select('slug').eq('slug', slug).maybeSingle()
     if (slugExists) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`
 
+    const PLAN_MAX_CHANNELS: Record<string, number> = {
+      basico: 3, completo: 8, enterprise: 99, trial: 3,
+    }
+    const plan = (body.plan && body.plan in PLAN_MAX_CHANNELS) ? body.plan : 'trial'
+    const maxChannels = PLAN_MAX_CHANNELS[plan] ?? 3
+    if (channels.length > maxChannels) {
+      res.writeHead(422)
+      res.end(JSON.stringify({ error: `O plano ${plan} permite no máximo ${maxChannels} canais.` }))
+      return
+    }
+
     const { data: tenant, error: tenantErr } = await supabaseAdmin
       .from('tenants')
-      .insert({ name: businessName.trim(), slug, plan: 'trial' })
+      .insert({ name: businessName.trim(), slug, plan })
       .select('id').single()
     if (tenantErr || !tenant) throw new Error(tenantErr?.message ?? 'Erro ao criar tenant')
 

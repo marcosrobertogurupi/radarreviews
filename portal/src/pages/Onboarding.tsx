@@ -11,6 +11,28 @@ const ALL_CHANNELS: SourceChannel[] = [
   'reddit', 'facebook', 'instagram', 'reclame_aqui',
 ]
 
+const PLANS = [
+  {
+    id: 'basico',
+    label: 'Básico',
+    price: 'R$ 99/mês',
+    max_channels: 3,
+    features: ['3 canais monitorados', '500 reviews/mês', 'Alertas por e-mail', 'Relatórios semanais'],
+    color: '#06b6d4',
+  },
+  {
+    id: 'completo',
+    label: 'Completo',
+    price: 'R$ 199/mês',
+    max_channels: 8,
+    features: ['8 canais monitorados', 'Reviews ilimitados', 'IA Copilot', 'Alertas avançados (WhatsApp)'],
+    color: '#6366f1',
+    popular: true,
+  },
+]
+
+type PlanId = 'basico' | 'completo'
+
 const CATEGORIES = [
   'Hotel / Pousada',
   'Restaurante / Bar',
@@ -32,7 +54,7 @@ interface Props {
 // ── Componente ───────────────────────────────────────────────────
 
 export default function Onboarding({ onBackToLogin, onComplete }: Props) {
-  const [step,      setStep]     = useState(0)   // 0 = conta, 1 = negócio, 2 = canais, 3 = sucesso
+  const [step,      setStep]     = useState(0)   // 0=conta 1=negócio 2=plano 3=canais 4=sucesso
   const [loading,   setLoading]  = useState(false)
   const [error,     setError]    = useState('')
 
@@ -46,14 +68,19 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   const [category,  setCategory] = useState('')
   const [cnpj,      setCnpj]     = useState('')
 
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>('basico')
   const [channels,  setChannels] = useState<SourceChannel[]>([])
 
   // ── Helpers ──────────────────────────────────────────────────
 
+  const planConfig = PLANS.find(p => p.id === selectedPlan)!
+
   function toggleChannel(ch: SourceChannel) {
-    setChannels(prev =>
-      prev.includes(ch) ? prev.filter(c => c !== ch) : [...prev, ch]
-    )
+    setChannels(prev => {
+      if (prev.includes(ch)) return prev.filter(c => c !== ch)
+      if (prev.length >= planConfig.max_channels) return prev // limite do plano
+      return [...prev, ch]
+    })
   }
 
   function formatCnpj(v: string) {
@@ -80,7 +107,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
     return null
   }
 
-  function validateStep2(): string | null {
+  function validateStep3(): string | null {
     if (channels.length === 0) return 'Selecione ao menos 1 canal.'
     return null
   }
@@ -91,11 +118,12 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
     setError('')
     const err = step === 0 ? validateStep0()
               : step === 1 ? validateStep1()
-              : step === 2 ? validateStep2()
+              : step === 2 ? null // plano sempre válido (já tem default)
+              : step === 3 ? validateStep3()
               : null
     if (err) { setError(err); return }
-    if (step < 2) { setStep(s => s + 1); return }
-    // Step 2 → submit
+    if (step < 3) { setStep(s => s + 1); return }
+    // Step 3 → submit
     submit()
   }
 
@@ -113,6 +141,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
           email: email.trim(),
           password,
           businessName: bizName.trim(),
+          plan: selectedPlan,
           ...(category ? { category } : {}),
           ...(cnpj ? { cnpj } : {}),
           channels,
@@ -142,7 +171,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
         return
       }
 
-      setStep(3)
+      setStep(4)
       setTimeout(onComplete, 2000)
 
     } catch {
@@ -168,7 +197,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
     letterSpacing: '0.08em', marginBottom: 6,
   }
 
-  const steps = ['Sua conta', 'Seu negócio', 'Canais']
+  const steps = ['Sua conta', 'Seu negócio', 'Plano', 'Canais']
 
   return (
     <div style={{
@@ -183,7 +212,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
         pointerEvents: 'none',
       }} />
 
-      <div style={{ width: '100%', maxWidth: step === 2 ? 520 : 440 }}>
+      <div style={{ width: '100%', maxWidth: (step === 2 || step === 3) ? 520 : 440 }}>
 
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
@@ -287,24 +316,79 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
             </div>
           )}
 
-          {/* ── Passo 2: Canais ── */}
+          {/* ── Passo 2: Plano ── */}
           {step === 2 && (
             <div>
               <h2 style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 700, marginBottom: 6 }}>
-                Canais para monitorar
+                Escolha seu plano
               </h2>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
-                Selecione onde sua empresa aparece. Você pode ajustar depois.
+                7 dias grátis · sem cartão de crédito · cancele quando quiser
               </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {PLANS.map(plan => {
+                  const active = selectedPlan === plan.id
+                  return (
+                    <button
+                      key={plan.id}
+                      type="button"
+                      onClick={() => { setSelectedPlan(plan.id as PlanId); setChannels([]) }}
+                      style={{
+                        border: `2px solid ${active ? plan.color : 'var(--border)'}`,
+                        borderRadius: 12, padding: '16px 14px', background: active ? `rgba(${plan.color === '#06b6d4' ? '6,182,212' : '99,102,241'},0.08)` : 'var(--bg-darker)',
+                        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
+                      }}
+                    >
+                      {plan.popular && (
+                        <div style={{ position: 'absolute', top: -10, right: 12, background: plan.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                          Mais popular
+                        </div>
+                      )}
+                      <div style={{ fontSize: 15, fontWeight: 700, color: active ? plan.color : 'var(--text-primary)', marginBottom: 2 }}>{plan.label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: active ? plan.color : 'var(--text-primary)', marginBottom: 8 }}>{plan.price}</div>
+                      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                        {plan.features.map(f => (
+                          <li key={f} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 4 }}>
+                            <Check size={11} color={plan.color} style={{ marginTop: 2, flexShrink: 0 }} />{f}
+                          </li>
+                        ))}
+                      </ul>
+                      {active && (
+                        <div style={{ marginTop: 10, fontSize: 11, color: plan.color, fontWeight: 600 }}>✓ Selecionado</div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Passo 3: Canais ── */}
+          {step === 3 && (
+            <div>
+              <h2 style={{ fontFamily: 'Outfit', fontSize: 19, fontWeight: 700, marginBottom: 4 }}>
+                Canais para monitorar
+              </h2>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                Plano <strong style={{ color: planConfig.color }}>{planConfig.label}</strong> · {planConfig.max_channels} canal{planConfig.max_channels !== 1 ? 'is' : ''} disponível{planConfig.max_channels !== 1 ? 'is' : ''}
+              </p>
+              {channels.length >= planConfig.max_channels && (
+                <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '6px 10px' }}>
+                  Limite do plano atingido. Remova um canal para trocar.
+                </p>
+              )}
               <div className="channel-grid">
                 {ALL_CHANNELS.map(ch => {
                   const selected = channels.includes(ch)
+                  const atLimit = !selected && channels.length >= planConfig.max_channels
                   return (
                     <button
                       key={ch}
                       type="button"
                       className={`channel-card ${selected ? 'selected' : ''}`}
                       onClick={() => toggleChannel(ch)}
+                      style={{ opacity: atLimit ? 0.4 : 1, cursor: atLimit ? 'not-allowed' : 'pointer' }}
+                      title={atLimit ? `Limite de ${planConfig.max_channels} canais do plano ${planConfig.label}` : undefined}
                     >
                       <span className="channel-card-icon">{CHANNEL_ICONS[ch]}</span>
                       <span className="channel-card-label">{CHANNEL_LABELS[ch]}</span>
@@ -318,13 +402,13 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 })}
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                {channels.length} de {ALL_CHANNELS.length} canal{channels.length !== 1 ? 'is' : ''} selecionado{channels.length !== 1 ? 's' : ''}
+                {channels.length} de {planConfig.max_channels} canal{planConfig.max_channels !== 1 ? 'is' : ''} selecionado{channels.length !== 1 ? 's' : ''}
               </p>
             </div>
           )}
 
-          {/* ── Passo 3: Sucesso ── */}
-          {step === 3 && (
+          {/* ── Passo 4: Sucesso ── */}
+          {step === 4 && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{
                 width: 64, height: 64, borderRadius: '50%', margin: '0 auto 20px',
@@ -357,7 +441,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
           )}
 
           {/* Botões */}
-          {step < 3 && (
+          {step < 4 && (
             <div style={{ display: 'flex', gap: 10 }}>
               {step > 0 && (
                 <button
@@ -382,7 +466,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                     <span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
                     Criando conta...
                   </span>
-                ) : step < 2 ? (
+                ) : step < 3 ? (
                   <>Próximo <ChevronRight size={15} /></>
                 ) : (
                   <>Criar conta grátis <ChevronRight size={15} /></>
@@ -393,7 +477,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
         </div>
 
         {/* Link voltar ao login */}
-        {step < 3 && (
+        {step < 4 && (
           <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, marginTop: 20 }}>
             Já tem conta?{' '}
             <button
