@@ -163,7 +163,9 @@ export default function Dashboard() {
         <div className="card kpi-card" style={{ '--kpi-color': negColor, '--kpi-icon-bg': `${negColor}22` } as React.CSSProperties}>
           <div className="kpi-label">Taxa Negativa</div>
           <div className="kpi-value" style={{ color: negColor }}>{kpi?.negative_rate ?? 0}%</div>
-          <div className="kpi-sub"><TrendingDown size={12} /> negativos + críticos</div>
+          <div className="kpi-sub">
+            <TrendingDown size={12} /> {(kpi?.critical_count ?? 0) > 0 ? `${kpi?.critical_count} críticos` : 'negativos + críticos'}
+          </div>
           <div className="kpi-icon"><TrendingDown size={18} color={negColor} /></div>
         </div>
 
@@ -233,6 +235,12 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟢 <strong>Positivo:</strong> 0 a 30</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟡 <strong>Neutro:</strong> 31 a 55</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟠 <strong>Negativo:</strong> 56 a 80</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🔴 <strong>Crítico:</strong> 81 a 100</div>
+          </div>
         </div>
       </div>
 

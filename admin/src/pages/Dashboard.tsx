@@ -122,51 +122,59 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
 
   async function loadKPIs() {
-    // 1. Contagem Total de Reviews
-    let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true })
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
+
+    // 1. Contagem Total de Reviews (30 dias)
+    let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30)
     if (selectedTenantId) qTotal = qTotal.eq('tenant_id', selectedTenantId)
     const { count: totalCount } = await qTotal
 
-    // 2. Contagem de Negativos/Críticos
+    // 2. Contagem de Negativos/Críticos (30 dias)
     let qNeg = supabase.from('reviews').select('id', { count: 'exact', head: true })
+      .gte('published_at', since30)
       .in('sentiment', ['negative', 'critical'])
     if (selectedTenantId) qNeg = qNeg.eq('tenant_id', selectedTenantId)
-    const { count: negCount } = await qNeg
+    const { count: negCritCount } = await qNeg
 
-    // 3. Contagem de Críticos
+    // 3. Contagem de Críticos (30 dias)
     let qCrit = supabase.from('reviews').select('id', { count: 'exact', head: true })
+      .gte('published_at', since30)
       .eq('sentiment', 'critical')
     if (selectedTenantId) qCrit = qCrit.eq('tenant_id', selectedTenantId)
     const { count: critCount } = await qCrit
 
-    // 4. Score Médio (aqui ainda precisamos de alguns dados, mas podemos limitar)
-    let qScore = supabase.from('reviews').select('dissatisfaction_score').not('dissatisfaction_score', 'is', null)
+    // 4. Score Médio (30 dias)
+    let qScore = supabase.from('reviews').select('dissatisfaction_score')
+      .gte('published_at', since30)
+      .not('dissatisfaction_score', 'is', null)
     if (selectedTenantId) qScore = qScore.eq('tenant_id', selectedTenantId)
     const { data: scoresData } = await qScore.limit(1000)
     const scores = (scoresData || []).map(r => r.dissatisfaction_score as number)
     const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
 
-    const { count: connCount } = await supabase
-      .from('channel_connectors')
-      .select('id', { count: 'exact', head: true })
+    // 5. Conectores Ativos (Filtrado por tenant)
+    let qConn = supabase.from('channel_connectors').select('id, monitored_businesses!inner(tenant_id)', { count: 'exact', head: true })
       .eq('status', 'active')
+    if (selectedTenantId) qConn = qConn.eq('monitored_businesses.tenant_id', selectedTenantId)
+    const { count: connCount } = await qConn
 
-    const { count: alertCount } = await supabase
-      .from('alert_events')
-      .select('id', { count: 'exact', head: true })
+    // 6. Alertas Pendentes (Filtrado por tenant)
+    let qAlert = supabase.from('alert_events').select('id, monitored_businesses!inner(tenant_id)', { count: 'exact', head: true })
       .is('resolved_at', null)
+    if (selectedTenantId) qAlert = qAlert.eq('monitored_businesses.tenant_id', selectedTenantId)
+    const { count: alertCount } = await qAlert
 
     setKpis({
       totalReviews: totalCount ?? 0,
-      negativeRate: totalCount ? Math.round(((negCount ?? 0) / totalCount) * 100) : 0,
+      negativeRate: totalCount ? Math.round(((negCritCount ?? 0) / totalCount) * 100) : 0,
       criticalCount: critCount ?? 0,
       activeConnectors: connCount ?? 0,
       pendingAlerts: alertCount ?? 0,
       avgScore: avg,
     })
 
-    // 5. Distribuição de sentimento (buscar apenas uma amostra recente para a pizza)
-    let qDist = supabase.from('reviews').select('sentiment')
+    // 7. Distribuição de sentimento (30 dias)
+    let qDist = supabase.from('reviews').select('sentiment').gte('published_at', since30)
     if (selectedTenantId) qDist = qDist.eq('tenant_id', selectedTenantId)
     const { data: distData } = await qDist.limit(1000)
     
@@ -298,7 +306,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           </div>
           <div className="kpi-label">Total de Reviews</div>
           <div className="kpi-value">{kpis?.totalReviews.toLocaleString('pt-BR')}</div>
-          <div className="kpi-sub"><TrendingUp size={12} /> coletados via 8 canais</div>
+          <div className="kpi-sub"><TrendingUp size={12} /> últimos 30 dias</div>
         </div>
 
         <div className="card kpi-card" style={{ '--kpi-color': '#ef4444' } as any}>
@@ -310,7 +318,9 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
             {kpis?.negativeRate}%
           </div>
           <div className="kpi-sub">
-            <span style={{ color: '#ff4d4d' }}>🚨 {kpis?.criticalCount} críticos</span>
+            <span style={{ color: '#fca5a5' }}>
+              🚨 {kpis?.criticalCount} críticos {(kpis?.negativeRate || 0) > 0 && `(de ${Math.round(kpis!.totalReviews * kpis!.negativeRate / 100)} ruins)`}
+            </span>
           </div>
         </div>
 
@@ -388,6 +398,12 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
                 </div>
               ))}
             </div>
+          </div>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟢 <strong>Positivo:</strong> 0 a 30</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟡 <strong>Neutro:</strong> 31 a 55</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🟠 <strong>Negativo:</strong> 56 a 80</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>🔴 <strong>Crítico:</strong> 81 a 100</div>
           </div>
         </div>
       </div>
