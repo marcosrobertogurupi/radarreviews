@@ -236,9 +236,11 @@ async function handleOnboarding(
       return
     }
 
+    const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
     const { data: tenant, error: tenantErr } = await supabaseAdmin
       .from('tenants')
-      .insert({ name: businessName.trim(), slug, plan })
+      .insert({ name: businessName.trim(), slug, plan, plan_status: 'trial', trial_ends_at: trialEndsAt })
       .select('id').single()
     if (tenantErr || !tenant) throw new Error(tenantErr?.message ?? 'Erro ao criar tenant')
 

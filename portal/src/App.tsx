@@ -13,6 +13,7 @@ import Reviews from './pages/Reviews'
 import Alerts from './pages/Alerts'
 import Copilot from './pages/Copilot'
 import Pricing from './pages/Pricing'
+import TrialExpired from './pages/TrialExpired'
 
 type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'pricing'
 type AuthView = 'login' | 'signup'
@@ -33,6 +34,9 @@ export default function App() {
   // null = verificando; false = sem tenant; true = tem tenant
   const [hasTenant, setHasTenant]    = useState<boolean | null>(null)
   const [businessName, setBusinessName] = useState<string>('')
+  const [tenantTrial, setTenantTrial] = useState<{
+    plan: string; plan_status: string; trial_ends_at: string | null
+  } | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -66,15 +70,21 @@ export default function App() {
       .then(({ count }) => setHasTenant((count ?? 0) > 0))
   }, [session?.user.id])
 
-  // Busca nome da empresa do tenant
+  // Busca nome da empresa e status do trial
   useEffect(() => {
     if (!hasTenant) return
-    supabase
-      .from('monitored_businesses')
-      .select('name')
-      .limit(1)
-      .single()
+    supabase.from('monitored_businesses').select('name').limit(1).single()
       .then(({ data }) => { if (data?.name) setBusinessName(data.name) })
+
+    supabase.from('tenant_users').select('tenant_id').limit(1).single()
+      .then(({ data: tu }) => {
+        if (!tu?.tenant_id) return
+        return supabase.from('tenants')
+          .select('plan, plan_status, trial_ends_at')
+          .eq('id', tu.tenant_id)
+          .single()
+      })
+      .then(res => { if (res?.data) setTenantTrial(res.data) })
   }, [hasTenant])
 
   function refresh() { window.dispatchEvent(new Event('refresh_data')) }
@@ -94,6 +104,19 @@ export default function App() {
   // Usuário logado mas sem tenant (onboarding interrompido)
   if (!hasTenant)
     return <Onboarding onBackToLogin={() => supabase.auth.signOut()} onComplete={() => setHasTenant(true)} />
+
+  // Bloqueia se trial expirou e plano não está ativo
+  const trialExpired = tenantTrial?.plan_status === 'trial' &&
+    tenantTrial?.trial_ends_at != null &&
+    new Date(tenantTrial.trial_ends_at) < new Date()
+
+  if (trialExpired)
+    return <TrialExpired plan={tenantTrial!.plan} onLogout={() => supabase.auth.signOut()} />
+
+  // Dias restantes do trial
+  const trialDaysLeft = tenantTrial?.plan_status === 'trial' && tenantTrial?.trial_ends_at
+    ? Math.max(0, Math.ceil((new Date(tenantTrial.trial_ends_at).getTime() - Date.now()) / 86_400_000))
+    : null
 
   const pages: Record<Page, ReactElement> = {
     dashboard: <Dashboard />,
@@ -120,6 +143,16 @@ export default function App() {
           }}>
             Portal do Assinante
           </div>
+          {trialDaysLeft !== null && (
+            <div style={{
+              marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: trialDaysLeft <= 2 ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.1)',
+              border: `1px solid ${trialDaysLeft <= 2 ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+              color: trialDaysLeft <= 2 ? '#fca5a5' : '#fbbf24',
+            }}>
+              ⏰ {trialDaysLeft === 0 ? 'Último dia de trial' : `${trialDaysLeft} dia${trialDaysLeft !== 1 ? 's' : ''} de trial restante${trialDaysLeft !== 1 ? 's' : ''}`}
+            </div>
+          )}
           {businessName && (
             <div style={{
               fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
