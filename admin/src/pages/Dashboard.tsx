@@ -68,19 +68,38 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const handleRefresh = () => loadAll(true)
     window.addEventListener('refresh_data', handleRefresh)
 
-    // Polling a cada 30s — garante atualização mesmo sem Realtime
-    const poll = setInterval(() => loadAll(true), 30_000)
+    // Atualiza silenciosamente quando o usuário volta à aba
+    const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll(true) }
+    document.addEventListener('visibilitychange', handleVisibility)
 
-    // Realtime — fast-path quando WebSocket estiver disponível
+    // Realtime — atualização incremental sem re-fetch completo
     const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
     const dashChannel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => loadAll(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => loadAll(true))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reviews' }, (payload) => {
+        const r = payload.new as Review
+        if (selectedTenantId && r.tenant_id !== selectedTenantId) return
+        // Incrementa contadores sem re-fetch
+        setKpis(prev => {
+          if (!prev) return prev
+          const isNegCrit = r.sentiment === 'negative' || r.sentiment === 'critical'
+          const isCrit = r.sentiment === 'critical'
+          const newTotal = prev.totalReviews + 1
+          const newNegCritCount = Math.round(prev.negativeRate * prev.totalReviews / 100) + (isNegCrit ? 1 : 0)
+          return {
+            ...prev,
+            totalReviews: newTotal,
+            criticalCount: prev.criticalCount + (isCrit ? 1 : 0),
+            negativeRate: Math.round((newNegCritCount / newTotal) * 100),
+          }
+        })
+        setRecentReviews(prev => [r, ...prev].slice(0, 5))
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => loadAlerts())
       .subscribe()
 
     return () => {
-      clearInterval(poll)
+      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('refresh_data', handleRefresh)
       supabase.removeChannel(dashChannel)
     }

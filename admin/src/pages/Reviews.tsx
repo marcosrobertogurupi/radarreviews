@@ -168,17 +168,24 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     const handleRefresh = () => loadReviews(true)
     window.addEventListener('refresh_data', handleRefresh)
 
-    // Polling a cada 30s — garante atualização mesmo sem Realtime
-    const poll = setInterval(() => loadReviews(true), 30_000)
+    // Atualiza silenciosamente quando o usuário volta à aba
+    const handleVisibility = () => { if (document.visibilityState === 'visible') loadReviews(true) }
+    document.addEventListener('visibilitychange', handleVisibility)
 
-    // Realtime — fast-path quando WebSocket estiver disponível
+    // Realtime — insere review novo no topo sem resetar página ou piscar
     const rtChannel = supabase
       .channel(`reviews-admin-${Math.random().toString(36).substring(7)}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reviews' }, () => loadReviews(true))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reviews' }, (payload) => {
+        const r = payload.new as Review
+        if (selectedTenantId && r.tenant_id !== selectedTenantId) return
+        if (sentiment && r.sentiment !== sentiment) return
+        if (channel && r.channel !== channel) return
+        setReviews(prev => [r, ...prev])
+      })
       .subscribe()
 
     return () => {
-      clearInterval(poll)
+      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('refresh_data', handleRefresh)
       supabase.removeChannel(rtChannel)
     }
