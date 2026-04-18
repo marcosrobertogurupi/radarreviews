@@ -40,6 +40,7 @@ const MAX_PAGES = 3        // limite conservador para modo público (10 req/min)
 const DEFAULT_DELAY_MS = 10_000
 const DEFAULT_LIMIT = 25
 const DEFAULT_SINCE_DAYS = 30
+const MAX_BODY_CHARS = 3_000 // posts maiores que isso são spam/threads longas, não reviews
 
 // User-Agents de navegadores reais (expandidos para evitar padrões)
 const USER_AGENTS = [
@@ -133,9 +134,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           break
         }
 
-        // Filtrar posts deletados e muito antigos
+        // Filtrar posts deletados, NSFW, fixados, irrelevantes e muito antigos
         const valid = posts.filter(p => {
           if (p.author === '[deleted]' || !p.title) return false
+          if (p.over_18 || p.stickied) return false
+          if (!isRelevantPost(p, searchTerms)) return false
           return new Date(p.created_utc * 1000) >= cutoff
         })
 
@@ -318,10 +321,15 @@ async function fetchPublic(
 
 // ── Normalização ──────────────────────────────────────────────────
 
+function isRelevantPost(post: RedditPost, searchTerms: string[]): boolean {
+  const haystack = `${post.title} ${post.selftext.slice(0, 1_000)}`.toLowerCase()
+  return searchTerms.some(term => haystack.includes(term.toLowerCase()))
+}
+
 function mapPostToReview(post: RedditPost, connector: ChannelConnector): NormalizedReview {
-  // body = título + corpo (se existir corpo)
-  const body = post.selftext?.trim()
-    ? `${post.title}\n\n${post.selftext.trim()}`
+  const selftext = (post.selftext ?? '').trim().slice(0, MAX_BODY_CHARS)
+  const body = selftext
+    ? `${post.title}\n\n${selftext}`
     : post.title
 
   const review: NormalizedReview = {
