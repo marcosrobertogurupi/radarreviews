@@ -318,6 +318,10 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
                   </div>
                 </div>
 
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, fontFamily: 'monospace', opacity: 0.5 }}>
+                  ID: {r.id}
+                </div>
+
                 {r.author_name && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
                     👤 {r.author_name}
