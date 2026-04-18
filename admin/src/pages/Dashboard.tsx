@@ -68,32 +68,19 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const handleRefresh = () => loadAll(true)
     window.addEventListener('refresh_data', handleRefresh)
 
-    const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
-    console.log(`[Realtime] Iniciando conexão no canal: ${channelId}`)
+    // Polling a cada 30s — garante atualização mesmo sem Realtime
+    const poll = setInterval(() => loadAll(true), 30_000)
 
+    // Realtime — fast-path quando WebSocket estiver disponível
+    const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
     const dashChannel = supabase
       .channel(channelId)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'reviews' },
-        (payload) => {
-          console.log('[Realtime] Review alterado!', payload)
-          loadAll(true) // Silent refresh
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'alert_events' },
-        () => {
-          console.log('[Realtime] Alerta alterado!')
-          loadAll(true) // Silent refresh
-        }
-      )
-      .subscribe((status) => {
-        console.log(`[Realtime] Status do canal ${channelId}:`, status)
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => loadAll(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => loadAll(true))
+      .subscribe()
 
     return () => {
+      clearInterval(poll)
       window.removeEventListener('refresh_data', handleRefresh)
       supabase.removeChannel(dashChannel)
     }

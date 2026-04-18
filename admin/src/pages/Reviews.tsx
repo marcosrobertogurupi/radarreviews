@@ -168,27 +168,19 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     const handleRefresh = () => loadReviews(true)
     window.addEventListener('refresh_data', handleRefresh)
 
-    // Assinatura em tempo real para novos reviews
-    const channel = supabase
-      .channel('public:reviews_admin')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reviews' },
-        (payload) => {
-          console.log('[Realtime] Novo review detectado:', payload.new)
-          // Se o review for do assinante selecionado (ou se nenhum estiver selecionado)
-          const newReview = payload.new as Review
-          if (!selectedTenantId || newReview.tenant_id === selectedTenantId) {
-            // Recarregar de forma silenciosa
-            loadReviews(true)
-          }
-        }
-      )
+    // Polling a cada 30s — garante atualização mesmo sem Realtime
+    const poll = setInterval(() => loadReviews(true), 30_000)
+
+    // Realtime — fast-path quando WebSocket estiver disponível
+    const rtChannel = supabase
+      .channel(`reviews-admin-${Math.random().toString(36).substring(7)}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reviews' }, () => loadReviews(true))
       .subscribe()
 
     return () => {
+      clearInterval(poll)
       window.removeEventListener('refresh_data', handleRefresh)
-      supabase.removeChannel(channel)
+      supabase.removeChannel(rtChannel)
     }
   }, [sentiment, channel, selectedTenantId])
 
