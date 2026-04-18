@@ -410,7 +410,7 @@ ${text.slice(0, textLimit)}
 """
 
 RETORNE APENAS este JSON (nenhum texto extra, nenhum markdown):
-{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["topic1","topic2"],"summary":"...","alert_reason":"ação recomendada ou null"}
+{"sentiment":"positive|neutral|negative|critical","dissatisfaction_score":0,"confidence":0.0,"topics":["topic1","topic2"],"summary":"O que aconteceu","sentiment_translation":"Explique em 1 frase por que o cliente está assim (traduza o sentimento)","action_suggestion":"O que a empresa deve fazer agora (máx 15 palavras)"}
 
 TÓPICOS DISPONÍVEIS (escolha 1 a 3, os mais específicos):
 - atendimento = mau atendimento, ignorado, sem resposta, funcionário rude, manutenção não feita, suporte precário
@@ -433,14 +433,13 @@ REGRAS DE SENTIMENTO:
 - neutral=misto/mediano/dúvida
 - positive=satisfeito/elogio
 
-REGRAS DO CAMPO summary (MUITO IMPORTANTE):
-- Máximo 12 palavras, em português, iniciando com letra maiúscula, sem ponto final
-- Descreva o PROBLEMA ESPECÍFICO: o que aconteceu + produto/serviço + consequência
-- NÃO use frases genéricas: "cliente insatisfeito", "problema relatado", "reclamação sobre"
-- NÃO mencione o nome da plataforma (Reclame Aqui, Google, etc.)
-- USE verbos concretos: cobrado, bloqueado, cancelado, não entregue, não reembolsado, ignorado
-- Exemplos RUINS: "Cliente insatisfeito sobre cobrança", "Problema relatado pelo usuário"
-- Exemplos BONS: "Cobrança indevida após cancelamento sem reembolso", "Cartão bloqueado sem aviso e sem solução", "Internet não ativada 15 dias após pagamento", "Plano não cancela há 3 meses e continua cobrando"
+REGRAS DO CAMPO sentiment_translation:
+- Seja o "intérprete" do cliente. Ex: "O cliente sente que foi enganado pela promessa de preço", "Está frustrado com a falta de retorno após várias tentativas"
+- Use linguagem empática e direta
+
+REGRAS DO CAMPO action_suggestion:
+- Dê um comando acionável. Ex: "Ligar para o cliente e oferecer o reembolso imediato", "Responder pedindo desculpas e agendar a visita técnica"
+- Se for positivo, sugira agradecer e pedir para compartilhar nas redes sociais.
 `.trim()
 
   const response = await model.generateContent(prompt)
@@ -524,8 +523,9 @@ REGRAS DO CAMPO summary (MUITO IMPORTANTE):
     dissatisfaction_score: rawScore,
     confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.8)),
     topics: topics as SentimentTopic[],
-    summary: String(parsed.summary ?? ''),
-    ...(alertReason ? { alert_reason: alertReason } : {}),
+    summary: parsed.sentiment_translation ? `${parsed.summary} — ${parsed.sentiment_translation}` : String(parsed.summary ?? ''),
+    alert_reason: alertReason,
+    action_suggestion: parsed['action_suggestion'] ? String(parsed['action_suggestion']) : undefined,
     method: 'gemini',
   }
 }
@@ -611,9 +611,8 @@ function analyzeByHeuristic(review: NormalizedReview, text: string): SentimentRe
     confidence: 0.6, // confiança menor que a IA
     topics: topicList,
     summary: buildHeuristicSummary(sentiment, review.channel, topicList),
-    ...(sentiment === 'negative' || sentiment === 'critical'
-      ? { alert_reason: buildAlertReason(topicList, review.channel) }
-      : {}),
+    alert_reason: (sentiment === 'negative' || sentiment === 'critical') ? buildAlertReason(topicList, review.channel) : undefined,
+    action_suggestion: (sentiment === 'negative' || sentiment === 'critical') ? 'Analise o comentário e responda com empatia, buscando resolver o problema citado.' : undefined,
     method: 'heuristic',
   }
 }
@@ -657,6 +656,7 @@ function applyResult(review: NormalizedReview, result: SentimentResult): void {
   review.dissatisfaction_score = result.dissatisfaction_score
   review.sentiment_topics = result.topics
   review.sentiment_summary = result.summary
+  review.sentiment_suggestion = result.action_suggestion
   review.sentiment_result = result
 }
 
@@ -719,13 +719,18 @@ function buildHeuristicSummary(
     elogio: 'elogio', outro: '',
   }
 
-  if (sentiment === 'positive') return `Cliente satisfeito em ${channelName[channel]}.`
-  if (sentiment === 'neutral') return `Feedback misto em ${channelName[channel]}.`
+  const meaningfulTopics = topics
+    .filter(t => t !== 'elogio') // Nunca listar elogio como tópico de "problema"
+    .map(t => topicNames[t] ?? '')
+    .filter(Boolean)
 
-  const meaningfulTopics = topics.map(t => topicNames[t] ?? '').filter(Boolean)
   const topicLabel = meaningfulTopics.length > 0
     ? ` — problema de ${meaningfulTopics.slice(0, 2).join(' e ')}`
     : ''
+
+  if (sentiment === 'positive') return `Cliente satisfeito em ${channelName[channel]}.`
+  if (sentiment === 'neutral') return `Feedback misto em ${channelName[channel]}.`
+
   const prefix = sentiment === 'critical' ? 'Reclamação grave' : 'Reclamação'
   return `${prefix}${topicLabel} em ${channelName[channel]}.`
 }

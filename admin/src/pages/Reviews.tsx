@@ -61,8 +61,17 @@ function ReviewModal({ review, onClose }: { review: Review; onClose: () => void 
 
         {review.sentiment_summary && (
           <div className="modal-section">
-            <div className="modal-label">💬 Resumo da IA</div>
-            <div className="modal-value" style={{ color: 'var(--accent-2)' }}>{review.sentiment_summary}</div>
+            <div className="modal-label">💬 Tradução do Sentimento</div>
+            <div className="modal-value" style={{ color: 'var(--accent-2)', lineHeight: 1.5 }}>{review.sentiment_summary}</div>
+          </div>
+        )}
+
+        {review.sentiment_suggestion && (
+          <div className="modal-section">
+            <div className="modal-label">💡 Sugestão de Ação</div>
+            <div className="modal-value" style={{ color: '#10b981', background: 'rgba(16,185,129,0.05)', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(16,185,129,0.1)' }}>
+              {review.sentiment_suggestion}
+            </div>
           </div>
         )}
 
@@ -337,6 +346,12 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
                 {r.sentiment_summary && (
                   <div className="review-ai-summary">
                     🤖 {r.sentiment_summary}
+                  </div>
+                )}
+
+                {r.sentiment_suggestion && (
+                  <div style={{ fontSize: 11, color: '#10b981', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    💡 <span style={{ opacity: 0.9 }}>{r.sentiment_suggestion}</span>
                   </div>
                 )}
 

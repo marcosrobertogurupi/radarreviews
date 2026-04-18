@@ -37,6 +37,7 @@ export interface Review {
   dissatisfaction_score?: number
   sentiment_topics?: string[]
   sentiment_summary?: string
+  sentiment_suggestion?: string
   sentiment_result?: {
     sentiment: SentimentType
     dissatisfaction_score: number
@@ -44,6 +45,7 @@ export interface Review {
     topics: string[]
     summary: string
     alert_reason?: string
+    action_suggestion?: string
     method: 'gemini' | 'heuristic' | 'rating_only'
   }
   published_at: string

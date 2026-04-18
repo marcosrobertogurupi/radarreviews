@@ -48,6 +48,8 @@ export interface SentimentResult {
   summary: string
   /** Motivo do alerta — preenchido quando negative ou critical */
   alert_reason?: string
+  /** Sugestão de como agir — preenchido quando negative ou critical */
+  action_suggestion?: string
   /** Método de análise: 'gemini' | 'heuristic' | 'rating_only' */
   method: 'gemini' | 'heuristic' | 'rating_only'
 }
@@ -99,6 +101,8 @@ export interface NormalizedReview {
   sentiment_topics?: SentimentTopic[]
   /** Resumo gerado pela IA para o dashboard */
   sentiment_summary?: string
+  /** Sugestão de ação gerada pela IA */
+  sentiment_suggestion?: string
   /** Payload completo da análise (para auditoria e reprocessamento) */
   sentiment_result?: SentimentResult
   /** Data de publicação na plataforma — ISO 8601 obrigatório */

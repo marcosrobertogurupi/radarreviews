@@ -258,6 +258,11 @@ export default function Dashboard() {
                   {r.sentiment_summary && (
                     <div className="review-ai-summary">🤖 {r.sentiment_summary}</div>
                   )}
+                  {r.sentiment_suggestion && (
+                    <div style={{ fontSize: 11, color: '#10b981', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      💡 <span style={{ opacity: 0.9 }}>{r.sentiment_suggestion}</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
