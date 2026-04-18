@@ -60,6 +60,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [trendData, setTrendData] = useState<any[]>([])
   const [channelData, setChannelData] = useState<any[]>([])
   const [sentimentDist, setSentimentDist] = useState<any[]>([])
+  const [rankingData, setRankingData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -115,6 +116,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       loadAlerts(),
       loadTrend(),
       loadChannelData(),
+      loadRanking(),
     ])
     
     setLoading(false)
@@ -256,6 +258,42 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         count,
       })).sort((a, b) => b.count - a.count)
     )
+  }
+  
+  async function loadRanking() {
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
+    
+    // Buscar todos os reviews com score dos últimos 30 dias
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('tenant_id, dissatisfaction_score')
+      .gte('published_at', since30)
+      .not('dissatisfaction_score', 'is', null)
+      .limit(5000)
+
+    if (!reviews) return
+
+    // Agrupar por tenant
+    const groups: Record<string, { total: number, count: number }> = {}
+    for (const r of reviews) {
+      if (!groups[r.tenant_id]) groups[r.tenant_id] = { total: 0, count: 0 }
+      groups[r.tenant_id].total += r.dissatisfaction_score as number
+      groups[r.tenant_id].count++
+    }
+
+    // Calcular médias e mapear nomes
+    const ranking = Object.entries(groups).map(([tid, stats]) => {
+      const name = tenants.find(t => t.id === tid)?.name || 'Desconhecido'
+      return {
+        id: tid,
+        name,
+        avgScore: Math.round(stats.total / stats.count),
+        count: stats.count
+      }
+    })
+
+    // Ordenar pelo maior score (mais insatisfeito primeiro)
+    setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore).slice(0, 5))
   }
 
   // ── Skeleton ────────────────────────────────────────────────
@@ -408,11 +446,44 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         </div>
       </div>
 
-      {/* Reviews por canal */}
-      {channelData.length > 0 && (
-        <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-          <div className="section-title">📊 Reviews por Canal</div>
-          <ResponsiveContainer width="100%" height={160}>
+        </div>
+      )}
+
+      <div className="grid-2">
+        {/* Ranking de Insatisfação */}
+        <div className="card" style={{ padding: 20 }}>
+          <div className="section-title">🏆 Ranking de Insatisfação (Top 5)</div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>Assinantes com maior score médio de insatisfação nos últimos 30 dias</p>
+          {rankingData.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🏆</div>
+              <div className="empty-state-text">Dados insuficientes para o ranking</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {rankingData.map((item, idx) => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: idx === 0 ? '#dc2626' : idx === 1 ? '#ef4444' : '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                    {idx + 1}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.count} reviews analisados</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor(item.avgScore) }}>{item.avgScore}</div>
+                    <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Score Médio</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Reviews por canal */}
+        <div className="card" style={{ padding: 20 }}>
+          <div className="section-title">📊 Distribuição por Canal</div>
+          <ResponsiveContainer width="100%" height={240}>
             <BarChart data={channelData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
@@ -422,7 +493,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
             </BarChart>
           </ResponsiveContainer>
         </div>
-      )}
+      </div>
 
       {/* Reviews recentes + Alertas */}
       <div className="grid-2">
