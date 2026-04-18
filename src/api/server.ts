@@ -53,7 +53,7 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
   
   res.setHeader('Access-Control-Allow-Origin', isAllowed ? origin : allowed[0])
   res.setHeader('Access-Control-Allow-Headers', extraHeaders)
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS')
   res.setHeader('Vary', 'Origin')
 }
 
@@ -411,6 +411,55 @@ async function handleUpdateCredentials(
   }
 }
 
+// ── Deletar tenant e usuário auth ────────────────────────────────
+
+async function handleDeleteTenant(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'DELETE')  { res.writeHead(405); res.end('Method not allowed'); return }
+
+  // Extrai tenantId da URL: /api/admin/tenant/:id
+  const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('?')[0]
+  if (!tenantId) { res.writeHead(400); res.end(JSON.stringify({ error: 'tenantId obrigatório' })); return }
+
+  try {
+    // 1. Buscar user_id antes de deletar
+    const { data: tu } = await supabaseAdmin
+      .from('tenant_users')
+      .select('user_id')
+      .eq('tenant_id', tenantId)
+      .single()
+
+    // 2. Deletar tenant (cascata apaga tenant_users, businesses, reviews, etc.)
+    const { error: delErr } = await supabaseAdmin
+      .from('tenants')
+      .delete()
+      .eq('id', tenantId)
+
+    if (delErr) {
+      res.writeHead(500); res.end(JSON.stringify({ error: delErr.message })); return
+    }
+
+    // 3. Deletar usuário auth (ignora erro se já não existir)
+    if (tu?.user_id) {
+      await supabaseAdmin.auth.admin.deleteUser(tu.user_id)
+      console.log(`[delete-tenant] Auth user ${tu.user_id} deletado`)
+    }
+
+    console.log(`[delete-tenant] Tenant ${tenantId} deletado`)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[delete-tenant] Erro:', msg)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 // ── Servidor ──────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
@@ -439,6 +488,14 @@ const server = http.createServer((req, res) => {
   if (url.startsWith('/api/admin/credentials')) {
     handleUpdateCredentials(req, res).catch(err => {
       console.error('[credentials] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/admin/tenant/')) {
+    handleDeleteTenant(req, res).catch(err => {
+      console.error('[delete-tenant] Erro não tratado:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

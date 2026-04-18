@@ -208,12 +208,14 @@ export default function Tenants() {
   }
 
   async function handleDelete(t: Tenant) {
-    const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n\nEsta ação NÃO PODE SER DESFEITA.`)
+    const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n- Login de acesso do assinante.\n\nEsta ação NÃO PODE SER DESFEITA.`)
     if (!pass) return
 
-    const { error } = await supabase.from('tenants').delete().eq('id', t.id)
-    if (error) {
-      alert('Falha ao deletar! O banco bloqueou pois você não ativou o ON DELETE CASCADE nas relaçoes ainda. Detalhe: ' + error.message)
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}`, { method: 'DELETE' })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      alert('Falha ao deletar: ' + (err.error ?? resp.statusText))
     } else {
       setTenants(prev => prev.filter(x => x.id !== t.id))
       setBusinesses(prev => { const n = {...prev}; delete n[t.id]; return n; })
