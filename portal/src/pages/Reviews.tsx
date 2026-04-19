@@ -7,9 +7,9 @@ import {
 } from '../lib/utils'
 import { X, ExternalLink, Lightbulb, Loader, MessageCircle } from 'lucide-react'
 
-interface Props { onNavigateCopilot: () => void }
+interface Props { tenantId: string; onNavigateCopilot: () => void }
 
-export default function Reviews({ onNavigateCopilot }: Props) {
+export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
   const [reviews, setReviews]       = useState<Review[]>([])
   const [filtered, setFiltered]     = useState<Review[]>([])
   const [selected, setSelected]     = useState<Review | null>(null)
@@ -26,11 +26,13 @@ export default function Reviews({ onNavigateCopilot }: Props) {
   const [suggestion, setSuggestion]   = useState('')
 
   async function load(silent = false) {
+    if (!tenantId) return
     if (!silent) setLoading(true)
     else setRefreshing(true)
     const { data } = await supabase
       .from('reviews')
       .select('*, monitored_businesses(name)')
+      .eq('tenant_id', tenantId)
       .order('published_at', { ascending: false })
       .limit(300)
     setReviews(data ?? [])
@@ -38,8 +40,8 @@ export default function Reviews({ onNavigateCopilot }: Props) {
     setRefreshing(false)
   }
 
-  useEffect(() => { 
-    load()
+  useEffect(() => {
+    if (tenantId) load()
     const h = () => load(true)
     window.addEventListener('refresh_data', h)
 
@@ -56,11 +58,11 @@ export default function Reviews({ onNavigateCopilot }: Props) {
       )
       .subscribe()
 
-    return () => { 
+    return () => {
       window.removeEventListener('refresh_data', h)
       supabase.removeChannel(channel)
-    } 
-  }, [])
+    }
+  }, [tenantId])
 
   // Aplicar filtros
   useEffect(() => {

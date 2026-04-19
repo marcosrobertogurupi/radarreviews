@@ -14,17 +14,35 @@ const CONDITION_LABELS: Record<string, string> = {
   volume_spike:     '📈 Spike de volume',
 }
 
-export default function Alerts() {
+interface Props { tenantId: string }
+
+export default function Alerts({ tenantId }: Props) {
   const [alerts, setAlerts]   = useState<AlertEvent[]>([])
   const [tab, setTab]         = useState<'pending' | 'resolved'>('pending')
   const [loading, setLoading] = useState(true)
   const [resolving, setResolving] = useState<string | null>(null)
 
   async function load() {
+    if (!tenantId) return
     setLoading(true)
+
+    // alert_events não tem tenant_id direto — filtrar via business_id do tenant
+    const { data: bizData } = await supabase
+      .from('monitored_businesses')
+      .select('id')
+      .eq('tenant_id', tenantId)
+    const bizIds = (bizData ?? []).map(b => b.id)
+
+    if (bizIds.length === 0) {
+      setAlerts([])
+      setLoading(false)
+      return
+    }
+
     const { data } = await supabase
       .from('alert_events')
       .select('*, alert_rules(name,condition_type), monitored_businesses(name)')
+      .in('business_id', bizIds)
       .eq('notified', tab === 'resolved')
       .order('triggered_at', { ascending: false })
       .limit(100)
@@ -32,8 +50,8 @@ export default function Alerts() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [tab])
-  useEffect(() => { const h = () => load(); window.addEventListener('refresh_data', h); return () => window.removeEventListener('refresh_data', h) }, [tab])
+  useEffect(() => { if (tenantId) load() }, [tab, tenantId])
+  useEffect(() => { const h = () => load(); window.addEventListener('refresh_data', h); return () => window.removeEventListener('refresh_data', h) }, [tab, tenantId])
 
   async function resolve(id: string) {
     setResolving(id)

@@ -33,6 +33,7 @@ export default function App() {
   const [authView, setAuthView]      = useState<AuthView>('login')
   // null = verificando; false = sem tenant; true = tem tenant
   const [hasTenant, setHasTenant]    = useState<boolean | null>(null)
+  const [tenantId, setTenantId]      = useState<string>('')
   const [businessName, setBusinessName] = useState<string>('')
   const [tenantTrial, setTenantTrial] = useState<{
     plan: string; plan_status: string; trial_ends_at: string | null
@@ -61,31 +62,36 @@ export default function App() {
     return () => { subscription.unsubscribe(); channel.unsubscribe() }
   }, [])
 
-  // Verifica se o usuário logado já tem tenant provisionado
+  // Verifica se o usuário logado já tem tenant provisionado e carrega tenant_id
   useEffect(() => {
     if (!session) return
     supabase
       .from('tenant_users')
-      .select('tenant_id', { count: 'exact', head: true })
-      .then(({ count }) => setHasTenant((count ?? 0) > 0))
+      .select('tenant_id')
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (data?.tenant_id) {
+          setTenantId(data.tenant_id)
+          setHasTenant(true)
+        } else {
+          setHasTenant(false)
+        }
+      })
   }, [session?.user.id])
 
-  // Busca nome da empresa e status do trial
+  // Busca nome da empresa e status do trial (sempre filtrado pelo tenant_id do usuário)
   useEffect(() => {
-    if (!hasTenant) return
-    supabase.from('monitored_businesses').select('name').limit(1).single()
+    if (!hasTenant || !tenantId) return
+    supabase.from('monitored_businesses').select('name').eq('tenant_id', tenantId).limit(1).single()
       .then(({ data }) => { if (data?.name) setBusinessName(data.name) })
 
-    supabase.from('tenant_users').select('tenant_id').limit(1).single()
-      .then(({ data: tu }) => {
-        if (!tu?.tenant_id) return
-        return supabase.from('tenants')
-          .select('plan, plan_status, trial_ends_at')
-          .eq('id', tu.tenant_id)
-          .single()
-      })
-      .then(res => { if (res?.data) setTenantTrial(res.data) })
-  }, [hasTenant])
+    supabase.from('tenants')
+      .select('plan, plan_status, trial_ends_at')
+      .eq('id', tenantId)
+      .single()
+      .then(({ data }) => { if (data) setTenantTrial(data) })
+  }, [hasTenant, tenantId])
 
   function refresh() { window.dispatchEvent(new Event('refresh_data')) }
 
@@ -119,9 +125,9 @@ export default function App() {
     : null
 
   const pages: Record<Page, ReactElement> = {
-    dashboard: <Dashboard />,
-    reviews:   <Reviews onNavigateCopilot={() => setPage('copilot')} />,
-    alerts:    <Alerts />,
+    dashboard: <Dashboard tenantId={tenantId} />,
+    reviews:   <Reviews tenantId={tenantId} onNavigateCopilot={() => setPage('copilot')} />,
+    alerts:    <Alerts tenantId={tenantId} />,
     copilot:   <Copilot session={session} />,
     pricing:   <Pricing />,
   }

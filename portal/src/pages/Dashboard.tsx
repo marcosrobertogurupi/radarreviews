@@ -20,35 +20,57 @@ interface KPI {
   avg_score: number
 }
 
-export default function Dashboard() {
+interface Props { tenantId: string }
+
+export default function Dashboard({ tenantId }: Props) {
   const [kpi, setKpi]           = useState<KPI | null>(null)
   const [trend, setTrend]       = useState<Array<{ date: string; pos: number; neg: number; crit: number }>>([])
   const [dist, setDist]         = useState<Array<{ name: string; value: number; color: string }>>([])
   const [recent, setRecent]     = useState<Review[]>([])
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading]     = useState(true)
+  const [, setRefreshing]         = useState(false)
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
     else setRefreshing(true)
+
+    // Sem tenant ainda carregado, não buscar nada
+    if (!tenantId) {
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
-    const since7  = new Date(Date.now() -  7 * 86400_000).toISOString()
+
+    // Obter business_ids do tenant para filtrar alert_events (que não tem tenant_id direto)
+    const { data: bizData } = await supabase
+      .from('monitored_businesses')
+      .select('id')
+      .eq('tenant_id', tenantId)
+    const bizIds = (bizData ?? []).map(b => b.id)
 
     const [rvRes, alRes, recentRes, alertRes] = await Promise.all([
-      supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at').gte('published_at', since30),
-      supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false),
-      supabase.from('reviews').select('*, monitored_businesses(name)').order('published_at', { ascending: false }).limit(5),
-      supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).order('triggered_at', { ascending: false }).limit(3),
+      supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at')
+        .eq('tenant_id', tenantId).gte('published_at', since30),
+      bizIds.length
+        ? supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false).in('business_id', bizIds)
+        : Promise.resolve({ count: 0, data: null, error: null }),
+      supabase.from('reviews').select('*, monitored_businesses(name)')
+        .eq('tenant_id', tenantId).order('published_at', { ascending: false }).limit(5),
+      bizIds.length
+        ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).in('business_id', bizIds).order('triggered_at', { ascending: false }).limit(3)
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     const reviews = rvRes.data ?? []
 
     // KPIs com contagem nativa para evitar limites de fetch
     const [totalRes, negCritRes, critRes] = await Promise.all([
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30),
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30).eq('sentiment', 'critical'),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).eq('sentiment', 'critical'),
     ])
 
     const total = totalRes.count ?? 0
@@ -59,6 +81,7 @@ export default function Dashboard() {
     const { data: metricsData } = await supabase
       .from('reviews')
       .select('rating, dissatisfaction_score')
+      .eq('tenant_id', tenantId)
       .gte('published_at', since30)
       .limit(1000)
 
@@ -107,7 +130,7 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    load()
+    if (tenantId) load()
     const handler = () => load(true)
     window.addEventListener('refresh_data', handler)
 
@@ -133,7 +156,7 @@ export default function Dashboard() {
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
     }
-  }, [])
+  }, [tenantId])
 
   if (loading) return (
     <div>
