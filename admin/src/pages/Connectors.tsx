@@ -121,28 +121,38 @@ export default function Connectors() {
     }
     const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/connector/${selected.id}/config`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
-    })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
-      return
+    try {
+      const resp = await fetch(`${apiUrl}/api/admin/connector/${selected.id}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+        return
+      }
+      alert('Configuração salva com sucesso!')
+      setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
+      setEditingConfig(false)
+      loadAll()
+    } catch {
+      alert('Não foi possível conectar à API.')
     }
-    setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
-    setEditingConfig(false)
-    loadAll()
   }
 
   async function forceSync() {
     if (!selected) return
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    await fetch(`${apiUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
-    const now = new Date().toISOString()
-    setSelected({ ...selected, next_sync_at: now, status: 'active' })
-    loadAll()
+    try {
+      await fetch(`${apiUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
+      const now = new Date().toISOString()
+      alert('Busca forçada iniciada!')
+      setSelected({ ...selected, next_sync_at: now, status: 'active' })
+      loadAll()
+    } catch {
+      alert('Não foi possível conectar à API.')
+    }
   }
 
   async function deleteConnector(id: string, _businessId: string, channel: string) {
@@ -175,23 +185,28 @@ export default function Connectors() {
   async function saveNewConnector(e: React.FormEvent) {
     e.preventDefault()
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/connector`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        business_id: newConn.business_id,
-        channel: newConn.channel,
-        external_id: newConn.external_id,
-        config: { interval_minutes: 60 },
-      }),
-    })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      return alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+    try {
+      const resp = await fetch(`${apiUrl}/api/admin/connector`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: newConn.business_id,
+          channel: newConn.channel,
+          external_id: newConn.external_id,
+          config: { interval_minutes: 60 },
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        return alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+      }
+      alert('Conector criado com sucesso!')
+      setShowCreateModal(false)
+      setNewConn({ ...newConn, external_id: '' })
+      loadAll()
+    } catch {
+      alert('Não foi possível conectar à API.')
     }
-    setShowCreateModal(false)
-    setNewConn({ ...newConn, external_id: '' })
-    loadAll()
   }
 
   async function loadAll() {

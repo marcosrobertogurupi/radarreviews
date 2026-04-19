@@ -53,7 +53,7 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
   
   res.setHeader('Access-Control-Allow-Origin', isAllowed ? origin : allowed[0])
   res.setHeader('Access-Control-Allow-Headers', extraHeaders)
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, PATCH, DELETE, OPTIONS')
   res.setHeader('Vary', 'Origin')
 }
 

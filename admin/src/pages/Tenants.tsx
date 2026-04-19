@@ -117,27 +117,32 @@ export default function Tenants() {
     if (!editingTenant) return
 
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingTenant.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: editingTenant.name,
-        slug: editingTenant.slug,
-        plan: editingTenant.plan || 'trial',
-        admin_whatsapp: editingTenant.admin_whatsapp || null,
-        admin_email: editingTenant.admin_email || null,
-        critical_alert_hours: editingTenant.critical_alert_hours || null,
-        business_cnpj: editingTenant.cnpj !== undefined ? (editingTenant.cnpj || null) : undefined,
-      }),
-    })
+    try {
+      const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingTenant.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editingTenant.name,
+          slug: editingTenant.slug,
+          plan: editingTenant.plan || 'trial',
+          admin_whatsapp: editingTenant.admin_whatsapp || null,
+          admin_email: editingTenant.admin_email || null,
+          critical_alert_hours: editingTenant.critical_alert_hours || null,
+          business_cnpj: editingTenant.cnpj !== undefined ? (editingTenant.cnpj || null) : undefined,
+        }),
+      })
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      return alert(err.error ?? resp.statusText)
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        return alert(err.error ?? resp.statusText)
+      }
+
+      alert('Assinante atualizado com sucesso!')
+      setEditingTenant(null)
+      loadAll()
+    } catch {
+      alert('Não foi possível conectar à API. Verifique se o servidor está online.')
     }
-
-    setEditingTenant(null)
-    loadAll()
   }
 
   async function toggleActive(t: Tenant) {
@@ -145,19 +150,24 @@ export default function Tenants() {
     if (!confirm(`Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de ${t.name}?`)) return
     
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}/active`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: newVal }),
-    })
-    
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      return alert('Erro ao alterar status: ' + (err.error ?? resp.statusText))
-    }
+    try {
+      const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}/active`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: newVal }),
+      })
+      
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        return alert('Erro ao alterar status: ' + (err.error ?? resp.statusText))
+      }
 
-    // Atualiza locamente para imediato visual feedback
-    setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
+      alert(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`)
+      // Atualiza locamente para imediato visual feedback
+      setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
+    } catch {
+      alert('Não foi possível conectar à API.')
+    }
   }
 
   async function handleUpdateCredentials(e: React.FormEvent) {
@@ -195,23 +205,29 @@ export default function Tenants() {
     setSaving(true)
 
     const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        business_name: editingBusiness.name,
-        business_cnpj: editingBusiness.cnpj || null,
-      }),
-    })
+    try {
+      const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_name: editingBusiness.name,
+          business_cnpj: editingBusiness.cnpj || null,
+        }),
+      })
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      alert('Erro ao atualizar empresa: ' + (err.error ?? resp.statusText))
-    } else {
-      setEditingBusiness(null)
-      loadAll()
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        alert('Erro ao atualizar empresa: ' + (err.error ?? resp.statusText))
+      } else {
+        alert('Empresa atualizada com sucesso!')
+        setEditingBusiness(null)
+        loadAll()
+      }
+    } catch {
+      alert('Não foi possível conectar à API.')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   async function handleDelete(t: Tenant) {
