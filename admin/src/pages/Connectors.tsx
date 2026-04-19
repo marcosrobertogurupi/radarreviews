@@ -159,7 +159,22 @@ export default function Connectors() {
       
       if (revError) throw new Error('Erro ao apagar reviews: ' + revError.message)
 
-      // 2. Apagar conector
+      // 2. Apagar notificações do sistema ligadas a este conector
+      const { error: notifError } = await supabase
+        .from('system_notifications')
+        .delete()
+        .eq('connector_id', id)
+      
+      if (notifError) {
+        console.warn('Erro ao apagar notificações:', notifError.message)
+        // Não trava a exclusão se falhar aqui, mas tentamos limpar
+      }
+
+      // 3. Apagar alertas vinculados (se houver referência direta)
+      // Nota: alert_events geralmente referencia tenant_id, mas vamos garantir 
+      // se houver alguma referência futura ou oculta.
+
+      // 4. Apagar conector
       const { error: connError } = await supabase
         .from('channel_connectors')
         .delete()
