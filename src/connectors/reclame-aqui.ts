@@ -203,43 +203,72 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       return result
     }
 
-    // Buscar corpo completo das reclamações que só têm título
+    // Buscar corpo completo das reclamações (sempre buscar para garantir que não venha cortado)
     const fetchBody = (connector.config['fetch_body'] as boolean) ?? true
     if (fetchBody) {
-      const withoutBody = allComplaints.filter(c => !c.description && c.url && c.url.includes('/reclamacao/'))
-      const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 20
-      const toFetch = withoutBody.slice(0, MAX_BODY_FETCH)
+      // Filtramos apenas as que têm URL válida
+      const toFetch = allComplaints.filter(c => c.url && c.url.includes('/reclamacao/'))
+      const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 30
+      const limitedToFetch = toFetch.slice(0, MAX_BODY_FETCH)
 
-      if (toFetch.length > 0) {
-        logger.info(`[${CHANNEL}] Buscando corpo de ${toFetch.length} reclamações`)
-        for (const complaint of toFetch) {
+      if (limitedToFetch.length > 0) {
+        logger.info(`[${CHANNEL}] Buscando corpo detalhado de ${limitedToFetch.length} reclamações para evitar texto cortado`)
+        for (const complaint of limitedToFetch) {
           try {
             await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-            await page.waitForTimeout(2000)
+            await page.waitForTimeout(2500) // Pequena pausa para garantir carregamento
+            
             const pageData = await page.evaluate(() => {
+              // 1. Tentar via __NEXT_DATA__ do detalhe (mais garantido)
               const nextEl = document.getElementById('__NEXT_DATA__')
               if (nextEl) {
                 try {
                   const data = JSON.parse(nextEl.textContent ?? '')
                   const pp = data?.props?.pageProps
-                  const c = pp?.complaint ?? pp?.initialData?.complaint
-                  if (c) return {
-                    body: String(c.description ?? c.text ?? ''),
-                    date: String(c.createdDate ?? c.date ?? c.data ?? ''),
+                  // A estrutura no detalhe é diferente: initialData.complaint ou pageProps.complaint
+                  const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData
+                  if (c && (c.description || c.text)) {
+                    return {
+                      body: String(c.description ?? c.text ?? ''),
+                      date: String(c.createdDate ?? c.date ?? c.data ?? ''),
+                    }
                   }
                 } catch { /* continua */ }
               }
-              const el = document.querySelector('[class*="complaint-description"], [class*="ComplaintDescription"], [class*="description"], [data-testid*="description"]')
+              
+              // 2. Fallback via seletores DOM (seletores mais abrangentes)
+              const selectors = [
+                '[class*="complaint-description"]',
+                '[class*="Description"]',
+                '[data-testid="complaint-description"]',
+                'p[class*="text"]',
+                '.complain-body'
+              ]
+              
+              let bodyText = null
+              for (const sel of selectors) {
+                const el = document.querySelector(sel)
+                if (el && el.textContent?.trim().length ? el.textContent.trim().length > 50 : false) {
+                  bodyText = el.textContent.trim()
+                  break
+                }
+              }
+
               const timeEl = document.querySelector('time[datetime], [class*="date"], [class*="Date"]')
               return {
-                body: el?.textContent?.trim() ?? null,
+                body: bodyText,
                 date: timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? null,
               }
             })
-            if (pageData.body) complaint.description = pageData.body
-            if (pageData.date && !complaint.date) complaint.date = pageData.date
-          } catch {
-            // Ignora erros individuais de página
+
+            if (pageData.body) {
+              complaint.description = pageData.body
+            }
+            if (pageData.date && !complaint.date) {
+              complaint.date = pageData.date
+            }
+          } catch (err) {
+            logger.warn(`[${CHANNEL}] Erro ao buscar detalhe da reclamação: ${complaint.url}`, { error: err })
           }
         }
       }
