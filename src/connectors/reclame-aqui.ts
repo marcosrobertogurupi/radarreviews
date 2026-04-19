@@ -224,13 +224,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
               if (nextEl) {
                 try {
                   const data = JSON.parse(nextEl.textContent ?? '')
-                  const pp = data?.props?.pageProps
-                  // A estrutura no detalhe é diferente: initialData.complaint ou pageProps.complaint
-                  const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData
+                  const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData ?? pp?.initialState?.complaint
                   if (c && (c.description || c.text)) {
                     return {
                       body: String(c.description ?? c.text ?? ''),
-                      date: String(c.createdDate ?? c.date ?? c.data ?? ''),
+                      date: String(c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.createdDate ?? ''),
                     }
                   }
                 } catch { /* continua */ }
@@ -350,7 +348,7 @@ async function extractFromNextData(page: import('playwright-core').Page, company
           description: String(c['description'] ?? c['descricao'] ?? c['text'] ?? ''),
           status: String(c['status'] ?? ''),
           author: String(c['demanderName'] ?? c['author'] ?? c['nome'] ?? ''),
-          date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? ''),
+          date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? c['createdAt'] ?? c['legacyComplaint']?.['createdDate'] ?? ''),
           url,
           isResolved: Boolean(c['evaluated'] ?? false),
         })
@@ -498,30 +496,50 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
 
 function parseDate(dateStr: string): string | null {
   if (!dateStr || dateStr.trim() === '') return null
+  const s = dateStr.toLowerCase().trim()
 
-  // ISO 8601 (ex: "2024-04-17T15:30:00.000Z" ou "2024-04-17")
+  // 1. Datas relativas: "há 2 dias", "há 3 horas", "há 1 minuto"
+  if (s.startsWith('há')) {
+    const now = new Date()
+    const match = s.match(/há\s+(\d+)\s+(dia|hora|minuto|mês|ano)s?/)
+    if (match) {
+      const value = parseInt(match[1], 10)
+      const unit = match[2]
+      if (unit.startsWith('dia')) now.setDate(now.getDate() - value)
+      else if (unit.startsWith('hora')) now.setHours(now.getHours() - value)
+      else if (unit.startsWith('minuto')) now.setMinutes(now.getMinutes() - value)
+      else if (unit.startsWith('mês')) now.setMonth(now.getMonth() - value)
+      else if (unit.startsWith('ano')) now.setFullYear(now.getFullYear() - value)
+      return now.toISOString()
+    }
+    if (s.includes('instante') || s.includes('pouco')) return now.toISOString()
+  }
+
+  // 2. ISO 8601 (ex: "2024-04-17T15:30:00.000Z")
   try {
     const d = new Date(dateStr)
     if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.toISOString()
   } catch { /* continua */ }
 
-  // Formato brasileiro com hora: "17/04/2024 às 15:30" ou "17/04/2024 15:30"
-  const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})[^\d]*(\d{2}):(\d{2})/)
+  // 3. Formato brasileiro com hora: "17/04/2024 às 15:30" ou "17/04/24 15:30"
+  const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})[^\d]*(\d{2}):(\d{2})/)
   if (brDateTime) {
-    const [, day, month, year, hour, min] = brDateTime
+    const [, day, month, yearStr, hour, min] = brDateTime
+    const year = yearStr.length === 2 ? `20${yearStr}` : yearStr
     const d = new Date(`${year}-${month}-${day}T${hour}:${min}:00-03:00`)
     if (!isNaN(d.getTime())) return d.toISOString()
   }
 
-  // Formato brasileiro simples: "17/04/2024"
-  const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+  // 4. Formato brasileiro simples: "17/04/2024" ou "17/04/24"
+  const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})/)
   if (brMatch) {
-    const [, day, month, year] = brMatch
+    const [, day, month, yearStr] = brMatch
+    const year = yearStr.length === 2 ? `20${yearStr}` : yearStr
     const d = new Date(`${year}-${month}-${day}T12:00:00-03:00`)
     if (!isNaN(d.getTime())) return d.toISOString()
   }
 
-  // Timestamp unix em milissegundos (ex: 1713369600000)
+  // 5. Timestamp unix em milissegundos
   if (/^\d{13}$/.test(dateStr.trim())) {
     const d = new Date(parseInt(dateStr, 10))
     if (!isNaN(d.getTime())) return d.toISOString()
