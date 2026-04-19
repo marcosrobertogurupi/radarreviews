@@ -23,12 +23,17 @@
 
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
-import { chromium } from 'playwright-core'
+import { chromium } from 'playwright-extra'
+import StealthPlugin from 'playwright-stealth'
 import { z } from 'zod'
 import { logger } from '../lib/logger.js'
 import { ingestReviews } from '../lib/ingest.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
+
+// Ativar stealth
+chromium.use(StealthPlugin())
+
 
 // -----------------------------------------------------------------------------
 // Constantes
@@ -111,14 +116,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   try {
     browser = await chromium.launch({
       headless: true,
-      // No Docker do Playwright, o navegador é detectado automaticamente 
-      // desde que não haja variáveis de ambiente conflitantes.
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
         '--disable-blink-features=AutomationControlled',
       ],
     })
@@ -127,30 +129,20 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       userAgent: USER_AGENT,
       locale: 'pt-BR',
       timezoneId: 'America/Sao_Paulo',
-      // Viewport de desktop padrão
       viewport: { width: 1366, height: 768 },
-      extraHTTPHeaders: {
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      },
-    })
-
-    // Desabilitar webdriver flag via JavaScript
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
     })
 
     const page = await context.newPage()
     page.setDefaultTimeout(timeoutMs)
 
-    // Aumentar o timeout de navegação para evitar falhas por lentidão
-    page.setDefaultNavigationTimeout(timeoutMs * 2)
-
     const allComplaints: ReclameAquiComplaint[] = []
+
+    // Limpeza do slug: garantir minúsculas e hífens no lugar de espaços
+    const sanitizedSlug = slug.trim().toLowerCase().replace(/\s+/g, '-')
 
     // Iterar pelas páginas
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      const url = `${BASE_URL}/empresa/${slug}/lista-reclamacoes/?pagina=${pageNum}`
+      const url = `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=${pageNum}`
 
       logger.info(`[${CHANNEL}] Navegando para página ${pageNum}`, {
         connector_id: connector.id,
@@ -164,7 +156,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         await page.waitForTimeout(5000)
 
         // Estratégia 1: Extrair do __NEXT_DATA__ (SSR — mais confiável)
-        const nextDataComplaints = await extractFromNextData(page, slug)
+        const nextDataComplaints = await extractFromNextData(page, sanitizedSlug)
 
         if (nextDataComplaints.length > 0) {
           logger.info(`[${CHANNEL}] Dados extraídos via __NEXT_DATA__`, {
@@ -179,7 +171,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         }
 
         // Estratégia 2: Fallback para scraping via DOM
-        const domComplaints = await extractFromDom(page, slug)
+        const domComplaints = await extractFromDom(page, sanitizedSlug)
 
         if (domComplaints.length > 0) {
           logger.info(`[${CHANNEL}] Dados extraídos via DOM`, {
@@ -207,7 +199,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     result.reviews_fetched = allComplaints.length
 
     if (allComplaints.length === 0) {
-      logger.info(`[${CHANNEL}] Nenhuma reclamação encontrada para ${slug}`)
+      logger.info(`[${CHANNEL}] Nenhuma reclamação encontrada para ${sanitizedSlug}`)
       return result
     }
 
@@ -267,7 +259,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
     logger.info(`[${CHANNEL}] Job concluído`, {
       connector_id: connector.id,
-      slug,
+      slug: sanitizedSlug,
       reviews_fetched: result.reviews_fetched,
       reviews_new: ingest.reviews_new,
     })
