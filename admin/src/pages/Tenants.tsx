@@ -103,6 +103,8 @@ export default function Tenants() {
       setShowModal(false)
       setNewTenant({ name: '', slug: '', initialBusiness: '', cnpj: '', email: '', password: '' })
       loadAll()
+      // Atualiza o combobox de tenants no App.tsx (e demais páginas que dependem da lista)
+      window.dispatchEvent(new Event('refresh_data'))
     } catch {
       alert('Não foi possível conectar à API. Verifique se o servidor está online.')
     } finally {
@@ -219,6 +221,7 @@ export default function Tenants() {
     } else {
       setTenants(prev => prev.filter(x => x.id !== t.id))
       setBusinesses(prev => { const n = {...prev}; delete n[t.id]; return n; })
+      window.dispatchEvent(new Event('refresh_data'))
     }
   }
 
