@@ -115,17 +115,22 @@ export default function Connectors() {
       if (editingConfigJson.trim()) {
         parsedConfig = JSON.parse(editingConfigJson)
       }
-    } catch (e) {
+    } catch {
       alert('Formato JSON inválido na Configuração Avançada.')
       return
     }
-
     const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
-    await supabase.from('channel_connectors')
-      // Quando salva as configuracoes reativa o motor (clear do status de error) 
-      // para rodar o sync ou evitar um falso negativo 
-      .update({ config: newConfig, external_id: editingExternalId, status: 'active' })
-      .eq('id', selected.id)
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/connector/${selected.id}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+      return
+    }
     setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
     setEditingConfig(false)
     loadAll()
@@ -133,11 +138,9 @@ export default function Connectors() {
 
   async function forceSync() {
     if (!selected) return
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    await fetch(`${apiUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
     const now = new Date().toISOString()
-    await supabase.from('channel_connectors').update({ 
-      next_sync_at: now,
-      status: 'active' 
-    }).eq('id', selected.id)
     setSelected({ ...selected, next_sync_at: now, status: 'active' })
     loadAll()
   }
@@ -171,14 +174,21 @@ export default function Connectors() {
 
   async function saveNewConnector(e: React.FormEvent) {
     e.preventDefault()
-    const { error } = await supabase.from('channel_connectors').insert({
-      business_id: newConn.business_id,
-      channel: newConn.channel,
-      external_id: newConn.external_id,
-      status: 'active',
-      config: { interval_minutes: 60 }
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/connector`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_id: newConn.business_id,
+        channel: newConn.channel,
+        external_id: newConn.external_id,
+        config: { interval_minutes: 60 },
+      }),
     })
-    if (error) return alert('Erro ao salvar: ' + error.message)
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      return alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+    }
     setShowCreateModal(false)
     setNewConn({ ...newConn, external_id: '' })
     loadAll()

@@ -57,6 +57,17 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
   res.setHeader('Vary', 'Origin')
 }
 
+async function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  let raw = ''
+  for await (const chunk of req) raw += chunk
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    throw new Error('JSON inválido')
+  }
+}
+
 // ── Contexto por tenant (cache 5 min) ────────────────────────────
 
 interface TenantContext {
@@ -495,6 +506,188 @@ async function handleDeleteConnector(
   }
 }
 
+// ── Novos endpoints de admin ───────────────────────────────────────
+
+async function handleCreateConnector(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  try {
+    const body = await readBody(req) as {
+      business_id: string
+      channel: string
+      external_id: string
+      config?: Record<string, unknown>
+    }
+    const { data, error } = await supabaseAdmin
+      .from('channel_connectors')
+      .insert({
+        business_id: body.business_id,
+        channel: body.channel,
+        external_id: body.external_id,
+        status: 'active',
+        config: body.config ?? { interval_minutes: 60 },
+      })
+      .select()
+      .single()
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+    res.writeHead(201, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(data))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+async function handleUpdateConnectorConfig(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  try {
+    const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('/config')[0]
+    const body = await readBody(req) as {
+      config: Record<string, unknown>
+      external_id: string
+      status: string
+    }
+    const { error } = await supabaseAdmin
+      .from('channel_connectors')
+      .update({
+        config: body.config,
+        external_id: body.external_id,
+        status: body.status ?? 'active',
+      })
+      .eq('id', connectorId)
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+async function handleForceSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('/force-sync')[0]
+  const { error } = await supabaseAdmin
+    .from('channel_connectors')
+    .update({ next_sync_at: new Date().toISOString(), status: 'active' })
+    .eq('id', connectorId)
+  if (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: error.message }))
+    return
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+
+async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  try {
+    const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('?')[0]
+    const body = await readBody(req) as {
+      name?: string
+      slug?: string
+      plan?: string
+      admin_whatsapp?: string | null
+      admin_email?: string | null
+      critical_alert_hours?: number | null
+      business_name?: string
+      business_cnpj?: string
+      business_category?: string
+    }
+
+    // Atualizar tenant
+    if (body.name || body.plan || body.slug || body.admin_whatsapp !== undefined || body.admin_email !== undefined || body.critical_alert_hours !== undefined) {
+      const { error } = await supabaseAdmin
+        .from('tenants')
+        .update({
+          ...(body.name  ? { name: body.name }   : {}),
+          ...(body.slug  ? { slug: body.slug }   : {}),
+          ...(body.plan  ? { plan: body.plan }   : {}),
+          ...(body.admin_whatsapp !== undefined ? { admin_whatsapp: body.admin_whatsapp } : {}),
+          ...(body.admin_email !== undefined ? { admin_email: body.admin_email } : {}),
+          ...(body.critical_alert_hours !== undefined ? { critical_alert_hours: body.critical_alert_hours } : {}),
+        })
+        .eq('id', tenantId)
+      if (error) {
+        if (error.code === '23505' || error.message.includes('duplicate key')) {
+          res.writeHead(409, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Assinante já cadastrado! O identificador (slug) desta empresa já consta no nosso sistema.' }))
+          return
+        }
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: error.message }))
+        return
+      }
+    }
+
+    // Atualizar business associada (se campos fornecidos)
+    if (body.business_name || body.business_cnpj !== undefined || body.business_category) {
+      const updates: Record<string, unknown> = {}
+      if (body.business_name)     updates['name']     = body.business_name
+      if (body.business_cnpj !== undefined) updates['cnpj'] = body.business_cnpj
+      if (body.business_category) updates['category'] = body.business_category
+
+      // O frontend atualizava apenas a PRIMEIRA empresa. 
+      // Para manter comportamento, pegamos a primeira e atualizamos.
+      const { data: businesses } = await supabaseAdmin
+        .from('monitored_businesses')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .limit(1)
+
+      if (businesses && businesses.length > 0) {
+        const { error } = await supabaseAdmin
+          .from('monitored_businesses')
+          .update(updates)
+          .eq('id', businesses[0].id)
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: error.message }))
+          return
+        }
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+async function handleToggleTenantActive(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  try {
+    const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('/active')[0]
+    const body = await readBody(req) as { is_active: boolean }
+
+    await Promise.all([
+      supabaseAdmin.from('tenants').update({ is_active: body.is_active }).eq('id', tenantId),
+      supabaseAdmin.from('monitored_businesses').update({ is_active: body.is_active }).eq('tenant_id', tenantId),
+    ])
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 // ── Servidor ──────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
@@ -529,19 +722,67 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/api/admin/tenant/')) {
-    handleDeleteTenant(req, res).catch(err => {
-      console.error('[delete-tenant] Erro não tratado:', err)
-      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
-    })
-    return
+    const method = req.method
+    if (method === 'PATCH' && url.match(/^\/api\/admin\/tenant\/[^/]+\/active$/)) {
+      handleToggleTenantActive(req, res).catch(err => {
+        console.error('[tenant-active] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    if (method === 'PATCH' && url.match(/^\/api\/admin\/tenant\/[^/]+$/)) {
+      handleUpdateTenant(req, res).catch(err => {
+        console.error('[update-tenant] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    if (method === 'DELETE') {
+      handleDeleteTenant(req, res).catch(err => {
+        console.error('[delete-tenant] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
   }
 
-  if (url.startsWith('/api/admin/connector/')) {
-    handleDeleteConnector(req, res).catch(err => {
-      console.error('[delete-connector] Erro não tratado:', err)
-      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
-    })
-    return
+  if (url.startsWith('/api/admin/connector')) {
+    const method = req.method
+    if (method === 'POST' && url === '/api/admin/connector') {
+      handleCreateConnector(req, res).catch(err => {
+        console.error('[create-connector] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    if (method === 'PATCH' && url.match(/^\/api\/admin\/connector\/[^/]+\/config$/)) {
+      handleUpdateConnectorConfig(req, res).catch(err => {
+        console.error('[update-connector] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    if (method === 'PATCH' && url.match(/^\/api\/admin\/connector\/[^/]+\/force-sync$/)) {
+      handleForceSync(req, res).catch(err => {
+        console.error('[force-sync] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    if (method === 'DELETE' && url.startsWith('/api/admin/connector/')) {
+      handleDeleteConnector(req, res).catch(err => {
+        console.error('[delete-connector] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
+    // Para OPTIONS no CORS
+    if (method === 'OPTIONS') {
+      setCors(req, res)
+      res.writeHead(204)
+      res.end()
+      return
+    }
   }
 
   res.writeHead(404); res.end('Not found')

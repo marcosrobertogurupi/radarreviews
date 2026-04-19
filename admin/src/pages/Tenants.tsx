@@ -116,33 +116,24 @@ export default function Tenants() {
     e.preventDefault()
     if (!editingTenant) return
 
-    const { error } = await supabase.from('tenants').update({
-      name: editingTenant.name,
-      slug: editingTenant.slug,
-      plan: editingTenant.plan || 'trial',
-      admin_whatsapp: editingTenant.admin_whatsapp || null,
-      admin_email: editingTenant.admin_email || null,
-      critical_alert_hours: editingTenant.critical_alert_hours || null,
-    }).eq('id', editingTenant.id)
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingTenant.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: editingTenant.name,
+        slug: editingTenant.slug,
+        plan: editingTenant.plan || 'trial',
+        admin_whatsapp: editingTenant.admin_whatsapp || null,
+        admin_email: editingTenant.admin_email || null,
+        critical_alert_hours: editingTenant.critical_alert_hours || null,
+        business_cnpj: editingTenant.cnpj !== undefined ? (editingTenant.cnpj || null) : undefined,
+      }),
+    })
 
-    if (!error && editingTenant.cnpj !== undefined) {
-      // Atualizar o CNPJ da primeira empresa vinculada para facilitar a vida do usuário
-      const tenantBusinesses = businesses[editingTenant.id] || []
-      if (tenantBusinesses.length > 0) {
-        const firstBusiness = tenantBusinesses[0]
-        if (firstBusiness?.id) {
-          await supabase.from('monitored_businesses')
-            .update({ cnpj: editingTenant.cnpj || null })
-            .eq('id', firstBusiness.id)
-        }
-      }
-    }
-
-    if (error) {
-      if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
-        return alert('Assinante já cadastrado! O identificador (slug) desta empresa já consta no nosso sistema.')
-      }
-      return alert('Erro ao atualizar Tenant: ' + error.message)
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      return alert(err.error ?? resp.statusText)
     }
 
     setEditingTenant(null)
@@ -153,10 +144,18 @@ export default function Tenants() {
     const newVal = !(t.is_active ?? true)
     if (!confirm(`Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de ${t.name}?`)) return
     
-    // Updates
-    await supabase.from('tenants').update({ is_active: newVal }).eq('id', t.id)
-    await supabase.from('monitored_businesses').update({ is_active: newVal }).eq('tenant_id', t.id)
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}/active`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: newVal }),
+    })
     
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      return alert('Erro ao alterar status: ' + (err.error ?? resp.statusText))
+    }
+
     // Atualiza locamente para imediato visual feedback
     setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
   }
@@ -195,13 +194,19 @@ export default function Tenants() {
     if (!editingBusiness) return
     setSaving(true)
 
-    const { error } = await supabase.from('monitored_businesses').update({
-      name: editingBusiness.name,
-      cnpj: editingBusiness.cnpj || null
-    }).eq('id', editingBusiness.id)
+    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_name: editingBusiness.name,
+        business_cnpj: editingBusiness.cnpj || null,
+      }),
+    })
 
-    if (error) {
-      alert('Erro ao atualizar empresa: ' + error.message)
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      alert('Erro ao atualizar empresa: ' + (err.error ?? resp.statusText))
     } else {
       setEditingBusiness(null)
       loadAll()
