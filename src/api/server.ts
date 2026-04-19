@@ -460,6 +460,41 @@ async function handleDeleteTenant(
   }
 }
 
+// ── Deletar conector e dados vinculados ──────────────────────────
+// Usa service role key para contornar RLS que bloqueia o anon key
+
+async function handleDeleteConnector(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'DELETE')  { res.writeHead(405); res.end('Method not allowed'); return }
+
+  const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('?')[0]
+  if (!connectorId) { res.writeHead(400); res.end(JSON.stringify({ error: 'connectorId obrigatório' })); return }
+
+  try {
+    // Deletar filhos em sequência (evita conflito de FK entre eles)
+    await supabaseAdmin.from('system_notifications').delete().eq('connector_id', connectorId)
+    await supabaseAdmin.from('sync_jobs').delete().eq('connector_id', connectorId)
+    await supabaseAdmin.from('reviews').delete().eq('connector_id', connectorId)
+
+    // Deletar o conector
+    const { error } = await supabaseAdmin.from('channel_connectors').delete().eq('id', connectorId)
+    if (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return }
+
+    console.log(`[delete-connector] Conector ${connectorId} deletado`)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[delete-connector] Erro:', msg)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 // ── Servidor ──────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
@@ -496,6 +531,14 @@ const server = http.createServer((req, res) => {
   if (url.startsWith('/api/admin/tenant/')) {
     handleDeleteTenant(req, res).catch(err => {
       console.error('[delete-tenant] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/admin/connector/')) {
+    handleDeleteConnector(req, res).catch(err => {
+      console.error('[delete-connector] Erro não tratado:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

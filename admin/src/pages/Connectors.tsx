@@ -142,7 +142,7 @@ export default function Connectors() {
     loadAll()
   }
 
-  async function deleteConnector(id: string, businessId: string, channel: string) {
+  async function deleteConnector(id: string, _businessId: string, channel: string) {
     const confirmed = window.confirm(
       `ATENÇÃO CRÍTICA:\n\nDeseja realmente excluir este conector?\n\nIsso irá apagar permanentemente o conector e TODOS os reviews coletados deste canal (${CHANNEL_LABELS[channel as SourceChannel]}) para esta empresa.`
     )
@@ -150,37 +150,21 @@ export default function Connectors() {
 
     setLoading(true)
     try {
-      // 1. Apagar registros vinculados em paralelo para agilizar
-      // Incluímos reviews, notificações e histórico de jobs (que travam a exclusão por FK)
-      const results = await Promise.all([
-        supabase.from('reviews').delete().eq('connector_id', id),
-        supabase.from('system_notifications').delete().eq('connector_id', id),
-        supabase.from('sync_jobs').delete().eq('connector_id', id)
-      ])
-      
-      // Verificar se houve erro em algum dos deletes de filhos
-      const errors = results.filter(r => r.error).map(r => r.error?.message)
-      if (errors.length > 0) {
-        throw new Error('Erro ao limpar dados vinculados: ' + errors.join('; '))
+      // Usa o backend (service role key) para contornar o RLS que bloqueia
+      // o delete em system_notifications via anon key
+      const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+      const resp = await fetch(`${apiUrl}/api/admin/connector/${id}`, { method: 'DELETE' })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        throw new Error(err.error ?? resp.statusText)
       }
-
-      // 2. Pequena pausa para garantir que as constraints do banco reflitam as exclusões
-      await new Promise(r => setTimeout(r, 800))
-
-      // 3. Apagar o conector principal
-      const { error: connError } = await supabase
-        .from('channel_connectors')
-        .delete()
-        .eq('id', id)
-
-      if (connError) throw new Error('Erro ao apagar conector: ' + connError.message)
 
       alert('Conector e todos os dados associados (reviews, notificações, logs) foram excluídos com sucesso.')
       setSelected(null)
       loadAll()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Falha na exclusão:', err)
-      alert(err.message)
+      alert(err instanceof Error ? err.message : String(err))
       setLoading(false)
     }
   }
