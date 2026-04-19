@@ -104,7 +104,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       window.removeEventListener('refresh_data', handleRefresh)
       supabase.removeChannel(dashChannel)
     }
-  }, [selectedTenantId])
+  }, [selectedTenantId, tenants])
 
   async function loadAll(silent = false) {
     if (!silent) setLoading(true)
