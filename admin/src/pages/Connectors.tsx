@@ -150,31 +150,24 @@ export default function Connectors() {
 
     setLoading(true)
     try {
-      // 1. Apagar reviews deste conector/empresa
-      const { error: revError } = await supabase
-        .from('reviews')
-        .delete()
-        .eq('business_id', businessId)
-        .eq('channel', channel)
+      // 1. Apagar registros vinculados em paralelo para agilizar
+      // Incluímos reviews, notificações e histórico de jobs (que travam a exclusão por FK)
+      const results = await Promise.all([
+        supabase.from('reviews').delete().eq('connector_id', id),
+        supabase.from('system_notifications').delete().eq('connector_id', id),
+        supabase.from('sync_jobs').delete().eq('connector_id', id)
+      ])
       
-      if (revError) throw new Error('Erro ao apagar reviews: ' + revError.message)
-
-      // 2. Apagar notificações do sistema ligadas a este conector
-      const { error: notifError } = await supabase
-        .from('system_notifications')
-        .delete()
-        .eq('connector_id', id)
-      
-      if (notifError) {
-        console.warn('Erro ao apagar notificações:', notifError.message)
-        // Não trava a exclusão se falhar aqui, mas tentamos limpar
+      // Verificar se houve erro em algum dos deletes de filhos
+      const errors = results.filter(r => r.error).map(r => r.error?.message)
+      if (errors.length > 0) {
+        throw new Error('Erro ao limpar dados vinculados: ' + errors.join('; '))
       }
 
-      // 3. Apagar alertas vinculados (se houver referência direta)
-      // Nota: alert_events geralmente referencia tenant_id, mas vamos garantir 
-      // se houver alguma referência futura ou oculta.
+      // 2. Pequena pausa para garantir que as constraints do banco reflitam as exclusões
+      await new Promise(r => setTimeout(r, 800))
 
-      // 4. Apagar conector
+      // 3. Apagar o conector principal
       const { error: connError } = await supabase
         .from('channel_connectors')
         .delete()
@@ -182,10 +175,11 @@ export default function Connectors() {
 
       if (connError) throw new Error('Erro ao apagar conector: ' + connError.message)
 
-      alert('Conector e reviews excluídos com sucesso.')
+      alert('Conector e todos os dados associados (reviews, notificações, logs) foram excluídos com sucesso.')
       setSelected(null)
       loadAll()
     } catch (err: any) {
+      console.error('Falha na exclusão:', err)
       alert(err.message)
       setLoading(false)
     }
