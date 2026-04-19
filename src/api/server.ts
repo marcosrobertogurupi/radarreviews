@@ -744,6 +744,12 @@ const server = http.createServer((req, res) => {
       })
       return
     }
+    if (method === 'OPTIONS') {
+      setCors(req, res)
+      res.writeHead(204)
+      res.end()
+      return
+    }
   }
 
   if (url.startsWith('/api/admin/connector')) {
