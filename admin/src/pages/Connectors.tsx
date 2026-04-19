@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
+import { Trash2, AlertTriangle, Activity } from 'lucide-react'
 
 // ──────────────────────────────────────────────────────────────
 // Página Conectores
@@ -139,6 +140,40 @@ export default function Connectors() {
     }).eq('id', selected.id)
     setSelected({ ...selected, next_sync_at: now, status: 'active' })
     loadAll()
+  }
+
+  async function deleteConnector(id: string, businessId: string, channel: string) {
+    const confirmed = window.confirm(
+      `ATENÇÃO CRÍTICA:\n\nDeseja realmente excluir este conector?\n\nIsso irá apagar permanentemente o conector e TODOS os reviews coletados deste canal (${CHANNEL_LABELS[channel as SourceChannel]}) para esta empresa.`
+    )
+    if (!confirmed) return
+
+    setLoading(true)
+    try {
+      // 1. Apagar reviews deste conector/empresa
+      const { error: revError } = await supabase
+        .from('reviews')
+        .delete()
+        .eq('business_id', businessId)
+        .eq('channel', channel)
+      
+      if (revError) throw new Error('Erro ao apagar reviews: ' + revError.message)
+
+      // 2. Apagar conector
+      const { error: connError } = await supabase
+        .from('channel_connectors')
+        .delete()
+        .eq('id', id)
+
+      if (connError) throw new Error('Erro ao apagar conector: ' + connError.message)
+
+      alert('Conector e reviews excluídos com sucesso.')
+      setSelected(null)
+      loadAll()
+    } catch (err: any) {
+      alert(err.message)
+      setLoading(false)
+    }
   }
 
   async function saveNewConnector(e: React.FormEvent) {
@@ -364,8 +399,8 @@ export default function Connectors() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Canal', 'Empresa', 'Status', 'Último Sync', 'Próximo Sync', 'ID Externo'].map(h => (
-                    <th key={h} style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  {['Canal', 'Empresa', 'Status', 'Último Sync', 'Próximo Sync', 'ID Externo', ''].map(h => (
+                    <th key={h} style={{ padding: '10px 20px', textAlign: h === '' ? 'center' : 'left', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
                   ))}
@@ -405,6 +440,19 @@ export default function Connectors() {
                     </td>
                     <td style={{ padding: '12px 20px', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                       {c.external_id?.slice(0, 30) || '—'}
+                    </td>
+                    <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                      <button 
+                        className="btn-icon" 
+                        style={{ color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteConnector(c.id, c.business_id, c.channel)
+                        }}
+                        title="Excluir Conector e Reviews"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
