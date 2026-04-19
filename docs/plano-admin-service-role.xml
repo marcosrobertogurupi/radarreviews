@@ -1,0 +1,522 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_plan>
+  <title>Migrar escritas do painel admin para backend com service_role_key</title>
+  <objective>
+    Eliminar a dependência de RLS para operações de escrita do painel admin,
+    movendo todos os INSERT/UPDATE do admin para endpoints backend que usam
+    supabaseAdmin (service_role_key). Isso garante que mudanças de RLS nunca
+    quebrem o painel admin e que o isolamento de dados do portal do cliente
+    seja gerenciado exclusivamente no banco.
+  </objective>
+  <context>
+    <file path="src/api/server.ts" lines="664">
+      Servidor Express com endpoints existentes. Já tem supabaseAdmin importado
+      e endpoints DELETE para tenant e connector. Adicionar os novos endpoints
+      seguindo o mesmo padrão de handleDeleteTenant / handleDeleteConnector.
+    </file>
+    <file path="admin/src/pages/Connectors.tsx" lines="645">
+      Funções que precisam migrar: saveNewConnector (INSERT), updateConfig (UPDATE),
+      forceSync (UPDATE). A função deleteConnector já usa o backend — usar como modelo.
+    </file>
+    <file path="admin/src/pages/Tenants.tsx" lines="589">
+      Funções que precisam migrar: handleEditSave UPDATE em tenants + businesses,
+      toggleActive UPDATE em tenants + businesses, handleBusinessUpdate UPDATE em businesses.
+      handleCreate (INSERT tenant+business+tenant_user) e handleDelete já usam backend.
+    </file>
+  </context>
+
+  <sql_step order="0">
+    <title>Executar no Supabase SQL Editor ANTES de qualquer código</title>
+    <description>
+      Remover as políticas de escrita do superadmin via anon key.
+      Após a migração, o admin só escreve via service_role (backend),
+      então essas políticas não são mais necessárias e representam
+      superfície de ataque desnecessária.
+      ATENÇÃO: só executar após todos os endpoints estarem no ar e testados.
+    </description>
+    <sql><![CDATA[
+-- Remover políticas de escrita do admin via anon key (após migração completa)
+DROP POLICY IF EXISTS "connectors_admin_all"    ON public.channel_connectors;
+DROP POLICY IF EXISTS "businesses_admin_all"    ON public.monitored_businesses;
+DROP POLICY IF EXISTS "tenants_admin_all"       ON public.tenants;
+DROP POLICY IF EXISTS "tenant_users_admin_all"  ON public.tenant_users;
+DROP POLICY IF EXISTS "alert_events_admin_all"  ON public.alert_events;
+DROP POLICY IF EXISTS "reviews_admin_all"       ON public.reviews;
+
+-- Manter apenas as políticas de SELECT para superadmin (leitura no admin panel)
+-- As políticas de SELECT já existem do script fix-portal-rls.sql e fix-admin-write-rls.sql
+-- Verificar estado final:
+SELECT tablename, policyname, cmd FROM pg_policies
+WHERE schemaname = 'public'
+ORDER BY tablename, policyname;
+    ]]></sql>
+  </sql_step>
+
+  <backend_changes file="src/api/server.ts">
+    <description>
+      Adicionar 7 novos endpoints ao router principal. Cada handler segue
+      o padrão dos handlers existentes: extrair ID da URL, usar supabaseAdmin,
+      retornar JSON com status HTTP adequado.
+      Adicionar também os novos paths no router principal (bloco if/else if
+      que já existe para rotear as requisições).
+    </description>
+
+    <endpoint order="1">
+      <method>POST</method>
+      <path>/api/admin/connector</path>
+      <handler_name>handleCreateConnector</handler_name>
+      <description>Cria novo channel_connector. Substitui o INSERT direto em Connectors.tsx:saveNewConnector</description>
+      <body_fields>business_id, channel, external_id, config</body_fields>
+      <code><![CDATA[
+async function handleCreateConnector(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readBody(req) as {
+    business_id: string
+    channel: string
+    external_id: string
+    config?: Record<string, unknown>
+  }
+  const { data, error } = await supabaseAdmin
+    .from('channel_connectors')
+    .insert({
+      business_id: body.business_id,
+      channel: body.channel,
+      external_id: body.external_id,
+      status: 'active',
+      config: body.config ?? { interval_minutes: 60 },
+    })
+    .select()
+    .single()
+  if (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: error.message }))
+    return
+  }
+  res.writeHead(201, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(data))
+}
+      ]]></code>
+    </endpoint>
+
+    <endpoint order="2">
+      <method>PATCH</method>
+      <path>/api/admin/connector/:id/config</path>
+      <handler_name>handleUpdateConnectorConfig</handler_name>
+      <description>Atualiza config, external_id e status de um conector. Substitui updateConfig() em Connectors.tsx</description>
+      <body_fields>config, external_id, status</body_fields>
+      <code><![CDATA[
+async function handleUpdateConnectorConfig(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('/config')[0]
+  const body = await readBody(req) as {
+    config: Record<string, unknown>
+    external_id: string
+    status: string
+  }
+  const { error } = await supabaseAdmin
+    .from('channel_connectors')
+    .update({
+      config: body.config,
+      external_id: body.external_id,
+      status: body.status ?? 'active',
+    })
+    .eq('id', connectorId)
+  if (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: error.message }))
+    return
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+      ]]></code>
+    </endpoint>
+
+    <endpoint order="3">
+      <method>PATCH</method>
+      <path>/api/admin/connector/:id/force-sync</path>
+      <handler_name>handleForceSync</handler_name>
+      <description>Define next_sync_at para agora, forçando o scheduler executar no próximo ciclo. Substitui forceSync() em Connectors.tsx</description>
+      <code><![CDATA[
+async function handleForceSync(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('/force-sync')[0]
+  const { error } = await supabaseAdmin
+    .from('channel_connectors')
+    .update({ next_sync_at: new Date().toISOString(), status: 'active' })
+    .eq('id', connectorId)
+  if (error) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: error.message }))
+    return
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+      ]]></code>
+    </endpoint>
+
+    <endpoint order="4">
+      <method>PATCH</method>
+      <path>/api/admin/tenant/:id</path>
+      <handler_name>handleUpdateTenant</handler_name>
+      <description>
+        Atualiza dados do tenant (name, cnpj, plan) e opcionalmente da monitored_business associada.
+        Substitui handleEditSave() e handleBusinessUpdate() em Tenants.tsx.
+      </description>
+      <body_fields>name, cnpj, plan, business_name, business_cnpj, business_category</body_fields>
+      <code><![CDATA[
+async function handleUpdateTenant(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('?')[0]
+  const body = await readBody(req) as {
+    name?: string
+    cnpj?: string
+    plan?: string
+    business_name?: string
+    business_cnpj?: string
+    business_category?: string
+  }
+
+  // Atualizar tenant
+  if (body.name || body.plan) {
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .update({
+        ...(body.name  ? { name: body.name }   : {}),
+        ...(body.plan  ? { plan: body.plan }    : {}),
+      })
+      .eq('id', tenantId)
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+  }
+
+  // Atualizar business associada (se campos fornecidos)
+  if (body.business_name || body.business_cnpj || body.business_category) {
+    const updates: Record<string, unknown> = {}
+    if (body.business_name)     updates['name']     = body.business_name
+    if (body.business_cnpj)     updates['cnpj']     = body.business_cnpj
+    if (body.business_category) updates['category'] = body.business_category
+
+    const { error } = await supabaseAdmin
+      .from('monitored_businesses')
+      .update(updates)
+      .eq('tenant_id', tenantId)
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+      ]]></code>
+    </endpoint>
+
+    <endpoint order="5">
+      <method>PATCH</method>
+      <path>/api/admin/tenant/:id/active</path>
+      <handler_name>handleToggleTenantActive</handler_name>
+      <description>
+        Ativa ou desativa um tenant e todas as suas businesses.
+        Substitui toggleActive() em Tenants.tsx (2 updates simultâneos).
+      </description>
+      <body_fields>is_active (boolean)</body_fields>
+      <code><![CDATA[
+async function handleToggleTenantActive(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('/active')[0]
+  const body = await readBody(req) as { is_active: boolean }
+
+  await Promise.all([
+    supabaseAdmin.from('tenants').update({ is_active: body.is_active }).eq('id', tenantId),
+    supabaseAdmin.from('monitored_businesses').update({ is_active: body.is_active }).eq('tenant_id', tenantId),
+  ])
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+      ]]></code>
+    </endpoint>
+
+    <router_additions>
+      <description>
+        Adicionar as novas rotas no bloco principal de roteamento de server.ts.
+        Localizar o bloco if/else if que testa req.url e req.method e adicionar:
+      </description>
+      <code><![CDATA[
+// --- Novas rotas admin ---
+if (method === 'POST'  && path === '/api/admin/connector')                    return handleCreateConnector(req, res)
+if (method === 'PATCH' && path.match(/^\/api\/admin\/connector\/[^/]+\/config$/))  return handleUpdateConnectorConfig(req, res)
+if (method === 'PATCH' && path.match(/^\/api\/admin\/connector\/[^/]+\/force-sync$/)) return handleForceSync(req, res)
+if (method === 'PATCH' && path.match(/^\/api\/admin\/tenant\/[^/]+$/) && !path.endsWith('/active')) return handleUpdateTenant(req, res)
+if (method === 'PATCH' && path.match(/^\/api\/admin\/tenant\/[^/]+\/active$/)) return handleToggleTenantActive(req, res)
+      ]]></code>
+    </router_additions>
+  </backend_changes>
+
+  <frontend_changes file="admin/src/pages/Connectors.tsx">
+    <description>
+      Substituir 3 funções que fazem writes diretos no Supabase por chamadas fetch ao backend.
+      A variável apiUrl já existe no deleteConnector — reusar o mesmo padrão.
+      Copiar o padrão: const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    </description>
+
+    <function_change order="1">
+      <function_name>saveNewConnector</function_name>
+      <current_line>174</current_line>
+      <current_code><![CDATA[
+async function saveNewConnector(e: React.FormEvent) {
+  e.preventDefault()
+  const { error } = await supabase.from('channel_connectors').insert({
+    business_id: newConn.business_id,
+    channel: newConn.channel,
+    external_id: newConn.external_id,
+    status: 'active',
+    config: { interval_minutes: 60 }
+  })
+  if (error) return alert('Erro ao salvar: ' + error.message)
+  setShowCreateModal(false)
+  setNewConn({ ...newConn, external_id: '' })
+  loadAll()
+}
+      ]]></current_code>
+      <new_code><![CDATA[
+async function saveNewConnector(e: React.FormEvent) {
+  e.preventDefault()
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  const resp = await fetch(`${apiUrl}/api/admin/connector`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      business_id: newConn.business_id,
+      channel: newConn.channel,
+      external_id: newConn.external_id,
+      config: { interval_minutes: 60 },
+    }),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }))
+    return alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+  }
+  setShowCreateModal(false)
+  setNewConn({ ...newConn, external_id: '' })
+  loadAll()
+}
+      ]]></new_code>
+    </function_change>
+
+    <function_change order="2">
+      <function_name>updateConfig</function_name>
+      <current_line>111</current_line>
+      <current_code><![CDATA[
+async function updateConfig() {
+  if (!selected) return
+  let parsedConfig = selected.config || {}
+  try {
+    if (editingConfigJson.trim()) {
+      parsedConfig = JSON.parse(editingConfigJson)
+    }
+  } catch (e) {
+    alert('Formato JSON inválido na Configuração Avançada.')
+    return
+  }
+  const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
+  await supabase.from('channel_connectors')
+    .update({ config: newConfig, external_id: editingExternalId, status: 'active' })
+    .eq('id', selected.id)
+  setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
+  setEditingConfig(false)
+  loadAll()
+}
+      ]]></current_code>
+      <new_code><![CDATA[
+async function updateConfig() {
+  if (!selected) return
+  let parsedConfig = selected.config || {}
+  try {
+    if (editingConfigJson.trim()) {
+      parsedConfig = JSON.parse(editingConfigJson)
+    }
+  } catch {
+    alert('Formato JSON inválido na Configuração Avançada.')
+    return
+  }
+  const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  const resp = await fetch(`${apiUrl}/api/admin/connector/${selected.id}/config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }))
+    alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+    return
+  }
+  setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
+  setEditingConfig(false)
+  loadAll()
+}
+      ]]></new_code>
+    </function_change>
+
+    <function_change order="3">
+      <function_name>forceSync</function_name>
+      <current_line>134</current_line>
+      <current_code><![CDATA[
+async function forceSync() {
+  if (!selected) return
+  const now = new Date().toISOString()
+  await supabase.from('channel_connectors').update({
+    next_sync_at: now,
+    status: 'active'
+  }).eq('id', selected.id)
+  setSelected({ ...selected, next_sync_at: now, status: 'active' })
+  loadAll()
+}
+      ]]></current_code>
+      <new_code><![CDATA[
+async function forceSync() {
+  if (!selected) return
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  await fetch(`${apiUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
+  const now = new Date().toISOString()
+  setSelected({ ...selected, next_sync_at: now, status: 'active' })
+  loadAll()
+}
+      ]]></new_code>
+    </function_change>
+  </frontend_changes>
+
+  <frontend_changes file="admin/src/pages/Tenants.tsx">
+    <description>
+      Substituir 3 grupos de writes diretos por chamadas ao backend.
+      Tenants.tsx já tem handleCreate e handleDelete usando o backend —
+      usar como referência de padrão.
+    </description>
+
+    <function_change order="1">
+      <function_name>handleEditSave (atualizar tenant e business)</function_name>
+      <current_line>119</current_line>
+      <description>
+        Substituir os dois supabase.from().update() (tenant e monitored_businesses)
+        por uma única chamada PATCH /api/admin/tenant/:id com todos os campos.
+      </description>
+      <new_code><![CDATA[
+async function handleEditSave() {
+  if (!editingTenant) return
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingTenant.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: editForm.name,
+      plan: editForm.plan,
+      business_name: editForm.business_name,
+      business_cnpj: editForm.business_cnpj,
+      business_category: editForm.business_category,
+    }),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }))
+    alert('Erro: ' + (err.error ?? resp.statusText))
+    return
+  }
+  setEditingTenant(null)
+  loadAll()
+  window.dispatchEvent(new Event('refresh_data'))
+}
+      ]]></new_code>
+    </function_change>
+
+    <function_change order="2">
+      <function_name>toggleActive (ativar/desativar tenant)</function_name>
+      <current_line>157</current_line>
+      <description>
+        Substituir os dois supabase.from().update() simultâneos (tenant + businesses)
+        por PATCH /api/admin/tenant/:id/active
+      </description>
+      <new_code><![CDATA[
+async function toggleActive(t: Tenant, newVal: boolean) {
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  await fetch(`${apiUrl}/api/admin/tenant/${t.id}/active`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_active: newVal }),
+  })
+  loadAll()
+}
+      ]]></new_code>
+    </function_change>
+
+    <function_change order="3">
+      <function_name>handleBusinessUpdate (atualizar nome/cnpj/categoria da business)</function_name>
+      <current_line>198</current_line>
+      <description>
+        Substituir supabase.from('monitored_businesses').update()
+        por PATCH /api/admin/tenant/:id com campos de business.
+      </description>
+      <new_code><![CDATA[
+async function handleBusinessUpdate(tenantId: string) {
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+  const resp = await fetch(`${apiUrl}/api/admin/tenant/${tenantId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      business_name: businessForm.name,
+      business_cnpj: businessForm.cnpj,
+      business_category: businessForm.category,
+    }),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }))
+    alert('Erro: ' + (err.error ?? resp.statusText))
+    return
+  }
+  setEditingBusiness(null)
+  loadAll()
+}
+      ]]></new_code>
+    </function_change>
+  </frontend_changes>
+
+  <testing_checklist>
+    <description>
+      Testar NESTA ORDEM após implementar. Não executar o SQL do step 0
+      (remoção das políticas de escrita via anon) antes de todos os itens
+      passarem.
+    </description>
+
+    <test id="1" page="Conectores">Criar novo conector para qualquer assinante → deve salvar sem erro RLS</test>
+    <test id="2" page="Conectores">Editar configuração de conector existente (intervalo, ID externo) → deve salvar</test>
+    <test id="3" page="Conectores">Clicar em "Forçar Busca" → next_sync_at deve mudar para agora</test>
+    <test id="4" page="Conectores">Deletar conector → deve continuar funcionando (já usa backend)</test>
+    <test id="5" page="Assinantes">Editar nome/plano de um assinante → deve salvar</test>
+    <test id="6" page="Assinantes">Ativar/desativar um assinante → deve mudar status tenant + businesses</test>
+    <test id="7" page="Assinantes">Editar dados da empresa (nome, CNPJ) → deve salvar</test>
+    <test id="8" page="Assinantes">Criar novo assinante → deve continuar funcionando (já usa backend)</test>
+    <test id="9" page="Assinantes">Deletar assinante → deve continuar funcionando (já usa backend)</test>
+    <test id="10" page="Portal Cliente">Logar como cliente → ver APENAS dados do seu tenant</test>
+    <test id="11" page="Portal Cliente">Marcar alerta como resolvido → deve funcionar (policy client_update existe)</test>
+    <test id="SQL Final">Após todos os testes passarem → executar o SQL do step 0 para remover políticas de escrita via anon key do admin</test>
+  </testing_checklist>
+
+  <files_not_affected>
+    <file>admin/src/pages/Dashboard.tsx — apenas leituras, sem escrita</file>
+    <file>admin/src/pages/Reviews.tsx — apenas leituras, sem escrita</file>
+    <file>admin/src/pages/Alerts.tsx — apenas leituras, sem escrita (admin)</file>
+    <file>admin/src/pages/Audit.tsx — apenas leituras, sem escrita</file>
+    <file>portal/src/pages/* — todos já com tenant isolation, sem escrita direta relevante</file>
+    <file>src/scheduler/index.ts — usa supabase (service role) internamente, não afetado</file>
+    <file>src/connectors/* — usa supabase (service role) internamente, não afetado</file>
+  </files_not_affected>
+
+  <summary>
+    Total de endpoints novos no backend: 5
+    Total de funções alteradas no frontend: 6 (3 em Connectors.tsx + 3 em Tenants.tsx)
+    Arquivos não afetados: 9
+    Tempo estimado de implementação: 1.5 a 2 horas
+    Risco: baixo — padrão idêntico ao que já existe para DELETE
+  </summary>
+</implementation_plan>
