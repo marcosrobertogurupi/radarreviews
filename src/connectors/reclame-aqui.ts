@@ -132,68 +132,85 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       viewport: { width: 1366, height: 768 },
     })
 
+    // Desabilitar flag de webdriver para reduzir detecção
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+    })
+
     const page = await context.newPage()
     page.setDefaultTimeout(timeoutMs)
+    page.setDefaultNavigationTimeout(timeoutMs * 2)
 
     const allComplaints: ReclameAquiComplaint[] = []
 
     // Limpeza do slug: garantir minúsculas e hífens no lugar de espaços
     const sanitizedSlug = slug.trim().toLowerCase().replace(/\s+/g, '-')
 
-    // Iterar pelas páginas
-    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      const url = `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=${pageNum}`
+    // URLs a tentar — começamos pela lista-reclamacoes, com fallback para a página principal
+    // Para empresas com poucas reclamações (não verificadas), a lista-reclamacoes pode ser
+    // vazia ou redirecionar para a página principal da empresa.
+    const urlsToTry = [
+      `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=1`,
+      `${BASE_URL}/empresa/${sanitizedSlug}/`,
+    ]
 
-      logger.info(`[${CHANNEL}] Navegando para página ${pageNum}`, {
-        connector_id: connector.id,
-        url,
-      })
+    for (let urlIdx = 0; urlIdx < urlsToTry.length; urlIdx++) {
+      const isMainPage = urlIdx > 0
+      const maxPagesThisSource = isMainPage ? 1 : maxPages   // Página principal = 1 página apenas
 
-      try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
+      for (let pageNum = 1; pageNum <= maxPagesThisSource; pageNum++) {
+        const url = isMainPage
+          ? urlsToTry[urlIdx]!
+          : `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=${pageNum}`
 
-        // Aguardar o Next.js terminar de renderizar (aumentado para estabilidade)
-        await page.waitForTimeout(5000)
+        logger.info(`[${CHANNEL}] Navegando`, { connector_id: connector.id, url })
 
-        // Estratégia 1: Extrair do __NEXT_DATA__ (SSR — mais confiável)
-        const nextDataComplaints = await extractFromNextData(page, sanitizedSlug)
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
+          await page.waitForTimeout(4000)
 
-        if (nextDataComplaints.length > 0) {
-          logger.info(`[${CHANNEL}] Dados extraídos via __NEXT_DATA__`, {
-            page: pageNum,
-            count: nextDataComplaints.length,
+          const finalUrl = page.url()
+          if (finalUrl !== url) {
+            logger.info(`[${CHANNEL}] Redirecionado para`, { finalUrl })
+          }
+
+          // Estratégia 1: Extrair do __NEXT_DATA__
+          const nextDataComplaints = await extractFromNextData(page, sanitizedSlug)
+
+          if (nextDataComplaints.length > 0) {
+            logger.info(`[${CHANNEL}] __NEXT_DATA__ extraiu ${nextDataComplaints.length}`, { url })
+            allComplaints.push(...nextDataComplaints)
+            if (nextDataComplaints.length < 10) {
+              // Última página desta fonte — interrompe paginação mas continua para próxima fonte se não houver nada
+              break
+            }
+            continue
+          }
+
+          // Estratégia 2: DOM scraping
+          const domComplaints = await extractFromDom(page, sanitizedSlug)
+
+          if (domComplaints.length > 0) {
+            logger.info(`[${CHANNEL}] DOM extraiu ${domComplaints.length}`, { url })
+            allComplaints.push(...domComplaints)
+            if (domComplaints.length < 5) break
+            continue
+          }
+
+          logger.info(`[${CHANNEL}] Nenhuma reclamação na URL`, { url })
+          break   // Vai tentar próxima URL (página principal)
+
+        } catch (pageError) {
+          logger.warn(`[${CHANNEL}] Erro ao processar`, {
+            url,
+            error: pageError instanceof Error ? pageError.message : String(pageError),
           })
-          allComplaints.push(...nextDataComplaints)
-
-          // Se retornou menos que o esperado, chegamos na última página
-          if (nextDataComplaints.length < 10) break
-          continue
+          if (pageNum === 1 && urlIdx === urlsToTry.length - 1) throw pageError
         }
-
-        // Estratégia 2: Fallback para scraping via DOM
-        const domComplaints = await extractFromDom(page, sanitizedSlug)
-
-        if (domComplaints.length > 0) {
-          logger.info(`[${CHANNEL}] Dados extraídos via DOM`, {
-            page: pageNum,
-            count: domComplaints.length,
-          })
-          allComplaints.push(...domComplaints)
-
-          if (domComplaints.length < 5) break
-          continue
-        }
-
-        // Nenhuma reclamação encontrada nesta página — fim da paginação
-        logger.info(`[${CHANNEL}] Nenhuma reclamação encontrada na página ${pageNum} — finalizando`)
-        break
-      } catch (pageError) {
-        logger.warn(`[${CHANNEL}] Erro ao processar página ${pageNum}`, {
-          error: pageError instanceof Error ? pageError.message : String(pageError),
-        })
-        // Continua para tentar a próxima página
-        if (pageNum === 1) throw pageError // Falha total na primeira página = erro crítico
       }
+
+      // Se já temos reclamações, não precisa tentar a próxima URL
+      if (allComplaints.length > 0) break
     }
 
     result.reviews_fetched = allComplaints.length
@@ -321,20 +338,39 @@ async function extractFromNextData(page: import('playwright-core').Page, company
     if (!nextDataJson) return []
 
     const nextData = JSON.parse(nextDataJson)
-
-    // Percorrer a árvore do Next.js para encontrar os dados de reclamações
-    // O caminho pode variar: props.pageProps.complaints ou queries[0].data.complaints
     const pageProps = nextData?.props?.pageProps
 
-    // Tentar diferentes caminhos possíveis na estrutura do Next.js
+    // Log diagnóstico: mostrar as chaves de pageProps para depuração
+    if (pageProps && typeof pageProps === 'object') {
+      logger.info(`[reclame_aqui] __NEXT_DATA__ pageProps keys: ${Object.keys(pageProps).join(', ')}`)
+    }
+
+    // Tentar todos os caminhos conhecidos para reclamações no __NEXT_DATA__
+    // O Reclame Aqui usa estruturas diferentes por tipo de página e versão
+    const dehydrated = pageProps?.dehydratedState?.queries
+    const dehydratedComplaints = Array.isArray(dehydrated)
+      ? dehydrated.flatMap((q: Record<string, unknown>) => {
+          const data = (q['state'] as Record<string, unknown>)?.['data'] as Record<string, unknown> | undefined
+          return Array.isArray(data?.['complaints']) ? data['complaints'] as unknown[] :
+                 Array.isArray(data?.['data'])       ? data['data']       as unknown[] : []
+        })
+      : []
+
     const complaintsRaw =
       pageProps?.complaints?.LAST ??
       pageProps?.complaints ??
       pageProps?.initialData?.complaintList?.complaints ??
       pageProps?.initialData?.complaints ??
+      pageProps?.data?.complaints ??
+      pageProps?.company?.complaints ??
+      pageProps?.companyData?.complaints ??
+      (dehydratedComplaints.length > 0 ? dehydratedComplaints : null) ??
       null
 
-    if (!complaintsRaw || !Array.isArray(complaintsRaw)) return []
+    if (!complaintsRaw || !Array.isArray(complaintsRaw)) {
+      logger.info(`[reclame_aqui] __NEXT_DATA__ não contém complaints em nenhum caminho conhecido`)
+      return []
+    }
 
     return complaintsRaw
       .map((c: Record<string, unknown>) => {
