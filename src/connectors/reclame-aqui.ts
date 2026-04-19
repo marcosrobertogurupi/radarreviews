@@ -24,7 +24,7 @@
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { chromium } from 'playwright-extra'
-import StealthPlugin from 'playwright-stealth'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { z } from 'zod'
 import { logger } from '../lib/logger.js'
 import { ingestReviews } from '../lib/ingest.js'
@@ -264,8 +264,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
               let bodyText = null
               for (const sel of selectors) {
                 const el = document.querySelector(sel)
-                if (el && el.textContent?.trim().length ? el.textContent.trim().length > 50 : false) {
-                  bodyText = el.textContent.trim()
+                if (el && (el.textContent?.trim().length ?? 0) > 50) {
+                  bodyText = el.textContent!.trim()
                   break
                 }
               }
@@ -385,7 +385,7 @@ async function extractFromNextData(page: import('playwright-core').Page, company
           description: String(c['description'] ?? c['descricao'] ?? c['text'] ?? ''),
           status: String(c['status'] ?? ''),
           author: String(c['demanderName'] ?? c['author'] ?? c['nome'] ?? ''),
-          date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? c['createdAt'] ?? c['legacyComplaint']?.['createdDate'] ?? ''),
+          date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? c['createdAt'] ?? (c['legacyComplaint'] as Record<string,unknown> | undefined)?.['createdDate'] ?? ''),
           url,
           isResolved: Boolean(c['evaluated'] ?? false),
         })
@@ -540,8 +540,8 @@ function parseDate(dateStr: string): string | null {
     const now = new Date()
     const match = s.match(/há\s+(\d+)\s+(dia|hora|minuto|mês|ano)s?/)
     if (match) {
-      const value = parseInt(match[1], 10)
-      const unit = match[2]
+      const value = parseInt(match[1]!, 10)
+      const unit = match[2]!
       if (unit.startsWith('dia')) now.setDate(now.getDate() - value)
       else if (unit.startsWith('hora')) now.setHours(now.getHours() - value)
       else if (unit.startsWith('minuto')) now.setMinutes(now.getMinutes() - value)
@@ -562,7 +562,7 @@ function parseDate(dateStr: string): string | null {
   const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})[^\d]*(\d{2}):(\d{2})/)
   if (brDateTime) {
     const [, day, month, yearStr, hour, min] = brDateTime
-    const year = yearStr.length === 2 ? `20${yearStr}` : yearStr
+    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
     const d = new Date(`${year}-${month}-${day}T${hour}:${min}:00-03:00`)
     if (!isNaN(d.getTime())) return d.toISOString()
   }
@@ -571,7 +571,7 @@ function parseDate(dateStr: string): string | null {
   const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})/)
   if (brMatch) {
     const [, day, month, yearStr] = brMatch
-    const year = yearStr.length === 2 ? `20${yearStr}` : yearStr
+    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
     const d = new Date(`${year}-${month}-${day}T12:00:00-03:00`)
     if (!isNaN(d.getTime())) return d.toISOString()
   }

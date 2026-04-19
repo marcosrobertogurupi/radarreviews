@@ -199,12 +199,13 @@ async function upsertBatch(reviews: NormalizedReview[]): Promise<void> {
             ignoreDuplicates: false,
           })
 
-        if (error) throw error
+        if (error) throw new Error(error.message ?? JSON.stringify(error))
         success = true
       } catch (err) {
         retryCount++
         if (retryCount >= maxRetries) {
-          throw new Error(`Ingest: upsert falhou após ${maxRetries} tentativas: ${err instanceof Error ? err.message : String(err)}`)
+          const msg = err instanceof Error ? err.message : JSON.stringify(err)
+          throw new Error(`Ingest: upsert falhou após ${maxRetries} tentativas: ${msg}`)
         }
         logger.warn(`[ingest] Falha no upsert, tentando novamente (${retryCount}/${maxRetries})...`)
         await new Promise(r => setTimeout(r, 1000 * retryCount))
