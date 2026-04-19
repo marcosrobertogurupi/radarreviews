@@ -241,6 +241,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
               if (nextEl) {
                 try {
                   const data = JSON.parse(nextEl.textContent ?? '')
+                  const pp = data?.props?.pageProps
                   const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData ?? pp?.initialState?.complaint
                   if (c && (c.description || c.text)) {
                     return {

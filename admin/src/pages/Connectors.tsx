@@ -29,7 +29,7 @@ const ALL_CHANNELS = [
 ]
 
 interface ConnectorStats {
-  channel: string
+  connector_id: string
   total: number
   last30: number
   negativeRate: number
@@ -217,7 +217,7 @@ export default function Connectors() {
   async function loadStats() {
     const { data } = await supabase
       .from('reviews')
-      .select('channel, sentiment, dissatisfaction_score, published_at')
+      .select('connector_id, sentiment, dissatisfaction_score, published_at')
 
     if (!data) return
 
@@ -225,13 +225,14 @@ export default function Connectors() {
     const ms30 = 30 * 24 * 60 * 60 * 1000
 
     const statsMap: Record<string, ConnectorStats> = {}
-    for (const channel of ALL_CHANNELS) {
-      const rows = data.filter(r => r.channel === channel)
+    const connectorIds = [...new Set(data.map(r => r.connector_id).filter(Boolean))]
+    for (const connector_id of connectorIds) {
+      const rows = data.filter(r => r.connector_id === connector_id)
       const recent = rows.filter(r => now - new Date(r.published_at).getTime() < ms30)
       const neg = rows.filter(r => r.sentiment === 'negative' || r.sentiment === 'critical')
       const scores = rows.filter(r => r.dissatisfaction_score != null).map(r => r.dissatisfaction_score as number)
-      statsMap[channel] = {
-        channel,
+      statsMap[connector_id] = {
+        connector_id,
         total: rows.length,
         last30: recent.length,
         negativeRate: rows.length ? Math.round((neg.length / rows.length) * 100) : 0,
@@ -290,7 +291,7 @@ export default function Connectors() {
           {ALL_CHANNELS.map(channel => {
             const channelConns = connectorsByChannel[channel] || []
             const primaryConn = channelConns.find(c => c.status === 'active') || channelConns[0]
-            const st = stats[channel]
+            const st = primaryConn ? stats[primaryConn.id] : undefined
 
             if (!primaryConn) {
               // Não configurado
@@ -528,15 +529,15 @@ export default function Connectors() {
               </div>
             )}
 
-            {stats[selected.channel] && (
+            {stats[selected.id] && (
               <div className="modal-section">
                 <div className="modal-label">Estatísticas de reviews</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                   {[
-                    { label: 'Total coletado', value: stats[selected.channel].total },
-                    { label: 'Últimos 30 dias', value: stats[selected.channel].last30 },
-                    { label: 'Taxa negativa', value: `${stats[selected.channel].negativeRate}%` },
-                    { label: 'Score médio', value: `${stats[selected.channel].avgScore}/100` },
+                    { label: 'Total coletado', value: stats[selected.id].total },
+                    { label: 'Últimos 30 dias', value: stats[selected.id].last30 },
+                    { label: 'Taxa negativa', value: `${stats[selected.id].negativeRate}%` },
+                    { label: 'Score médio', value: `${stats[selected.id].avgScore}/100` },
                   ].map(({ label, value }) => (
                     <div key={label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '10px 14px' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
