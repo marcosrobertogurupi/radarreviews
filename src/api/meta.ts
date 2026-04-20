@@ -34,7 +34,7 @@ export async function handleMetaAuthConnect(req: http.IncomingMessage, res: http
     'instagram_manage_comments',
   ].join(',')
 
-  const authUrl = new URL('https://www.facebook.com/v19.0/dialog/oauth')
+  const authUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth')
   authUrl.searchParams.set('client_id', process.env['META_APP_ID']!)
   authUrl.searchParams.set('redirect_uri', `${process.env['REPUTEI_API_BASE_URL']}/api/auth/meta/callback`)
   authUrl.searchParams.set('scope', scopes)
@@ -188,7 +188,7 @@ export async function handleMetaWebhook(req: http.IncomingMessage, res: http.Ser
 // ── Funções Auxiliares ──────────────────────────────────────────
 
 async function exchangeCodeForToken(code: string): Promise<string> {
-  const url = new URL('https://graph.facebook.com/v19.0/oauth/access_token')
+  const url = new URL('https://graph.facebook.com/v20.0/oauth/access_token')
   url.searchParams.set('client_id', process.env['META_APP_ID']!)
   url.searchParams.set('client_secret', process.env['META_APP_SECRET']!)
   url.searchParams.set('redirect_uri', `${process.env['REPUTEI_API_BASE_URL']}/api/auth/meta/callback`)
@@ -201,7 +201,7 @@ async function exchangeCodeForToken(code: string): Promise<string> {
 }
 
 async function exchangeForLongLivedToken(shortToken: string): Promise<string> {
-  const url = new URL('https://graph.facebook.com/v19.0/oauth/access_token')
+  const url = new URL('https://graph.facebook.com/v20.0/oauth/access_token')
   url.searchParams.set('grant_type', 'fb_exchange_token')
   url.searchParams.set('client_id', process.env['META_APP_ID']!)
   url.searchParams.set('client_secret', process.env['META_APP_SECRET']!)
@@ -230,7 +230,7 @@ async function fetchInstagramAccount(pageId: string, pageToken: string): Promise
 }
 
 async function subscribePageToWebhook(pageId: string, pageToken: string): Promise<void> {
-  const url = `https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`
+  const url = `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`
   await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
