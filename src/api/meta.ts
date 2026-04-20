@@ -29,7 +29,6 @@ export async function handleMetaAuthConnect(req: http.IncomingMessage, res: http
   const scopes = [
     'pages_show_list',
     'pages_read_engagement',
-    'pages_read_user_content',
     'pages_manage_metadata',
     'instagram_basic',
     'instagram_manage_comments',
