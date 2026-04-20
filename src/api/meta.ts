@@ -93,9 +93,9 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
       business_id,
       channel: 'facebook',
       status: 'active',
-      fb_page_id: mainPage.id,
-      fb_page_name: mainPage.name,
+      external_id: mainPage.id,
       config: { 
+        page_name: mainPage.name,
         page_token_enc: encryptedPageToken,
         user_token_enc: encryptedUserToken
       },
@@ -115,10 +115,10 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
         business_id,
         channel: 'instagram',
         status: 'active',
-        ig_user_id: igAccount.id,
-        ig_username: igAccount.username,
-        fb_page_id: mainPage.id, // Referência cruzada
+        external_id: igAccount.id,
         config: { 
+          username: igAccount.username,
+          fb_page_id: mainPage.id,
           page_token_enc: encryptedPageToken
         },
         oauth_expires_at: expiresAt
@@ -126,7 +126,6 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
 
       if (igError) {
         console.error('[MetaAuth] Erro ao salvar Instagram:', igError)
-        // Não jogamos erro aqui para não matar o Facebook se só o Instagram falhar
       } else {
         console.log('[MetaAuth] Conector Instagram salvo com sucesso!')
       }
