@@ -167,6 +167,8 @@ export async function handleMetaWebhook(req: http.IncomingMessage, res: http.Ser
     let raw = ''
     for await (const chunk of req) raw += chunk
     
+    console.log('[MetaWebhook] RAW RECEIVED:', raw)
+    
     // Responder 200 OK imediatamente para o Facebook
     res.writeHead(200); res.end('EVENT_RECEIVED')
 
