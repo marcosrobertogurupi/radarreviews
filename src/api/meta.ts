@@ -27,11 +27,13 @@ export async function handleMetaAuthConnect(req: http.IncomingMessage, res: http
   })).toString('base64')
 
   const scopes = [
+    'public_profile',
     'pages_show_list',
     'pages_read_engagement',
     'pages_manage_metadata',
     'instagram_basic',
     'instagram_manage_comments',
+    'business_management',
   ].join(',')
 
   const authUrl = new URL('https://www.facebook.com/v20.0/dialog/oauth')
