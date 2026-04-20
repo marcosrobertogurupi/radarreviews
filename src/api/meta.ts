@@ -235,7 +235,7 @@ async function subscribePageToWebhook(pageId: string, pageToken: string): Promis
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      subscribed_fields: ['feed', 'mention'],
+      subscribed_fields: ['feed', 'mention', 'comments'],
       access_token: pageToken,
     })
   })
