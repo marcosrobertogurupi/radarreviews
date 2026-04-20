@@ -338,7 +338,19 @@ export default function Connectors() {
                 onClick={() => setSelected(primaryConn)}
               >
                 <div className="connector-icon">{CHANNEL_ICONS[channel as SourceChannel] || '📱'}</div>
-                <div className="connector-name">{CHANNEL_LABELS[channel as SourceChannel] || channel}</div>
+                <div className="connector-name">
+                  {CHANNEL_LABELS[channel as SourceChannel] || channel}
+                  {primaryConn.channel === 'facebook' && primaryConn.config?.page_name && (
+                    <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>
+                      ({primaryConn.config.page_name})
+                    </span>
+                  )}
+                  {primaryConn.channel === 'instagram' && primaryConn.config?.username && (
+                    <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>
+                      (@{primaryConn.config.username})
+                    </span>
+                  )}
+                </div>
 
                 <div className={`connector-status status-${primaryConn.status}`}>
                   {STATUS_DOT[primaryConn.status]} {STATUS_LABEL[primaryConn.status]}
@@ -443,6 +455,16 @@ export default function Connectors() {
                   >
                     <td style={{ padding: '12px 20px', fontSize: 13 }}>
                       {CHANNEL_ICONS[c.channel]} {CHANNEL_LABELS[c.channel]}
+                      {c.channel === 'facebook' && c.config?.page_name && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>
+                          ({c.config.page_name})
+                        </span>
+                      )}
+                      {c.channel === 'instagram' && c.config?.username && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>
+                          (@{c.config.username})
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--text-secondary)' }}>
                       {businesses[c.business_id] || '—'}
