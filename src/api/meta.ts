@@ -88,7 +88,8 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
     const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString()
 
     // Atualizar conector Facebook
-    await supabaseAdmin.from('channel_connectors').upsert({
+    console.log('[MetaAuth] Salvando conector Facebook para:', business_id)
+    const { error: fbError } = await supabaseAdmin.from('channel_connectors').upsert({
       business_id,
       channel: 'facebook',
       status: 'active',
@@ -101,9 +102,16 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
       oauth_expires_at: expiresAt
     }, { onConflict: 'business_id,channel' })
 
+    if (fbError) {
+      console.error('[MetaAuth] Erro ao salvar Facebook:', fbError)
+      throw new Error(`Erro DB Facebook: ${fbError.message}`)
+    }
+    console.log('[MetaAuth] Conector Facebook salvo com sucesso!')
+
     // Se tiver Instagram, atualizar também
     if (igAccount) {
-      await supabaseAdmin.from('channel_connectors').upsert({
+      console.log('[MetaAuth] Salvando conector Instagram...')
+      const { error: igError } = await supabaseAdmin.from('channel_connectors').upsert({
         business_id,
         channel: 'instagram',
         status: 'active',
@@ -115,6 +123,13 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
         },
         oauth_expires_at: expiresAt
       }, { onConflict: 'business_id,channel' })
+
+      if (igError) {
+        console.error('[MetaAuth] Erro ao salvar Instagram:', igError)
+        // Não jogamos erro aqui para não matar o Facebook se só o Instagram falhar
+      } else {
+        console.log('[MetaAuth] Conector Instagram salvo com sucesso!')
+      }
     }
 
     // PASSO 6: Subscrever Webhook na página
