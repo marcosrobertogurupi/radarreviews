@@ -78,10 +78,10 @@ export default function Tenants() {
     e.preventDefault()
     setSaving(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
 
     try {
-      const res = await fetch(`${apiUrl}/api/onboarding`, {
+      const res = await fetch(`${baseUrl}/api/onboarding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,9 +116,9 @@ export default function Tenants() {
     e.preventDefault()
     if (!editingTenant) return
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingTenant.id}`, {
+      const resp = await fetch(`${baseUrl}/api/admin/tenant/${editingTenant.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,9 +149,9 @@ export default function Tenants() {
     const newVal = !(t.is_active ?? true)
     if (!confirm(`Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de ${t.name}?`)) return
     
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}/active`, {
+      const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: newVal }),
@@ -176,9 +176,9 @@ export default function Tenants() {
     if (!credentials.email && !credentials.password) return alert('Informe ao menos e-mail ou senha.')
     setSavingCreds(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const res = await fetch(`${apiUrl}/api/admin/credentials`, {
+      const res = await fetch(`${baseUrl}/api/admin/credentials`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -204,9 +204,9 @@ export default function Tenants() {
     if (!editingBusiness) return
     setSaving(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${apiUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
+      const resp = await fetch(`${baseUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -234,8 +234,8 @@ export default function Tenants() {
     const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n- Login de acesso do assinante.\n\nEsta ação NÃO PODE SER DESFEITA.`)
     if (!pass) return
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-    const resp = await fetch(`${apiUrl}/api/admin/tenant/${t.id}`, { method: 'DELETE' })
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+    const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, { method: 'DELETE' })
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }))
       alert('Falha ao deletar: ' + (err.error ?? resp.statusText))
@@ -280,7 +280,16 @@ export default function Tenants() {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                       <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
-                      {!isActive && <span style={{ fontSize: 11, color: '#fca5a5' }}>[Paused]</span>}
+                      <div style={{ 
+                        display: 'flex', alignItems: 'center', gap: 4, 
+                        fontSize: 11, padding: '2px 8px', borderRadius: 99, 
+                        background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(156, 163, 175, 0.1)',
+                        color: isActive ? '#10b981' : '#9ca3af',
+                        border: `1px solid ${isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(156, 163, 175, 0.2)'}`
+                      }}>
+                        <span>{isActive ? '🟢' : '⚫'}</span>
+                        {isActive ? 'Ativo' : 'Desativado'}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.slug}</code>

@@ -120,9 +120,9 @@ export default function Connectors() {
       return
     }
     const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${apiUrl}/api/admin/connector/${selected.id}/config`, {
+      const resp = await fetch(`${baseUrl}/api/admin/connector/${selected.id}/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
@@ -143,9 +143,9 @@ export default function Connectors() {
 
   async function forceSync() {
     if (!selected) return
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      await fetch(`${apiUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
+      await fetch(`${baseUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
       const now = new Date().toISOString()
       alert('Busca forçada iniciada!')
       setSelected({ ...selected, next_sync_at: now, status: 'active' })
@@ -165,8 +165,8 @@ export default function Connectors() {
     try {
       // Usa o backend (service role key) para contornar o RLS que bloqueia
       // o delete em system_notifications via anon key
-      const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
-      const resp = await fetch(`${apiUrl}/api/admin/connector/${id}`, { method: 'DELETE' })
+      const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+      const resp = await fetch(`${baseUrl}/api/admin/connector/${id}`, { method: 'DELETE' })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
         throw new Error(err.error ?? resp.statusText)
@@ -184,9 +184,9 @@ export default function Connectors() {
 
   async function saveNewConnector(e: React.FormEvent) {
     e.preventDefault()
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app'
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${apiUrl}/api/admin/connector`, {
+      const resp = await fetch(`${baseUrl}/api/admin/connector`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
