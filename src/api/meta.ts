@@ -214,7 +214,7 @@ async function exchangeForLongLivedToken(shortToken: string): Promise<string> {
 }
 
 async function fetchUserPages(userToken: string): Promise<any[]> {
-  const url = `https://graph.facebook.com/v20.0/me/accounts?access_token=${userToken}&fields=id,name,access_token`
+  const url = `https://graph.facebook.com/v20.0/me/accounts?access_token=${userToken}&fields=id,name,access_token,tasks,category,instagram_business_account`
   console.log('[MetaAuth] Chamando me/accounts...')
   const res = await fetch(url)
   const data: any = await res.json()
