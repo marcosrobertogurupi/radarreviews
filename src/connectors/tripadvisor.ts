@@ -76,6 +76,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   // ── 1. Estratégia DataForSEO (Primária) ──────────────────────
   
   let urlPath = config['url_path'] as string | undefined
+  let listingUrl = config['listing_url'] as string | undefined
   let reviews: NormalizedReview[] = []
 
   if (urlPath) {
@@ -114,7 +115,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   // ── 2. Fallback: Scraper Playwright (Secundária) ──────────────
 
   if (reviews.length === 0) {
-    let listingUrl = config['listing_url'] as string | undefined
 
     if (!listingUrl) {
       listingUrl = await discoverListingUrl(connector)
