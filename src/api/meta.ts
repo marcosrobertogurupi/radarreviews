@@ -97,9 +97,9 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
       config: { 
         page_name: mainPage.name,
         page_token_enc: encryptedPageToken,
-        user_token_enc: encryptedUserToken
-      },
-      oauth_expires_at: expiresAt
+        user_token_enc: encryptedUserToken,
+        oauth_expires_at: expiresAt
+      }
     }, { onConflict: 'business_id,channel' })
 
     if (fbError) {
@@ -119,9 +119,9 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
         config: { 
           username: igAccount.username,
           fb_page_id: mainPage.id,
-          page_token_enc: encryptedPageToken
-        },
-        oauth_expires_at: expiresAt
+          page_token_enc: encryptedPageToken,
+          oauth_expires_at: expiresAt
+        }
       }, { onConflict: 'business_id,channel' })
 
       if (igError) {
