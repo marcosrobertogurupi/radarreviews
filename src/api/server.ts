@@ -18,6 +18,7 @@ import { createClient } from '@supabase/supabase-js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { startScheduler } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
+import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -826,6 +827,30 @@ const server = http.createServer((req, res) => {
       res.end()
       return
     }
+  }
+
+  if (url.startsWith('/api/auth/meta/connect')) {
+    handleMetaAuthConnect(req, res).catch(err => {
+      console.error('[meta-connect] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/auth/meta/callback')) {
+    handleMetaAuthCallback(req, res).catch(err => {
+      console.error('[meta-callback] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/webhooks/meta')) {
+    handleMetaWebhook(req, res).catch(err => {
+      console.error('[meta-webhook] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
   }
 
   res.writeHead(404); res.end('Not found')

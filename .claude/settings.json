@@ -20,7 +20,12 @@
       "Bash(git push *)",
       "Bash(ls railway.json railway.toml Dockerfile nixpacks.toml)",
       "Bash(cat railway.json)",
-      "Bash(cat railway.toml)"
+      "Bash(cat railway.toml)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,':',v\\) for k,v in d.get\\('scripts',{}\\).items\\(\\)]\")",
+      "Bash(ls vercel.json)",
+      "Bash(ls portal/vercel.json)",
+      "Bash(ls admin/vercel.json)",
+      "Bash(git commit *)"
     ]
   }
 }

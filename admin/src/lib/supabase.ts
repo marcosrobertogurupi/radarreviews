@@ -35,6 +35,8 @@ export interface Review {
   url?: string
   sentiment: SentimentType
   dissatisfaction_score?: number
+  sentiment_score?: number
+  satisfaction_level?: string
   sentiment_topics?: string[]
   sentiment_summary?: string
   sentiment_suggestion?: string

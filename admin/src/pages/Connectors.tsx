@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
-import { Trash2, AlertTriangle, Activity } from 'lucide-react'
+import { Trash2, AlertTriangle, Activity, Facebook } from 'lucide-react'
+import { MetaConnectButton } from '../components/MetaConnectButton'
 
 // ──────────────────────────────────────────────────────────────
 // Página Conectores
@@ -652,15 +653,30 @@ export default function Connectors() {
                   {ALL_CHANNELS.map(c => <option key={c} value={c}>{CHANNEL_LABELS[c as SourceChannel] || c}</option>)}
                 </select>
               </div>
-              <div className="modal-section">
-                <label className="modal-label">ID Externo / URL Slug</label>
-                <input required value={newConn.external_id} onChange={e => setNewConn({...newConn, external_id: e.target.value})} placeholder="ex: localiza-rent-a-car" style={{ width: '100%', padding: '10px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>O identificador da empresa na url do canal.</div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
-                <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setShowCreateModal(false)}>Cancelar</button>
-                <button type="submit" className="btn" style={{ background: 'var(--accent)' }}>Salvar Conector</button>
-              </div>
+              {newConn.channel !== 'facebook' && newConn.channel !== 'instagram' ? (
+                <div className="modal-section">
+                  <label className="modal-label">ID Externo / URL Slug</label>
+                  <input required value={newConn.external_id} onChange={e => setNewConn({...newConn, external_id: e.target.value})} placeholder="ex: localiza-rent-a-car" style={{ width: '100%', padding: '10px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>O identificador da empresa na url do canal.</div>
+                </div>
+              ) : (
+                <div className="modal-section">
+                  <MetaConnectButton 
+                    tenantId={allBusinesses.find(b => b.id === newConn.business_id)?.id || ''} 
+                    businessId={newConn.business_id} 
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, textAlign: 'center' }}>
+                    Estes canais exigem autorização via OAuth para monitorar comentários em tempo real.
+                  </div>
+                </div>
+              )}
+
+              {newConn.channel !== 'facebook' && newConn.channel !== 'instagram' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+                  <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                  <button type="submit" className="btn" style={{ background: 'var(--accent)' }}>Salvar Conector</button>
+                </div>
+              )}
             </form>
           </div>
         </div>

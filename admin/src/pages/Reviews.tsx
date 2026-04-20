@@ -32,9 +32,19 @@ function ReviewModal({ review, onClose }: { review: Review; onClose: () => void 
             <span className={`badge badge-${review.sentiment}`} style={{ fontSize: 14, padding: '4px 14px' }}>
               {scoreToEmoji(score)} {SENTIMENT_LABELS[review.sentiment]}
             </span>
+            {review.satisfaction_level && (
+              <span style={{ 
+                fontSize: 12, 
+                fontWeight: 600, 
+                textTransform: 'uppercase', 
+                color: review.sentiment === 'critical' ? '#dc2626' : review.sentiment === 'negative' ? '#ef4444' : 'var(--text-muted)' 
+              }}>
+                • {review.satisfaction_level.replace('_', ' ')}
+              </span>
+            )}
             {sr?.method && (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                via {sr.method === 'gemini' ? '🧠 Gemini 2.5 Flash' : sr.method === 'heuristic' ? '⚙️ Heurística' : '⭐ Rating'}
+                via {sr.method === 'gemini' ? '🧠 Gemini 2.0 Flash' : sr.method === 'heuristic' ? '⚙️ Heurística' : '⭐ Rating'}
               </span>
             )}
           </div>
