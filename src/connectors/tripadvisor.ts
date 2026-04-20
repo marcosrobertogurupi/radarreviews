@@ -1,15 +1,13 @@
-// Conector TripAdvisor — Content API v1
-// Documentação: https://tripadvisor-content-api.readme.io/reference/overview
+// Conector TripAdvisor
 //
-// Comportamento:
-// - Busca até 5 reviews do local por chamada (limite do plano free)
-// - API key passada como query param ?key=
-// - location_id fica em connector.external_id
-// - Sem paginação no plano free (apenas os 5 mais recentes)
+// Estratégia em cascata (prioridade: reviews mais recentes):
+// 1. Scraper Playwright (primário) — sem limite de 5, pagina, ordena por recentes
+//    - Requer listing_url no config ou auto-descoberta via API de detalhes
+// 2. API Content v1 (fallback) — limitada a 5 reviews no plano free
 //
-// Nota sobre user_location.id:
-// A API pode retornar o string literal "null" no lugar de null real.
-// O schema Zod trata isso convertendo para undefined.
+// Auto-descoberta de URL:
+//   Na primeira execução, chama GET /location/{id}/details para obter web_url
+//   e persiste em connector.config.listing_url para evitar chamadas futuras.
 
 import 'dotenv/config'
 import axios from 'axios'
@@ -17,186 +15,226 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { logger } from '../lib/logger.js'
 import { ingestReviews } from '../lib/ingest.js'
+import { scrapeTripAdvisorReviews } from './tripadvisor-scraper.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
-// -----------------------------------------------------------------------------
-// Constantes
-// -----------------------------------------------------------------------------
+// ── Constantes ───────────────────────────────────────────────────
 
 const CHANNEL = 'tripadvisor' as const
 const BASE_URL = 'https://api.content.tripadvisor.com/api/v1'
 
-// -----------------------------------------------------------------------------
-// Schema de validação da resposta da API (Zod)
-// Baseado na resposta real observada na API
-// -----------------------------------------------------------------------------
+// ── Schemas ──────────────────────────────────────────────────────
 
 const TripAdvisorUserSchema = z.object({
   username: z.string().optional(),
   user_location: z
     .object({
-      // A API pode retornar a string literal "null" — tratamos como ausente
-      id: z
-        .string()
-        .optional()
-        .transform(v => (v === 'null' ? undefined : v)),
+      id: z.string().optional().transform(v => (v === 'null' ? undefined : v)),
       name: z.string().optional(),
     })
     .optional(),
 })
 
 const TripAdvisorReviewSchema = z.object({
-  id: z.number(),                                    // ID numérico inteiro (ex: 1056182371)
-  lang: z.string().optional(),                       // código do idioma (ex: "pt", "en")
+  id: z.number(),
+  lang: z.string().optional(),
   location_id: z.number().optional(),
-  published_date: z.string(),                        // ISO 8601
-  rating: z.number().min(1).max(5),                  // escala 1–5
-  helpful_votes: z.number().default(0),              // upvotes
+  published_date: z.string(),
+  rating: z.number().min(1).max(5),
+  helpful_votes: z.number().default(0),
   rating_image_url: z.string().optional(),
   url: z.string().optional(),
-  text: z.string().optional(),                       // corpo do review (pode estar ausente)
+  text: z.string().optional(),
   title: z.string().optional(),
   trip_type: z.string().optional(),
   travel_date: z.string().optional(),
   user: TripAdvisorUserSchema.optional(),
-  subratings: z.record(z.unknown()).optional(),       // objeto variável, salvo no raw_data
+  subratings: z.record(z.unknown()).optional(),
 })
 
 const TripAdvisorResponseSchema = z.object({
   data: z.array(TripAdvisorReviewSchema).default([]),
 })
 
+const LocationDetailsSchema = z.object({
+  web_url: z.string().optional(),
+})
+
 type TripAdvisorReview = z.infer<typeof TripAdvisorReviewSchema>
 
-// -----------------------------------------------------------------------------
-// Função principal exportada
-// -----------------------------------------------------------------------------
+// ── Função principal ─────────────────────────────────────────────
 
-/**
- * Executa a coleta de reviews do TripAdvisor para um conector.
- * O location_id fica em connector.external_id.
- */
 export async function run(connector: ChannelConnector): Promise<JobResult> {
-  const result: JobResult = {
-    reviews_fetched: 0,
-    reviews_new: 0,
-    reviews_updated: 0,
+  const result: JobResult = { reviews_fetched: 0, reviews_new: 0, reviews_updated: 0 }
+
+  const config = connector.config as Record<string, unknown>
+  const maxReviews = (config['max_reviews'] as number | undefined) ?? 50
+  const sinceDays = (config['since_days'] as number | undefined) ?? 90
+
+  // ── 1. Obter URL de listagem (cache em config) ────────────────
+
+  let listingUrl = config['listing_url'] as string | undefined
+
+  if (!listingUrl) {
+    listingUrl = await discoverListingUrl(connector)
+    if (listingUrl) {
+      // Persiste para evitar chamada de API em syncs futuros
+      await supabase
+        .from('channel_connectors')
+        .update({ config: { ...config, listing_url: listingUrl } })
+        .eq('id', connector.id)
+      logger.info(`[${CHANNEL}] URL de listagem descoberta e salva`, { listingUrl })
+    }
   }
 
-  try {
-    const rawItems = await fetchFromApi(connector)
-    result.reviews_fetched = rawItems.length
+  // ── 2. Tentar scraper (primário) ──────────────────────────────
 
-    if (rawItems.length === 0) {
-      logger.info(`[${CHANNEL}] Nenhum review retornado pela API`, {
+  let reviews: NormalizedReview[] = []
+
+  if (listingUrl) {
+    try {
+      const scraped = await scrapeTripAdvisorReviews(listingUrl, maxReviews, sinceDays)
+      if (scraped.length > 0) {
+        reviews = scraped.map(r => normalizeScraped(r, connector))
+        logger.info(`[${CHANNEL}] Scraper retornou ${reviews.length} reviews`)
+      }
+    } catch (err) {
+      logger.warn(`[${CHANNEL}] Scraper falhou — tentando API fallback`, {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  } else {
+    logger.warn(`[${CHANNEL}] listing_url não disponível — usando somente API`)
+  }
+
+  // ── 3. Fallback: API (máx 5 reviews no plano free) ────────────
+
+  if (reviews.length === 0) {
+    try {
+      const apiItems = await fetchFromApi(connector)
+      if (apiItems.length > 0) {
+        reviews = apiItems.map(r => normalizeApi(r, connector))
+        logger.info(`[${CHANNEL}] API fallback retornou ${reviews.length} reviews`)
+
+        // Aproveita a URL de um review da API para cache futuro
+        if (!listingUrl && apiItems[0]?.url) {
+          const discoveredUrl = extractListingUrlFromReviewUrl(apiItems[0].url)
+          if (discoveredUrl) {
+            await supabase
+              .from('channel_connectors')
+              .update({ config: { ...config, listing_url: discoveredUrl } })
+              .eq('id', connector.id)
+            logger.info(`[${CHANNEL}] URL descoberta via review da API`, { discoveredUrl })
+          }
+        }
+      }
+    } catch (err) {
+      result.error = err instanceof Error ? err.message : String(err)
+      if (
+        axios.isAxiosError(err) &&
+        (err.response?.status === 401 || err.response?.status === 403)
+      ) {
+        await supabase
+          .from('channel_connectors')
+          .update({
+            status: 'pending_auth',
+            error_message: `API key inválida ou sem permissão: ${err instanceof Error ? err.message : ''}`,
+          })
+          .eq('id', connector.id)
+      }
+      logger.error(`[${CHANNEL}] Ambas as estratégias falharam`, {
         connector_id: connector.id,
-        location_id: connector.external_id,
+        error: result.error,
       })
       return result
     }
-
-    const normalized = rawItems.map(item => normalize(item, connector))
-
-    // Ingestão inteligente: dedup + stats + alertas automáticos
-    const ingest = await ingestReviews(
-      normalized,
-      CHANNEL,
-      connector.id,
-      connector.business_id
-    )
-
-    result.reviews_new = ingest.reviews_new
-    result.reviews_updated = ingest.reviews_updated
-
-    logger.info(`[${CHANNEL}] Job concluído`, {
-      connector_id: connector.id,
-      reviews_fetched: result.reviews_fetched,
-      reviews_new: ingest.reviews_new,
-      reviews_updated: ingest.reviews_updated,
-    })
-  } catch (error) {
-    result.error = error instanceof Error ? error.message : String(error)
-
-    logger.error(`[${CHANNEL}] Erro no conector ${connector.id}`, {
-      error,
-      connector_id: connector.id,
-    })
-
-    // Erro de autenticação — API key inválida ou sem permissão
-    if (
-      axios.isAxiosError(error) &&
-      (error.response?.status === 401 || error.response?.status === 403)
-    ) {
-      await supabase
-        .from('channel_connectors')
-        .update({
-          status: 'pending_auth',
-          error_message: `API key inválida ou sem permissão: ${error.message}`,
-        })
-        .eq('id', connector.id)
-    }
   }
+
+  if (reviews.length === 0) {
+    logger.info(`[${CHANNEL}] Nenhum review encontrado`, { connector_id: connector.id })
+    return result
+  }
+
+  // ── 4. Ingestão ───────────────────────────────────────────────
+
+  result.reviews_fetched = reviews.length
+  const ingest = await ingestReviews(reviews, CHANNEL, connector.id, connector.business_id)
+  result.reviews_new = ingest.reviews_new
+  result.reviews_updated = ingest.reviews_updated
+
+  logger.info(`[${CHANNEL}] Job concluído`, {
+    connector_id: connector.id,
+    reviews_fetched: result.reviews_fetched,
+    reviews_new: result.reviews_new,
+    reviews_updated: result.reviews_updated,
+  })
 
   return result
 }
 
-// -----------------------------------------------------------------------------
-// Busca na API
-// -----------------------------------------------------------------------------
+// ── Auto-descoberta de URL ────────────────────────────────────────
 
-/**
- * Busca reviews de um local no TripAdvisor Content API.
- * A API key é passada como query param (não no header).
- *
- * @param connector - Conector com location_id em external_id
- */
+async function discoverListingUrl(connector: ChannelConnector): Promise<string | undefined> {
+  const apiKey = process.env['TRIPADVISOR_API_KEY']
+  if (!apiKey || !connector.external_id) return undefined
+
+  try {
+    const locationId = connector.external_id.replace(/\D/g, '')
+    const resp = await axios.get(`${BASE_URL}/location/${locationId}/details`, {
+      params: { key: apiKey, language: 'pt' },
+      headers: { accept: 'application/json' },
+      timeout: 10_000,
+    })
+    const parsed = LocationDetailsSchema.safeParse(resp.data)
+    return parsed.success ? parsed.data.web_url : undefined
+  } catch (err) {
+    logger.warn(`[${CHANNEL}] Falha ao buscar detalhes do local`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return undefined
+  }
+}
+
+// Extrai URL base da listagem a partir da URL de um review individual
+// ShowUserReviews-g123-d456-r789... → Hotel_Review-g123-d456-Reviews-...
+function extractListingUrlFromReviewUrl(reviewUrl: string): string | undefined {
+  try {
+    // URL de review: https://www.tripadvisor.com.br/ShowUserReviews-g123-d456-r789-Name.html
+    // Transforma em: https://www.tripadvisor.com.br/Hotel_Review-g123-d456-Reviews-Name.html
+    const m = reviewUrl.match(/(https?:\/\/[^/]+)\/ShowUserReviews-(g\d+-d\d+)-r\d+-(.+\.html)/)
+    if (m) return `${m[1]}/Hotel_Review-${m[2]}-Reviews-${m[3]}`
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+// ── Busca na API ──────────────────────────────────────────────────
+
 async function fetchFromApi(connector: ChannelConnector): Promise<TripAdvisorReview[]> {
   const apiKey = process.env['TRIPADVISOR_API_KEY']
-
-  if (!apiKey) {
-    throw new Error('Variável de ambiente TRIPADVISOR_API_KEY não definida.')
-  }
-
+  if (!apiKey) throw new Error('TRIPADVISOR_API_KEY não definida')
   if (!connector.external_id) {
-    throw new Error(
-      `Conector ${connector.id} não tem external_id configurado (location_id obrigatório).`
-    )
+    throw new Error(`Conector ${connector.id} sem external_id (location_id obrigatório)`)
   }
 
-  // Idioma preferido: usar config do conector ou defaultar para pt
-  const language = (connector.config['language'] as string | undefined) ?? 'pt'
-
-  // A API exige que o ID seja numérico, removendo eventuais letras como o 'd'
+  const language = ((connector.config as Record<string, unknown>)['language'] as string | undefined) ?? 'pt'
   const locationId = connector.external_id.replace(/\D/g, '')
 
-  const url = `${BASE_URL}/location/${locationId}/reviews`
-
-  logger.info(`[${CHANNEL}] Buscando reviews`, {
-    connector_id: connector.id,
-    location_id: connector.external_id,
-  })
+  logger.info(`[${CHANNEL}] API fallback — location_id ${locationId}`)
 
   const response = await fetchWithRetry(() =>
-    axios.get(url, {
-      params: {
-        key: apiKey,
-        language,
-        limit: 5, // máximo do plano free
-      },
-      headers: {
-        accept: 'application/json',
-      },
+    axios.get(`${BASE_URL}/location/${locationId}/reviews`, {
+      params: { key: apiKey, language, limit: 5 },
+      headers: { accept: 'application/json' },
     })
   )
 
   const parsed = TripAdvisorResponseSchema.safeParse(response.data)
-
   if (!parsed.success) {
-    logger.warn(`[${CHANNEL}] Resposta da API fora do schema esperado`, {
-      connector_id: connector.id,
+    logger.warn(`[${CHANNEL}] Resposta da API fora do schema`, {
       errors: parsed.error.errors,
-      raw_response: JSON.stringify(response.data).slice(0, 500),
     })
     return []
   }
@@ -204,13 +242,6 @@ async function fetchFromApi(connector: ChannelConnector): Promise<TripAdvisorRev
   return parsed.data.data
 }
 
-// -----------------------------------------------------------------------------
-// Retry com backoff exponencial
-// -----------------------------------------------------------------------------
-
-/**
- * Executa uma função com retry automático em erros 429 e 5xx.
- */
 async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -218,83 +249,67 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> 
     } catch (err: unknown) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined
       const isRetryable = status === 429 || (status !== undefined && status >= 500)
-
       if (!isRetryable || i === retries - 1) throw err
-
-      const delay = Math.pow(2, i) * 1000 // 1s, 2s, 4s
-      logger.warn(`[${CHANNEL}] Rate limit ou erro do servidor, aguardando ${delay}ms`, {
-        status,
-        tentativa: i + 1,
-      })
+      const delay = Math.pow(2, i) * 1000
+      logger.warn(`[${CHANNEL}] Retry após ${delay}ms`, { status, tentativa: i + 1 })
       await new Promise(r => setTimeout(r, delay))
     }
   }
   throw new Error('Máximo de tentativas excedido')
 }
 
-// -----------------------------------------------------------------------------
-// Normalização
-// -----------------------------------------------------------------------------
+// ── Normalizadores ────────────────────────────────────────────────
 
-/**
- * Converte um review bruto do TripAdvisor para NormalizedReview.
- *
- * Mapeamento:
- *   external_id  ← String(data[].id)      — ID numérico convertido para string
- *   rating       ← data[].rating           — escala 1–5 (manter)
- *   title        ← data[].title
- *   body         ← data[].text
- *   language     ← data[].lang
- *   author_name  ← data[].user.username
- *   url          ← data[].url
- *   upvotes      ← data[].helpful_votes
- *   published_at ← data[].published_date
- */
-function normalize(raw: TripAdvisorReview, connector: ChannelConnector): NormalizedReview {
-  // external_id: converter o ID numérico para string (requisito do NormalizedReview)
-  const external_id = String(raw.id)
-
-  const rating = normalizeRating(raw.rating)
-  const title = raw.title?.trim() || undefined
-  const body = raw.text?.trim() || undefined
-  const language = raw.lang ?? 'en'
-  const author_name = raw.user?.username?.trim() || undefined
-  const url = raw.url ?? undefined
-  const upvotes = raw.helpful_votes ?? 0
-
-  const published_at = new Date(raw.published_date).toISOString()
-
+function normalizeScraped(
+  raw: import('./tripadvisor-scraper.js').RawTripAdvisorScrapedReview,
+  connector: ChannelConnector
+): NormalizedReview {
   const review: NormalizedReview = {
     tenant_id: connector.tenant_id,
     business_id: connector.business_id,
     connector_id: connector.id,
     channel: CHANNEL,
-    external_id,
-    published_at,
+    external_id: raw.id,
+    published_at: raw.published_date || new Date().toISOString(),
     sentiment: 'unanalyzed',
     raw_data: raw as unknown as Record<string, unknown>,
   }
 
-  // Campos opcionais — só atribuir quando têm valor (exactOptionalPropertyTypes)
-  if (rating !== undefined) review.rating = rating
-  if (title !== undefined) review.title = title
-  if (body !== undefined) review.body = body
-  if (language !== undefined) review.language = language
-  if (author_name !== undefined) review.author_name = author_name
-  if (url !== undefined) review.url = url
-  if (upvotes > 0) review.upvotes = upvotes
+  if (raw.rating != null) review.rating = raw.rating
+  if (raw.title) review.title = raw.title
+  if (raw.text) review.body = raw.text
+  if (raw.author && raw.author !== 'Anônimo') review.author_name = raw.author
 
   return review
 }
 
-/**
- * Normaliza rating para escala 0–5.
- * TripAdvisor já usa 1–5, apenas valida o range.
- */
+function normalizeApi(raw: TripAdvisorReview, connector: ChannelConnector): NormalizedReview {
+  const rating = normalizeRating(raw.rating)
+  const review: NormalizedReview = {
+    tenant_id: connector.tenant_id,
+    business_id: connector.business_id,
+    connector_id: connector.id,
+    channel: CHANNEL,
+    external_id: String(raw.id),
+    published_at: new Date(raw.published_date).toISOString(),
+    sentiment: 'unanalyzed',
+    raw_data: raw as unknown as Record<string, unknown>,
+  }
+
+  if (rating !== undefined) review.rating = rating
+  if (raw.title?.trim()) review.title = raw.title.trim()
+  if (raw.text?.trim()) review.body = raw.text.trim()
+  if (raw.lang) review.language = raw.lang
+  if (raw.user?.username?.trim()) review.author_name = raw.user.username.trim()
+  if (raw.url) review.url = raw.url
+  if (raw.helpful_votes > 0) review.upvotes = raw.helpful_votes
+
+  return review
+}
+
 function normalizeRating(value: unknown): number | undefined {
   if (value == null) return undefined
   const num = Number(value)
   if (isNaN(num)) return undefined
   return Math.min(5, Math.max(0, num))
 }
-

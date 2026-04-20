@@ -167,21 +167,39 @@ async function extractVisibleReviews(page: import('playwright-core').Page, place
     return Array.from(items).map(el => {
       const ratingEl = el.querySelector(selectors.REVIEW_RATING)
       const ratingMatch = ratingEl?.getAttribute('aria-label')?.match(/(\d+)/)
-      
+
       const authorEl = el.querySelector(selectors.REVIEW_AUTHOR)
       const dateEl = el.querySelector(selectors.REVIEW_DATE)
       const textEl = el.querySelector(selectors.REVIEW_TEXT)
 
+      const author = authorEl?.textContent?.trim() || 'Anônimo'
+      const dateText = dateEl?.textContent?.trim() || ''
+
+      // ID: data-review-id (primário) → filho com atributo → fallback composto
+      const rawId =
+        el.getAttribute('data-review-id') ||
+        el.querySelector('[data-review-id]')?.getAttribute('data-review-id') ||
+        el.getAttribute('data-jiid') ||
+        ''
+
+      // Fallback: hash simples de autor + data para nunca perder um review
+      const fallbackId = rawId
+        ? rawId
+        : `fb_${(author + dateText)
+            .split('')
+            .reduce((acc, c) => ((acc * 31 + c.charCodeAt(0)) >>> 0), 0)
+            .toString(16)}_${placeId.slice(-6)}`
+
       return {
-        id: el.getAttribute('data-review-id') || '',
-        author: authorEl?.textContent?.trim() || 'Anônimo',
-        rating: ratingMatch ? parseInt(ratingMatch[1], 10) : null,
-        date_text: dateEl?.textContent?.trim() || '',
+        id: fallbackId,
+        author,
+        rating: ratingMatch?.[1] ? parseInt(ratingMatch[1], 10) : null,
+        date_text: dateText,
         text: textEl?.textContent?.trim() || '',
         place_id: placeId,
-        scraped_at: now
+        scraped_at: now,
       }
-    }).filter(r => r.id)
+    }).filter(r => r.id) // fallbackId nunca é vazio, mas mantemos o guard
   }, { selectors: GMAPS_SELECTORS, placeId, now: new Date().toISOString() })
 }
 
