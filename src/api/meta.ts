@@ -72,6 +72,7 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
     const longToken = await exchangeForLongLivedToken(shortToken)
 
     // PASSO 3: Buscar Page Access Token
+    console.log('[MetaAuth] Iniciando busca de páginas para o business_id:', business_id)
     const pages = await fetchUserPages(longToken)
     if (pages.length === 0) throw new Error('Nenhuma página encontrada')
 
@@ -199,9 +200,11 @@ async function exchangeForLongLivedToken(shortToken: string): Promise<string> {
 }
 
 async function fetchUserPages(userToken: string): Promise<any[]> {
-  const url = `https://graph.facebook.com/v19.0/me/accounts?access_token=${userToken}&fields=id,name,access_token`
+  const url = `https://graph.facebook.com/v20.0/me/accounts?access_token=${userToken}&fields=id,name,access_token`
+  console.log('[MetaAuth] Chamando me/accounts...')
   const res = await fetch(url)
   const data: any = await res.json()
+  console.log('[MetaAuth] Resposta me/accounts:', JSON.stringify(data, null, 2))
   return data.data || []
 }
 
