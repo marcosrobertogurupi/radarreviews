@@ -235,7 +235,8 @@ async function fetchInstagramAccount(pageId: string, pageToken: string): Promise
 
 async function subscribePageToWebhook(pageId: string, pageToken: string): Promise<void> {
   const url = `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`
-  await fetch(url, {
+  console.log('[MetaAuth] Tentando inscrever webhook na página:', pageId)
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -243,4 +244,6 @@ async function subscribePageToWebhook(pageId: string, pageToken: string): Promis
       access_token: pageToken,
     })
   })
+  const data: any = await res.json()
+  console.log('[MetaAuth] Resposta da inscrição:', JSON.stringify(data, null, 2))
 }
