@@ -68,6 +68,7 @@ type TripAdvisorReview = z.infer<typeof TripAdvisorReviewSchema>
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
   const result: JobResult = { reviews_fetched: 0, reviews_new: 0, reviews_updated: 0 }
+  logger.info(`[${CHANNEL}] Iniciando sincronização para conector: ${connector.id}`)
 
   const config = connector.config as Record<string, unknown>
   const maxReviews = (config['max_reviews'] as number | undefined) ?? 50
