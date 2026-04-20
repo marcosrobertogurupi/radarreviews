@@ -18,6 +18,7 @@ import { ingestReviews } from '../lib/ingest.js'
 import { scrapeTripAdvisorReviews } from './tripadvisor-scraper.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
+import { tripadvisorReviewsTaskPost, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 
 // ── Constantes ───────────────────────────────────────────────────
 
@@ -72,40 +73,74 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const maxReviews = (config['max_reviews'] as number | undefined) ?? 50
   const sinceDays = (config['since_days'] as number | undefined) ?? 90
 
-  // ── 1. Obter URL de listagem (cache em config) ────────────────
+  // ── 1. Estratégia DataForSEO (Primária) ──────────────────────
+  
+  let urlPath = config['url_path'] as string | undefined
+  let reviews: NormalizedReview[] = []
 
-  let listingUrl = config['listing_url'] as string | undefined
+  if (urlPath) {
+    try {
+      logger.info(`[${CHANNEL}] Iniciando DataForSEO para url_path: ${urlPath}`)
+      const postRes = await tripadvisorReviewsTaskPost(urlPath, `${connector.id}_${Date.now()}`)
+      const taskId = postRes.tasks?.[0]?.id
 
-  if (!listingUrl) {
-    listingUrl = await discoverListingUrl(connector)
-    if (listingUrl) {
-      // Persiste para evitar chamada de API em syncs futuros
-      await supabase
-        .from('channel_connectors')
-        .update({ config: { ...config, listing_url: listingUrl } })
-        .eq('id', connector.id)
-      logger.info(`[${CHANNEL}] URL de listagem descoberta e salva`, { listingUrl })
+      if (taskId) {
+        // Polling de 30s (15 tentativas a cada 2s)
+        let dfReviewsRaw: any[] = []
+        for (let i = 0; i < 15; i++) {
+          await new Promise(r => setTimeout(r, 2000))
+          const getRes = await tripadvisorReviewsTaskGet(taskId)
+          const task = getRes.tasks?.[0]
+          
+          if (task?.status_code === 20000) { // Success
+            dfReviewsRaw = task.result?.[0]?.items ?? []
+            break
+          }
+          if (task?.status_code !== 40100) { // Not ready yet
+            logger.debug(`[${CHANNEL}] DataForSEO task ${taskId} status: ${task?.status_message}`)
+          }
+        }
+
+        if (dfReviewsRaw.length > 0) {
+          reviews = dfReviewsRaw.map(r => normalizeDataForSEO(r, connector))
+          logger.info(`[${CHANNEL}] DataForSEO retornou ${reviews.length} reviews`)
+        }
+      }
+    } catch (err) {
+      logger.error(`[${CHANNEL}] Erro na DataForSEO:`, { error: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  // ── 2. Tentar scraper (primário) ──────────────────────────────
+  // ── 2. Fallback: Scraper Playwright (Secundária) ──────────────
 
-  let reviews: NormalizedReview[] = []
+  if (reviews.length === 0) {
+    let listingUrl = config['listing_url'] as string | undefined
 
-  if (listingUrl) {
-    try {
-      const scraped = await scrapeTripAdvisorReviews(listingUrl, maxReviews, sinceDays)
-      if (scraped.length > 0) {
-        reviews = scraped.map(r => normalizeScraped(r, connector))
-        logger.info(`[${CHANNEL}] Scraper retornou ${reviews.length} reviews`)
+    if (!listingUrl) {
+      listingUrl = await discoverListingUrl(connector)
+      if (listingUrl) {
+        // Persiste para evitar chamada de API em syncs futuros
+        await supabase
+          .from('channel_connectors')
+          .update({ config: { ...config, listing_url: listingUrl } })
+          .eq('id', connector.id)
+        logger.info(`[${CHANNEL}] URL de listagem descoberta e salva`, { listingUrl })
       }
-    } catch (err) {
-      logger.warn(`[${CHANNEL}] Scraper falhou — tentando API fallback`, {
-        error: err instanceof Error ? err.message : String(err),
-      })
     }
-  } else {
-    logger.warn(`[${CHANNEL}] listing_url não disponível — usando somente API`)
+
+    if (listingUrl) {
+      try {
+        const scraped = await scrapeTripAdvisorReviews(listingUrl, maxReviews, sinceDays)
+        if (scraped.length > 0) {
+          reviews = scraped.map(r => normalizeScraped(r, connector))
+          logger.info(`[${CHANNEL}] Scraper retornou ${reviews.length} reviews`)
+        }
+      } catch (err) {
+        logger.warn(`[${CHANNEL}] Scraper falhou — tentando API fallback`, {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
   }
 
   // ── 3. Fallback: API (máx 5 reviews no plano free) ────────────
@@ -259,6 +294,28 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> 
 }
 
 // ── Normalizadores ────────────────────────────────────────────────
+
+function normalizeDataForSEO(raw: any, connector: ChannelConnector): NormalizedReview {
+  const review: NormalizedReview = {
+    tenant_id: connector.tenant_id,
+    business_id: connector.business_id,
+    connector_id: connector.id,
+    channel: CHANNEL,
+    external_id: String(raw.review_id),
+    published_at: new Date(raw.date).toISOString(),
+    sentiment: 'unanalyzed',
+    raw_data: raw,
+  }
+
+  if (raw.rating?.value != null) review.rating = raw.rating.value
+  if (raw.title?.trim()) review.title = raw.title.trim()
+  if (raw.text?.trim()) review.body = raw.text.trim()
+  if (raw.language) review.language = raw.language
+  if (raw.user_profile?.name?.trim()) review.author_name = raw.user_profile.name.trim()
+  if (raw.url) review.url = raw.url
+  
+  return review
+}
 
 function normalizeScraped(
   raw: import('./tripadvisor-scraper.js').RawTripAdvisorScrapedReview,

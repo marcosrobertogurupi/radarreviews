@@ -17,6 +17,7 @@ import http from 'node:http'
 import { createClient } from '@supabase/supabase-js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { startScheduler } from '../scheduler/index.js'
+import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -273,9 +274,45 @@ async function handleOnboarding(
 
     // 5. Criar conectores para os canais selecionados
     if (channels.length > 0) {
-      await supabaseAdmin.from('channel_connectors').insert(
-        channels.map(ch => ({ business_id: biz.id, channel: ch, status: 'pending_auth' }))
-      )
+      const connectors = await Promise.all(channels.map(async (ch) => {
+        const connData: any = { business_id: biz.id, channel: ch, status: 'active' }
+        
+        // Se for TripAdvisor, tentamos obter o url_path via DataForSEO
+        if (ch === 'tripadvisor') {
+          try {
+            console.log(`[onboarding] Buscando TripAdvisor para: ${businessName} em ${body.category || ''}`)
+            const searchRes = await tripadvisorSearchTask(businessName.trim(), body.category || '', tenant.id)
+            if (searchRes.tasks?.[0]?.id) {
+              const taskId = searchRes.tasks[0].id
+              // Polling rápido de 10s para tentar pegar o url_path imediatamente
+              let urlPath = ''
+              for (let i = 0; i < 5; i++) {
+                await new Promise(r => setTimeout(r, 2000))
+                const taskResult = await tripadvisorReviewsTaskGet(taskId)
+                const resultObj = taskResult.tasks?.[0]?.result?.[0]
+                if (resultObj?.url_path) {
+                  urlPath = resultObj.url_path
+                  break
+                }
+              }
+              if (urlPath) {
+                connData.config = { url_path: urlPath, interval_minutes: 60 }
+                console.log(`[onboarding] TripAdvisor url_path encontrado: ${urlPath}`)
+              } else {
+                connData.status = 'pending_config'
+                console.warn(`[onboarding] TripAdvisor url_path não encontrado no tempo limite (taskId: ${taskId})`)
+              }
+            }
+          } catch (e) {
+            console.error(`[onboarding] Erro ao buscar TripAdvisor:`, e)
+            connData.status = 'pending_config'
+          }
+        }
+        
+        return connData
+      }))
+
+      await supabaseAdmin.from('channel_connectors').insert(connectors)
     }
 
     console.log(`[onboarding] Tenant criado: ${slug} (${tenant.id}) — usuário: ${email}`)
