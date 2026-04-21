@@ -157,8 +157,7 @@ export async function handleMetaWebhook(req: http.IncomingMessage, res: http.Ser
     const token = url.searchParams.get('hub.verify_token')
     const challenge = url.searchParams.get('hub.challenge')
 
-    const verifyToken = process.env['META_WEBHOOK_VERIFY_TOKEN'] || 'reputei_meta_token_2024_prod'
-    if (mode === 'subscribe' && token === verifyToken) {
+    if (mode === 'subscribe' && token === process.env['META_WEBHOOK_VERIFY_TOKEN']) {
       res.writeHead(200); res.end(challenge); return
     }
     res.writeHead(403); res.end('Forbidden'); return
