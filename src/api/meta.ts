@@ -156,6 +156,8 @@ export async function handleMetaWebhook(req: http.IncomingMessage, res: http.Ser
     const mode = url.searchParams.get('hub.mode')
     const token = url.searchParams.get('hub.verify_token')
     const challenge = url.searchParams.get('hub.challenge')
+    
+    console.log('[MetaWebhook] Tentativa de verificação:', { mode, token, expected: process.env['META_WEBHOOK_VERIFY_TOKEN'] })
 
     if (mode === 'subscribe' && token === process.env['META_WEBHOOK_VERIFY_TOKEN']) {
       res.writeHead(200); res.end(challenge); return
