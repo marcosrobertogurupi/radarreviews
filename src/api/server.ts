@@ -845,7 +845,7 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  if (url.startsWith('/webhooks/meta')) {
+  if (url.startsWith('/webhooks/meta') || url.startsWith('/api/webhooks/meta')) {
     handleMetaWebhook(req, res).catch(err => {
       console.error('[meta-webhook] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
