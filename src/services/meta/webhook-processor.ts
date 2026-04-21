@@ -24,16 +24,21 @@ export async function processMetaWebhookEvent(
   const channel = isInstagram ? 'instagram' : 'facebook'
 
   // 3. Buscar conector para este tenant/business
-  const { data: connector } = await supabase
+  const { data: connector, error: connError } = await supabase
     .from('channel_connectors')
     .select('*, monitored_businesses(tenant_id)')
-    .eq(isInstagram ? 'ig_user_id' : 'fb_page_id', pageId)
+    .eq('external_id', pageId)
     .eq('channel', channel)
     .eq('status', 'active')
-    .single()
+    .maybeSingle()
+
+  if (connError) {
+    console.error(`[MetaWebhook] Erro ao buscar conector:`, connError)
+    return
+  }
 
   if (!connector) {
-    console.warn(`[MetaWebhook] Conector não encontrado para ${channel} ID ${pageId}`)
+    console.warn(`[MetaWebhook] Conector não encontrado para ${channel} com external_id ${pageId}. Verifique se o external_id no banco coincide com o ID enviado pelo Facebook.`)
     return
   }
 
