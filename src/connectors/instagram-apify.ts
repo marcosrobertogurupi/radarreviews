@@ -28,9 +28,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     const normalized: NormalizedReview[] = []
 
     for (const comment of rawComments) {
-      // Análise de sentimento rica (IA)
-      const sentiment = await analyzeMetaSentiment(comment.text)
-
       normalized.push({
         tenant_id: biz.tenant_id,
         business_id: business_id,
@@ -40,15 +37,13 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         body: comment.text,
         author_name: comment.ownerUsername,
         published_at: comment.timestamp,
-        sentiment: sentiment.label,
-        dissatisfaction_score: Math.round(sentiment.score * 100),
-        sentiment_summary: sentiment.summary,
+        sentiment: 'unanalyzed', // Deixar o ingestReviews analisar via IA
         url: comment.url,
         raw_data: comment
       })
     }
 
-    // Ingerir no banco (o ingestReviews já cuida de não duplicar e disparar alertas)
+    // Ingerir no banco (o ingestReviews cuidará da IA, deduplicação e alertas)
     const stats = await ingestReviews(normalized, 'instagram', connector_id, business_id)
 
     return {
