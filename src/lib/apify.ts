@@ -17,25 +17,43 @@ export interface ApifyInstagramComment {
 export async function fetchInstagramComments(username: string, limit = 50): Promise<ApifyInstagramComment[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
 
-  console.log(`[Apify] Iniciando coleta para @${username}...`)
+  console.log(`[Apify] Passo 1: Buscando posts recentes de @${username}...`)
 
   try {
-    // 1. Disparar o Actor (Instagram Scraper)
-    // Usamos o endpoint "run-sync" que espera o robô terminar e já devolve o dataset
-    const response = await axios.post(
+    // 1. Pegar os últimos posts
+    const postsResponse = await axios.post(
       `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
       {
         usernames: [username],
-        resultsType: 'comments',
-        resultsLimit: limit,
-        searchType: 'hashtag', // No caso de comentários, ele vai pelo username
-        searchLimit: 1
+        resultsType: 'posts',
+        resultsLimit: 5 // Olhar os últimos 5 posts
       },
-      { timeout: 300000 } // 5 minutos de timeout (robôs demoram)
+      { timeout: 120000 }
     )
 
-    const items = response.data as any[]
-    console.log(`[Apify] Coletados ${items.length} itens para @${username}`)
+    const posts = postsResponse.data as any[]
+    const postUrls = posts.map(p => p.url).filter(Boolean)
+
+    if (postUrls.length === 0) {
+      console.log(`[Apify] Nenhum post encontrado para @${username}`)
+      return []
+    }
+
+    console.log(`[Apify] Passo 2: Buscando comentários em ${postUrls.length} posts...`)
+
+    // 2. Pegar comentários desses posts
+    const commentsResponse = await axios.post(
+      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        directUrls: postUrls,
+        resultsType: 'comments',
+        resultsLimit: limit
+      },
+      { timeout: 240000 }
+    )
+
+    const items = commentsResponse.data as any[]
+    console.log(`[Apify] Coletados ${items.length} comentários para @${username}`)
 
     return items.map(item => ({
       id: item.id,
