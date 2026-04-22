@@ -348,17 +348,19 @@ export async function analyzeBatch(reviews: NormalizedReview[]): Promise<void> {
 // Análise com Gemini Flash (camada 1 — primária)
 // -----------------------------------------------------------------------------
 
+import { AI_CONFIG } from './ai-config.js'
+
 async function analyzeWithGemini(
   genAI: GoogleGenerativeAI,
   review: NormalizedReview,
   text: string
 ): Promise<SentimentResult> {
   const model = genAI.getGenerativeModel({
-    model: 'models/gemini-1.5-flash',
+    model: `models/${AI_CONFIG.model}`,
     generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
-      maxOutputTokens: 1024,
+      responseMimeType: AI_CONFIG.responseMimeType,
+      temperature: AI_CONFIG.temperature,
+      maxOutputTokens: AI_CONFIG.maxOutputTokens,
     },
   })
 

@@ -12,7 +12,7 @@ export interface MetaSentimentResult {
 
 /**
  * Analisa o sentimento de um comentário de rede social (Facebook/Instagram)
- * usando Gemini 2.0 Flash com score detalhado de insatisfação.
+ * usando Gemini 1.5 Flash com score detalhado de insatisfação.
  */
 export async function analyzeMetaSentiment(text: string): Promise<MetaSentimentResult> {
   const apiKey = process.env['GEMINI_API_KEY']
@@ -22,10 +22,10 @@ export async function analyzeMetaSentiment(text: string): Promise<MetaSentimentR
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({
-    model: 'models/gemini-1.5-flash',
+    model: `models/${AI_CONFIG.model}`,
     generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
+      responseMimeType: AI_CONFIG.responseMimeType,
+      temperature: AI_CONFIG.temperature,
     },
   })
 
