@@ -58,7 +58,7 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
       return mod.run
     }
     if (channel === 'instagram') {
-      const mod = await import('../connectors/instagram.js')
+      const mod = await import('../connectors/instagram-apify.js')
       return mod.run
     }
     if (channel === 'reclame_aqui') {
