@@ -20,13 +20,15 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
   console.log(`[Apify] Passo 1: Buscando posts recentes de @${username}...`)
 
   try {
-    // 1. Pegar os últimos posts
+    // 1. Pegar os últimos posts usando a URL direta do perfil
+    const profileUrl = `https://www.instagram.com/${username.replace('@', '')}/`
     const postsResponse = await axios.post(
       `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
       {
-        usernames: [username],
+        directUrls: [profileUrl],
         resultsType: 'posts',
-        resultsLimit: 5 // Olhar os últimos 5 posts
+        resultsLimit: 5,
+        addParentPost: true
       },
       { timeout: 120000 }
     )
