@@ -29,10 +29,14 @@ interface AlertRule {
   condition_type: string
   threshold: number | null
   keywords: string[] | null
+  urgency_level?: 'urgente' | 'atencao' | 'informativo'
+  risk_keywords?: string[]
   notify_email: boolean
   notify_webhook: string | null
   is_active: boolean
 }
+
+const DEFAULT_RISK_KEYWORDS = ['PROCON', 'processo', 'advogado', 'IDEC', 'Juizado Especial', 'denúncia', 'justiça'];
 
 /**
  * Verifica regras de alerta para um conjunto de reviews novos.
@@ -77,11 +81,16 @@ export async function checkAlerts(
   for (const review of reviews) {
     for (const rule of rules as AlertRule[]) {
       if (shouldTrigger(review, rule)) {
+        const urgency = calculateUrgency(review, rule);
         events.push({
           rule_id: rule.id,
           business_id: businessId,
           channel,
-          detail: buildAlertDetail(review, rule),
+          detail: {
+            ...buildAlertDetail(review, rule),
+            urgency_level: urgency,
+            is_legal_risk: urgency === 'urgente' && containsRiskKeywords(review, rule)
+          },
         })
 
         logger.info('[alerts] Alerta disparado', {
@@ -186,6 +195,31 @@ function shouldTrigger(review: NormalizedReview, rule: AlertRule): boolean {
       })
       return false
   }
+}
+/**
+ * Calcula o nível de urgência com base no conteúdo e na regra.
+ */
+function calculateUrgency(review: NormalizedReview, rule: AlertRule): 'urgente' | 'atencao' | 'informativo' {
+  // 1. Se contém palavras de risco jurídico -> URGENTE
+  if (containsRiskKeywords(review, rule)) return 'urgente';
+
+  // 2. Se rating <= 2 -> URGENTE
+  if (review.rating !== undefined && review.rating <= 2) return 'urgente';
+
+  // 3. Se rating == 3 ou sentimento negativo -> ATENÇÃO
+  if (review.rating === 3 || review.sentiment === 'negative' || review.sentiment === 'critical') return 'atencao';
+
+  // 4. Caso contrário -> INFORMATIVO (ou o nível padrão da regra)
+  return rule.urgency_level || 'informativo';
+}
+
+/**
+ * Verifica se o review contém palavras de risco jurídico.
+ */
+function containsRiskKeywords(review: NormalizedReview, rule: AlertRule): boolean {
+  const riskWords = rule.risk_keywords || DEFAULT_RISK_KEYWORDS;
+  const text = `${review.title ?? ''} ${review.body ?? ''}`.toLowerCase();
+  return riskWords.some(kw => text.includes(kw.toLowerCase()));
 }
 
 /**

@@ -9,8 +9,16 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, Legend
 } from 'recharts'
-import { TrendingUp, MessageSquare, AlertTriangle, Activity } from 'lucide-react'
+import { TrendingUp, MessageSquare, AlertTriangle, Activity, RefreshCw } from 'lucide-react'
 import type { TenantOption } from '../App'
+
+// Novos Componentes e Serviços (Fase 1)
+import ReputationScore from '../components/dashboard/ReputationScore'
+import ReputationTimeline from '../components/dashboard/ReputationTimeline'
+import TopicsCloud from '../components/dashboard/TopicsCloud'
+import { getReputationData } from '../services/reputation'
+import type { ReputationScoreData, TimelinePoint } from '../services/reputation'
+import type { TopicData } from '../components/dashboard/TopicsCloud'
 
 interface Props {
   tenants: TenantOption[]
@@ -61,6 +69,12 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [channelData, setChannelData] = useState<any[]>([])
   const [sentimentDist, setSentimentDist] = useState<any[]>([])
   const [rankingData, setRankingData] = useState<any[]>([])
+  
+  // Estados da Fase 1
+  const [reputation, setReputation] = useState<ReputationScoreData | null>(null)
+  const [timeline, setTimeline] = useState<TimelinePoint[]>([])
+  const [topics, setTopics] = useState<TopicData[]>([])
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -117,6 +131,8 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       loadTrend(),
       loadChannelData(),
       loadRanking(),
+      loadReputation(),
+      loadTopics(),
     ])
     
     setLoading(false)
@@ -296,6 +312,37 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore).slice(0, 5))
   }
 
+  async function loadReputation() {
+    const data = await getReputationData(selectedTenantId)
+    setReputation(data.current)
+    setTimeline(data.timeline)
+  }
+
+  async function loadTopics() {
+    // Buscar do cache review_topics
+    let q = supabase.from('review_topics')
+      .select('topics')
+      .order('generated_at', { ascending: false })
+      .limit(1)
+    
+    if (selectedTenantId) {
+      // Aqui precisaríamos de um monitored_business_id, mas para o dashboard 
+      // do tenant, pegamos o mais recente do tenant
+      const { data: biz } = await supabase.from('monitored_businesses')
+        .select('id').eq('tenant_id', selectedTenantId).limit(1)
+      if (biz && biz.length > 0) {
+        q = q.eq('business_id', biz[0].id)
+      }
+    }
+
+    const { data } = await q
+    if (data && data.length > 0) {
+      setTopics(data[0].topics as TopicData[])
+    } else {
+      setTopics([])
+    }
+  }
+
   // ── Skeleton ────────────────────────────────────────────────
   if (loading) {
     return (
@@ -337,52 +384,52 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       </div>
 
       {/* ── KPIs ─────────────────────────────────────────────── */}
-      <div className="kpi-grid">
-        <div className="card kpi-card card-glow" style={{ '--kpi-color': '#6366f1' } as any}>
-          <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as any}>
-            <MessageSquare size={18} color="#a5b4fc" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, marginBottom: 24 }}>
+        {reputation && <ReputationScore data={reputation} />}
+        
+        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+          <div className="card kpi-card card-glow" style={{ '--kpi-color': '#6366f1' } as any}>
+            <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as any}>
+              <MessageSquare size={18} color="#a5b4fc" />
+            </div>
+            <div className="kpi-label">Total de Reviews</div>
+            <div className="kpi-value">{kpis?.totalReviews.toLocaleString('pt-BR')}</div>
+            <div className="kpi-sub"><TrendingUp size={12} /> últimos 30 dias</div>
           </div>
-          <div className="kpi-label">Total de Reviews</div>
-          <div className="kpi-value">{kpis?.totalReviews.toLocaleString('pt-BR')}</div>
-          <div className="kpi-sub"><TrendingUp size={12} /> últimos 30 dias</div>
-        </div>
 
-        <div className="card kpi-card" style={{ '--kpi-color': '#ef4444' } as any}>
-          <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(239,68,68,0.15)' } as any}>
-            <AlertTriangle size={18} color="#f87171" />
+          <div className="card kpi-card" style={{ '--kpi-color': '#ef4444' } as any}>
+            <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(239,68,68,0.15)' } as any}>
+              <AlertTriangle size={18} color="#f87171" />
+            </div>
+            <div className="kpi-label">Taxa Negativa</div>
+            <div className="kpi-value">{kpis?.negativeRate}%</div>
+            <div className="kpi-sub">🚨 {kpis?.criticalCount} críticos</div>
           </div>
-          <div className="kpi-label">Taxa Negativa / Crítica</div>
-          <div className="kpi-value" style={{ color: kpis && kpis.negativeRate > 30 ? '#ef4444' : '#f0f4ff' }}>
-            {kpis?.negativeRate}%
-          </div>
-          <div className="kpi-sub">
-            <span style={{ color: '#fca5a5' }}>
-              🚨 {kpis?.criticalCount} críticos {(kpis?.negativeRate || 0) > 0 && `(de ${Math.round(kpis!.totalReviews * kpis!.negativeRate / 100)} ruins)`}
-            </span>
-          </div>
-        </div>
 
-        <div className="card kpi-card" style={{ '--kpi-color': '#f59e0b' } as any}>
-          <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(245,158,11,0.15)' } as any}>
-            <Activity size={18} color="#fbbf24" />
+          <div className="card kpi-card" style={{ '--kpi-color': '#f59e0b' } as any}>
+            <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(245,158,11,0.15)' } as any}>
+              <Activity size={18} color="#fbbf24" />
+            </div>
+            <div className="kpi-label">Score de Insatisfação</div>
+            <div className="kpi-value">{kpis?.avgScore}/100</div>
+            <div className="kpi-sub">0 feliz · 100 furioso</div>
           </div>
-          <div className="kpi-label">Score Médio de Insatisfação</div>
-          <div className="kpi-value" style={{ color: scoreColor(kpis?.avgScore ?? 0) }}>
-            {kpis?.avgScore}/100
-          </div>
-          <div className="kpi-sub">0 = feliz · 100 = furioso</div>
-        </div>
 
-        <div className="card kpi-card" style={{ '--kpi-color': '#06b6d4' } as any}>
-          <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(6,182,212,0.15)' } as any}>
-            <Activity size={18} color="#22d3ee" />
+          <div className="card kpi-card" style={{ '--kpi-color': '#06b6d4' } as any}>
+            <div className="kpi-icon" style={{ '--kpi-icon-bg': 'rgba(6,182,212,0.15)' } as any}>
+              <RefreshCw size={18} color="#22d3ee" className={refreshing ? 'animate-spin' : ''} />
+            </div>
+            <div className="kpi-label">Alertas Ativos</div>
+            <div className="kpi-value">{kpis?.pendingAlerts}</div>
+            <div className="kpi-sub">{kpis?.activeConnectors} canais ativos</div>
           </div>
-          <div className="kpi-label">Alertas Pendentes</div>
-          <div className="kpi-value" style={{ color: (kpis?.pendingAlerts ?? 0) > 0 ? '#ef4444' : '#10b981' }}>
-            {kpis?.pendingAlerts}
-          </div>
-          <div className="kpi-sub">{kpis?.activeConnectors} conectores ativos</div>
         </div>
+      </div>
+
+      {/* ── Fase 1: Timeline e Tópicos ────────────────────── */}
+      <div className="grid-2" style={{ marginBottom: 24 }}>
+        <ReputationTimeline data={timeline} />
+        <TopicsCloud topics={topics} />
       </div>
 
       {/* ── Gráficos ─────────────────────────────────────────── */}

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================
+  REPUTEI SaaS — Mapa de Funcionalidades do Painel do Cliente
+  Versão Atual: 1.0.0
+  Data: 23 de Abril de 2026
+  Objetivo: Estudo para Facelift e Melhoria de UX/UI
+  ============================================================
+-->
+
+<reputei_portal_cliente>
+
+  <!-- SEÇÃO 1: DASHBOARD (VISÃO GERAL) -->
+  <modulo id="dashboard" nome="Dashboard Executivo">
+    <funcao id="resumo_sentimento" nome="Resumo de Sentimento">
+      <descricao>Gráficos circulares mostrando a distribuição de avaliações Positivas, Neutras e Críticas.</descricao>
+    </funcao>
+    <funcao id="volume_temporal" nome="Volume de Reviews">
+      <descricao>Gráfico de linha mostrando a quantidade de reviews recebidos ao longo do tempo (últimos 30 dias).</descricao>
+    </funcao>
+    <funcao id="ranking_canais" nome="Performance por Canal">
+      <descricao>Comparativo de qual canal (Google, RA, IG, etc) traz mais volume e qual tem melhor nota.</descricao>
+    </funcao>
+    <funcao id="alertas_recentes" nome="Feed de Alertas">
+      <descricao>Lista rápida das últimas avaliações críticas que exigem atenção imediata.</descricao>
+    </funcao>
+  </modulo>
+
+  <!-- SEÇÃO 2: REVIEWS (GESTÃO DE AVALIAÇÕES) -->
+  <modulo id="reviews" nome="Central de Avaliações">
+    <funcao id="feed_unificado" nome="Feed Multicanal">
+      <descricao>Lista única contendo reviews de todos os conectores ativos (Google, FB, IG, Trustpilot, etc).</descricao>
+    </funcao>
+    <funcao id="filtros_avancados" nome="Filtros e Busca">
+      <descricao>Filtragem por canal, data, sentimento (IA) e busca por palavras-chave no texto do review.</descricao>
+    </funcao>
+    <funcao id="analise_ia_detalhada" nome="Análise de Sentimento Individual">
+      <descricao>Cada review exibe um "score de insatisfação" e um resumo gerado pela IA (Gemini).</descricao>
+    </funcao>
+    <funcao id="marcar_lido" nome="Controle de Status">
+      <descricao>Possibilidade de marcar reviews como "Lidos" ou "Respondidos" para organizar o fluxo de trabalho.</descricao>
+    </funcao>
+  </modulo>
+
+  <!-- SEÇÃO 3: COPILOT (ASSISTENTE DE IA) -->
+  <modulo id="copilot" nome="Copiloto de Respostas">
+    <funcao id="sugestao_resposta" nome="Gerador de Respostas">
+      <descricao>IA analisa o review e sugere 3 opções de resposta: Formal, Empática ou Resolutiva.</descricao>
+    </funcao>
+    <funcao id="ajuste_tom" nome="Personalização de Tom">
+      <descricao>O usuário pode pedir para a IA "ser mais engraçada" ou "pedir desculpas formalmente".</descricao>
+    </funcao>
+    <funcao id="traducao_automatica" nome="Tradução Inteligente">
+      <descricao>Se o review for em outra língua (comum no TripAdvisor), a IA traduz e sugere a resposta na língua original.</descricao>
+    </funcao>
+  </modulo>
+
+  <!-- SEÇÃO 4: CONFIGURAÇÕES E ALERTAS -->
+  <modulo id="configuracoes" nome="Configurações e Notificações">
+    <funcao id="config_whatsapp" nome="Alertas via WhatsApp">
+      <descricao>Configuração do número para receber notificações em tempo real de reviews críticos.</descricao>
+    </funcao>
+    <funcao id="config_email" nome="Resumo por E-mail">
+      <descricao>Ativação de relatórios diários ou semanais consolidados por e-mail.</descricao>
+    </funcao>
+    <funcao id="gestao_conectores" nome="Meus Canais">
+      <descricao>Interface para o cliente ver quais canais estão ativos e configurar novos (Instagram/Facebook via Apify).</descricao>
+    </funcao>
+  </modulo>
+
+  <!-- SEÇÃO 5: FINANCEIRO (BILLING) -->
+  <modulo id="financeiro" nome="Planos e Pagamentos">
+    <funcao id="status_assinatura" nome="Status da Assinatura">
+      <descricao>Exibe dias restantes do Trial ou status da recorrência no Asaas.</descricao>
+    </funcao>
+    <funcao id="upgrade_plano" nome="Upgrade de Plano">
+      <descricao>Troca de planos (Básico para Completo) com cálculo proporcional.</descricao>
+    </funcao>
+    <funcao id="historico_faturas" nome="Minhas Faturas">
+      <descricao>Link direto para o Portal de Faturas do Asaas para baixar boletos ou trocar cartão.</descricao>
+    </funcao>
+  </modulo>
+
+  <!-- OPORTUNIDADES DE MELHORIA (IDEIAS PARA O FACELIFT) -->
+  <melhorias_sugeridas>
+    <item>Dark Mode nativo com troca rápida.</item>
+    <item>Dashboard com Widgets arrastáveis (Drag &amp; Drop).</item>
+    <item>Integração de resposta direta (responder o Google/FB sem sair do Reputei).</item>
+    <item>Análise de Benchmarking (comparar nota com o concorrente no mesmo gráfico).</item>
+    <item>App Mobile (PWA) com notificações push nativas.</item>
+  </melhorias_sugeridas>
+
+</reputei_portal_cliente>
