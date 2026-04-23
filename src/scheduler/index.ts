@@ -21,8 +21,8 @@ import type { JobResult } from '../types/connector.js'
 
 import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
 
-// Intervalo de verificação do loop (ms) — verificar a cada 60 segundos
-const POLL_INTERVAL_MS = 60_000
+// Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
+const POLL_INTERVAL_MS = 120_000
 const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
 
 // Mapa de canais → função run() do conector
@@ -251,7 +251,7 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
       await systemNotifications.notifyRecovery(connector)
     }
 
-    const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 60
+    const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 120
     await supabase
       .from('channel_connectors')
       .update({

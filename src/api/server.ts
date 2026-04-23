@@ -614,18 +614,51 @@ async function handleUpdateConnectorConfig(req: http.IncomingMessage, res: http.
 async function handleForceSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res)
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  
   const connectorId = req.url?.split('/api/admin/connector/')[1]?.split('/force-sync')[0]
-  const { error } = await supabaseAdmin
-    .from('channel_connectors')
-    .update({ next_sync_at: new Date().toISOString(), status: 'active' })
-    .eq('id', connectorId)
-  if (error) {
-    res.writeHead(400, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ error: error.message }))
-    return
+  if (!connectorId) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'connectorId obrigatório' })); return
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ ok: true }))
+
+  try {
+    // 1. Verificar se já sincronizou nos últimos 10 minutos para evitar gasto de créditos
+    const { data: conn } = await supabaseAdmin
+      .from('channel_connectors')
+      .select('last_sync_at')
+      .eq('id', connectorId)
+      .single()
+
+    if (conn?.last_sync_at) {
+      const lastSync = new Date(conn.last_sync_at).getTime()
+      const tenMinutesAgo = Date.now() - 10 * 60_000
+      
+      if (lastSync > tenMinutesAgo) {
+        res.writeHead(429, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ 
+          error: 'Busca recente detectada. Aguarde alguns minutos para forçar novamente e economizar créditos.' 
+        }))
+        return
+      }
+    }
+
+    // 2. Se passou na trava, agenda para o próximo ciclo do scheduler
+    const { error } = await supabaseAdmin
+      .from('channel_connectors')
+      .update({ next_sync_at: new Date().toISOString(), status: 'active' })
+      .eq('id', connectorId)
+
+    if (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
 }
 
 async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
