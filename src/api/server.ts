@@ -209,7 +209,8 @@ async function handleOnboarding(
     email?: string; password?: string
     businessName?: string; category?: string; cnpj?: string
     channels?: string[]; plan?: string; billingMethod?: 'pix' | 'credit_card';
-    periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual'
+    periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual';
+    instagramUsername?: string; hashtags?: string;
   }
   try { body = JSON.parse(raw) } catch {
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
@@ -280,6 +281,16 @@ async function handleOnboarding(
       const connectors = await Promise.all(channels.map(async (ch) => {
         const connData: any = { business_id: biz.id, channel: ch, status: 'active' }
         
+        // Configuração Inteligente para Instagram
+        if (ch === 'instagram') {
+          connData.external_id = body.instagramUsername?.replace('@', '') || businessName.trim();
+          connData.config = { 
+            username: body.instagramUsername?.replace('@', ''),
+            hashtags: body.hashtags || '',
+            interval_minutes: 120 
+          };
+        }
+
         // Se for TripAdvisor, tentamos obter o url_path via DataForSEO
         if (ch === 'tripadvisor') {
           try {
