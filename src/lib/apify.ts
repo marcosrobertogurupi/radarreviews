@@ -164,3 +164,40 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20): Promis
     throw err
   }
 }
+
+/**
+ * Coleta reviews de páginas do Facebook via Apify
+ */
+export async function fetchFacebookReviews(pageUrl: string, limit = 20): Promise<any[]> {
+  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+
+  console.log(`[Apify] Buscando reviews do Facebook para: ${pageUrl}...`)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        startUrls: [{ url: pageUrl }],
+        maxResults: limit
+      },
+      { timeout: 300000 }
+    )
+
+    const items = response.data as any[]
+    console.log(`[Apify] Coletados ${items.length} reviews do Facebook para ${pageUrl}`)
+
+    return items.map(item => ({
+      id: item.reviewId || item.id,
+      stars: item.rating || item.score,
+      text: item.text || item.content,
+      publishedAt: item.date || item.timestamp,
+      author: item.authorName || item.user?.name || 'Usuário do Facebook',
+      url: item.url || pageUrl
+    }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[Apify] Erro ao coletar Facebook (${pageUrl}):`, msg)
+    throw err
+  }
+}
