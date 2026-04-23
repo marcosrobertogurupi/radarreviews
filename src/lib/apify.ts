@@ -63,9 +63,9 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
       
       return {
         id: String(id),
-        text: item.text || '',
-        ownerUsername: item.ownerUsername || item.owner?.username || 'instagram_user',
-        timestamp: item.timestamp || new Date().toISOString(),
+        text: item.text || item.text_content || item.body || item.caption || '',
+        ownerUsername: item.ownerUsername || item.owner?.username || item.user?.username || 'instagram_user',
+        timestamp: item.timestamp || item.createdAt || new Date().toISOString(),
         shortCode: item.shortCode,
         url: item.url || (item.shortCode ? `https://www.instagram.com/reels/${item.shortCode}/` : undefined)
       }
