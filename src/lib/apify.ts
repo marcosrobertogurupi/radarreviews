@@ -80,3 +80,42 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
     throw err
   }
 }
+
+/**
+ * Coleta reclamações do Reclame Aqui via Apify
+ */
+export async function fetchReclameAquiComplaints(companySlug: string, limit = 20): Promise<any[]> {
+  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+
+  console.log(`[Apify] Buscando reclamações do Reclame Aqui para: ${companySlug}...`)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        companySlug,
+        maxItems: limit,
+        scrapeDetailedComplaints: true // Trazer o texto completo
+      },
+      { timeout: 300000 }
+    )
+
+    const items = response.data as any[]
+    console.log(`[Apify] Coletadas ${items.length} reclamações para ${companySlug}`)
+
+    return items.map(item => ({
+      id: item.id || item.complaintId,
+      title: item.title,
+      description: item.description || item.text,
+      status: item.status,
+      author: item.authorName || item.author,
+      date: item.datetime || item.date || item.createdAt,
+      url: item.url
+    }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[Apify] Erro ao coletar Reclame Aqui (${companySlug}):`, msg)
+    throw err
+  }
+}

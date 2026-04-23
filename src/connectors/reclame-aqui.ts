@@ -26,8 +26,8 @@ import { createHash } from 'node:crypto'
 import { chromium } from 'playwright-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { z } from 'zod'
-import { logger } from '../lib/logger.js'
 import { ingestReviews } from '../lib/ingest.js'
+import { fetchReclameAquiComplaints } from '../lib/apify.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
@@ -106,7 +106,31 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const timeoutMs = (connector.config['timeout_ms'] as number) ?? DEFAULT_TIMEOUT_MS
   const maxPages = (connector.config['max_pages'] as number) ?? DEFAULT_MAX_PAGES
 
-  logger.info(`[${CHANNEL}] Iniciando scraping`, {
+  // --- ESTRATÉGIA PRINCIPAL: APIFY ---
+  try {
+    if (process.env['APIFY_TOKEN']) {
+      logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, slug })
+      const apifyComplaints = await fetchReclameAquiComplaints(slug, 20)
+      
+      if (apifyComplaints.length > 0) {
+        const normalized = apifyComplaints.map(c => normalize(c, connector))
+        const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
+        
+        return {
+          reviews_fetched: apifyComplaints.length,
+          reviews_new: ingest.reviews_new,
+          reviews_updated: ingest.reviews_updated
+        }
+      }
+    }
+  } catch (apifyError) {
+    logger.warn(`[${CHANNEL}] Falha na Apify, tentando fallback local via Playwright...`, { 
+      error: apifyError instanceof Error ? apifyError.message : String(apifyError) 
+    })
+  }
+
+  // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): PLAYWRIGHT ---
+  logger.info(`[${CHANNEL}] Iniciando scraping local (Fallback)`, {
     connector_id: connector.id,
     slug,
     max_pages: maxPages,
