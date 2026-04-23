@@ -70,6 +70,11 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('basico')
   const [channels,  setChannels] = useState<SourceChannel[]>([])
+  
+  // Configurações específicas por canal
+  const [igUser,     setIgUser]     = useState('')
+  const [igHashtags, setIgHashtags] = useState('')
+  const [fbUrl,      setFbUrl]      = useState('')
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -145,6 +150,9 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
           ...(category ? { category } : {}),
           ...(cnpj ? { cnpj } : {}),
           channels,
+          instagramUsername: igUser,
+          hashtags: igHashtags,
+          fbUrl: fbUrl
         }),
       })
 
@@ -404,6 +412,55 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
                 {channels.length} de {planConfig.max_channels} canal{planConfig.max_channels !== 1 ? 'is' : ''} selecionado{channels.length !== 1 ? 's' : ''}
               </p>
+
+              {/* Configuração Condicional do Instagram */}
+              {channels.includes('instagram') && (
+                <div style={{ marginTop: 20, padding: 16, background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#a5b4fc', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📸 Configuração do Instagram
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={LABEL_STYLE}>Seu usuário do Instagram (@)</label>
+                    <input 
+                      type="text" 
+                      value={igUser} 
+                      onChange={e => setIgUser(e.target.value.replace('@', ''))}
+                      placeholder="ex: seunegocio" 
+                      style={INPUT_STYLE} 
+                    />
+                  </div>
+                  <div>
+                    <label style={LABEL_STYLE}>Hashtags para monitorar (opcional)</label>
+                    <input 
+                      type="text" 
+                      value={igHashtags} 
+                      onChange={e => setIgHashtags(e.target.value)}
+                      placeholder="ex: #suamarca, #reviews" 
+                      style={INPUT_STYLE} 
+                    />
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Separe hashtags por vírgula.</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Configuração Condicional do Facebook */}
+              {channels.includes('facebook') && (
+                <div style={{ marginTop: 12, padding: 16, background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#22d3ee', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    👥 Configuração do Facebook
+                  </div>
+                  <div>
+                    <label style={LABEL_STYLE}>URL da sua página</label>
+                    <input 
+                      type="text" 
+                      value={fbUrl} 
+                      onChange={e => setFbUrl(e.target.value)}
+                      placeholder="https://facebook.com/suapagina" 
+                      style={INPUT_STYLE} 
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

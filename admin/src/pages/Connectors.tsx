@@ -55,7 +55,14 @@ export default function Connectors() {
   // Estados do novo conector
   const [allBusinesses, setAllBusinesses] = useState<{id: string, name: string}[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [newConn, setNewConn] = useState({ business_id: '', channel: 'google_maps', external_id: '' })
+  const [newConn, setNewConn] = useState({ 
+    business_id: '', 
+    channel: 'google_maps', 
+    external_id: '',
+    instagram_username: '',
+    hashtags: '',
+    fb_url: ''
+  })
 
   useEffect(() => {
     loadAll()
@@ -193,8 +200,13 @@ export default function Connectors() {
         body: JSON.stringify({
           business_id: newConn.business_id,
           channel: newConn.channel,
-          external_id: newConn.external_id,
-          config: { interval_minutes: 60 },
+          external_id: newConn.channel === 'instagram' ? newConn.instagram_username : (newConn.channel === 'facebook' ? newConn.fb_url : newConn.external_id),
+          config: { 
+            interval_minutes: 120,
+            username: newConn.instagram_username,
+            hashtags: newConn.hashtags,
+            fb_url: newConn.fb_url
+          },
         }),
       })
       if (!resp.ok) {
@@ -203,7 +215,7 @@ export default function Connectors() {
       }
       alert('Conector criado com sucesso!')
       setShowCreateModal(false)
-      setNewConn({ ...newConn, external_id: '' })
+      setNewConn({ ...newConn, external_id: '', instagram_username: '', hashtags: '', fb_url: '' })
       loadAll()
     } catch {
       alert('Não foi possível conectar à API.')
@@ -675,30 +687,68 @@ export default function Connectors() {
                   {ALL_CHANNELS.map(c => <option key={c} value={c}>{CHANNEL_LABELS[c as SourceChannel] || c}</option>)}
                 </select>
               </div>
-              {newConn.channel !== 'facebook' && newConn.channel !== 'instagram' ? (
+              {newConn.channel === 'instagram' && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid rgba(165,180,252,0.2)' }}>
+                  <div className="modal-label" style={{ color: '#a5b4fc' }}>Configuração Apify (Recomendado)</div>
+                  
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Usuário do Instagram (@)</label>
+                    <input 
+                      value={newConn.instagram_username} 
+                      onChange={e => setNewConn({...newConn, instagram_username: e.target.value.replace('@', '')})} 
+                      placeholder="ex: nubank" 
+                      style={{ width: '100%', padding: '8px 12px', marginTop: 4, background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} 
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Hashtags para Monitorar (opcional)</label>
+                    <input 
+                      value={newConn.hashtags} 
+                      onChange={e => setNewConn({...newConn, hashtags: e.target.value})} 
+                      placeholder="ex: #nubank, #cartaonubank" 
+                      style={{ width: '100%', padding: '8px 12px', marginTop: 4, background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} 
+                    />
+                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4 }}>Separe por vírgula.</div>
+                  </div>
+                </div>
+              )}
+
+              {newConn.channel === 'facebook' && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid rgba(165,180,252,0.2)' }}>
+                  <div className="modal-label" style={{ color: '#a5b4fc' }}>Configuração Apify (Recomendado)</div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>URL da Página do Facebook</label>
+                  <input 
+                    value={newConn.fb_url} 
+                    onChange={e => setNewConn({...newConn, fb_url: e.target.value})} 
+                    placeholder="https://www.facebook.com/SuaEmpresa" 
+                    style={{ width: '100%', padding: '8px 12px', marginTop: 4, background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} 
+                  />
+                </div>
+              )}
+
+              {(newConn.channel === 'instagram' || newConn.channel === 'facebook') && (
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>— OU CONECTE VIA API OFICIAL —</div>
+                  <MetaConnectButton 
+                    tenantId={allBusinesses.find(b => b.id === newConn.business_id)?.id || ''} 
+                    businessId={newConn.business_id} 
+                  />
+                </div>
+              )}
+
+              {newConn.channel !== 'facebook' && newConn.channel !== 'instagram' && (
                 <div className="modal-section">
                   <label className="modal-label">ID Externo / URL Slug</label>
                   <input required value={newConn.external_id} onChange={e => setNewConn({...newConn, external_id: e.target.value})} placeholder="ex: localiza-rent-a-car" style={{ width: '100%', padding: '10px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'white', borderRadius: 6 }} />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>O identificador da empresa na url do canal.</div>
                 </div>
-              ) : (
-                <div className="modal-section">
-                  <MetaConnectButton 
-                    tenantId={allBusinesses.find(b => b.id === newConn.business_id)?.id || ''} 
-                    businessId={newConn.business_id} 
-                  />
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, textAlign: 'center' }}>
-                    Estes canais exigem autorização via OAuth para monitorar comentários em tempo real.
-                  </div>
-                </div>
               )}
 
-              {newConn.channel !== 'facebook' && newConn.channel !== 'instagram' && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
-                  <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setShowCreateModal(false)}>Cancelar</button>
-                  <button type="submit" className="btn" style={{ background: 'var(--accent)' }}>Salvar Conector</button>
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+                <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                <button type="submit" className="btn" style={{ background: 'var(--accent)' }}>Salvar Conector</button>
+              </div>
             </form>
           </div>
         </div>
