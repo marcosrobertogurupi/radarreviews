@@ -19,6 +19,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { startScheduler } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
+import { createAsaasCustomer, createAsaasSubscription } from '../lib/asaas.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -207,13 +208,14 @@ async function handleOnboarding(
   let body: {
     email?: string; password?: string
     businessName?: string; category?: string; cnpj?: string
-    channels?: string[]; plan?: string
+    channels?: string[]; plan?: string; billingMethod?: 'pix' | 'credit_card';
+    periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual'
   }
   try { body = JSON.parse(raw) } catch {
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
   }
 
-  const { email, password, businessName, channels = [] } = body
+  const { email, password, businessName, channels = [], plan = 'starter', billingMethod = 'pix', periodicity = 'trimestral' } = body
   if (!email?.trim() || !password || !businessName?.trim()) {
     res.writeHead(400)
     res.end(JSON.stringify({ error: 'email, password e businessName são obrigatórios' }))
@@ -316,9 +318,70 @@ async function handleOnboarding(
       await supabaseAdmin.from('channel_connectors').insert(connectors)
     }
 
+    // 6. Criar Assinatura no Asaas (Trial 7 dias)
+    let asaasCustomerId = '';
+    let asaasSubscriptionId = '';
+    let invoiceUrl = '';
+
+    try {
+      const customer = await createAsaasCustomer({
+        name: businessName.trim(),
+        email: email.trim(),
+        cpfCnpj: body.cnpj?.replace(/\D/g, '') || '',
+      });
+      asaasCustomerId = customer.id;
+
+      // Calcular Preço (Starter: 197, Pro: 397, Enterprise: 797)
+      const basePrices: Record<string, number> = { starter: 197, pro: 397, enterprise: 797 };
+      const basePrice = basePrices[plan] || 197;
+      
+      // Descontos por periodicidade (Trimestral: 5%, Semestral: 10%, Anual: 20%)
+      const periodDiscounts: Record<string, number> = { monthly: 0, trimestral: 0.05, semestral: 0.10, anual: 0.20 };
+      const periodDiscount = periodDiscounts[periodicity] || 0;
+      
+      // Desconto PIX (5% adicional)
+      const pixDiscount = billingMethod === 'pix' ? 0.05 : 0;
+      
+      const finalPrice = basePrice * (1 - periodDiscount) * (1 - pixDiscount);
+      const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const subscription = await createAsaasSubscription({
+        customerId: asaasCustomerId,
+        billingType: billingMethod === 'pix' ? 'PIX' : 'CREDIT_CARD',
+        value: Number(finalPrice.toFixed(2)),
+        nextDueDate: trialEndsAt.split('T')[0], // 7 dias a partir de hoje
+        cycle: periodicity === 'anual' ? 'ANNUALLY' : (periodicity === 'semestral' ? 'SEMIANNUALLY' : 'MONTHLY'),
+        description: `Plano ${plan.toUpperCase()} - Reputei SaaS (${periodicity})`,
+        externalReference: tenant.id
+      });
+      asaasSubscriptionId = subscription.id;
+      invoiceUrl = subscription.invoiceUrl;
+
+      // Atualizar tenant com IDs do Asaas e Trial
+      await supabaseAdmin
+        .from('tenants')
+        .update({
+          asaas_customer_id: asaasCustomerId,
+          asaas_subscription_id: asaasSubscriptionId,
+          trial_ends_at: trialEndsAt,
+          subscription_status: 'trial',
+          billing_method: billingMethod
+        })
+        .eq('id', tenant.id);
+
+    } catch (paymentErr) {
+      console.error('[onboarding] Erro ao processar pagamento Asaas:', paymentErr);
+      // Continuamos o onboarding mas avisamos que o pagamento falhou
+    }
+
     console.log(`[onboarding] Tenant criado: ${slug} (${tenant.id}) — usuário: ${email}`)
     res.writeHead(201, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, tenantId: tenant.id, businessId: biz.id }))
+    res.end(JSON.stringify({ 
+      ok: true, 
+      tenantId: tenant.id, 
+      businessId: biz.id,
+      invoiceUrl: invoiceUrl // Link para o cliente ver a fatura/configurar pagamento
+    }))
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
