@@ -41,24 +41,23 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
       return []
     }
 
-    console.log(`[Apify] Passo 2: Buscando comentários em ${postUrls.length} posts...`)
+    console.log(`[Apify] Passo 2: Buscando comentários em ${postUrls.length} posts usando robô especializado...`)
 
-    // 2. Pegar comentários desses posts
+    // 2. Pegar comentários desses posts usando o robô ESPECIALIZADO em comentários
     const commentsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
       {
         directUrls: postUrls,
-        resultsType: 'comments',
         resultsLimit: limit
       },
       { timeout: 240000 }
     )
 
-    const items = commentsResponse.data as any[]
-    console.log(`[Apify] Coletados ${items.length} comentários para @${username}`)
+    const items = (commentsResponse.data as any[]).filter(item => !item.error && !item.requestErrorMessages)
+    console.log(`[Apify] Coletados ${items.length} comentários válidos para @${username}`)
 
     if (items.length > 0) {
-      console.log('[Apify] DEBUG - Estrutura do primeiro item:', JSON.stringify(items[0], null, 2))
+      console.log('[Apify] DEBUG - Estrutura do primeiro comentário real:', JSON.stringify(items[0], null, 2))
     }
 
     return items.map(item => {
