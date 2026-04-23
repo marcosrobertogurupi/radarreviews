@@ -57,6 +57,10 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
     const items = commentsResponse.data as any[]
     console.log(`[Apify] Coletados ${items.length} comentários para @${username}`)
 
+    if (items.length > 0) {
+      console.log('[Apify] DEBUG - Estrutura do primeiro item:', JSON.stringify(items[0], null, 2))
+    }
+
     return items.map(item => {
       // Garantir que temos um ID (external_id). Tentar vários campos da Apify.
       const id = item.id || item.commentId || item.pk || `ig_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
