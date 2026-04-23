@@ -201,3 +201,67 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20): Promise
     throw err
   }
 }
+
+/**
+ * Coleta menções de um perfil no Instagram (@)
+ */
+export async function fetchInstagramMentions(username: string, limit = 20): Promise<any[]> {
+  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const cleanUsername = username.replace('@', '')
+  console.log(`[Apify] Buscando menções para @${cleanUsername}...`)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        usernames: [cleanUsername],
+        limit
+      },
+      { timeout: 300000 }
+    )
+    
+    const items = response.data as any[]
+    return items.map(item => ({
+      id: item.id || item.pk,
+      text: item.caption?.text || item.text || '',
+      author: item.owner?.username || item.username || 'instagram_user',
+      timestamp: item.taken_at || item.timestamp || new Date().toISOString(),
+      url: item.url || (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : '')
+    }))
+  } catch (err) {
+    console.error(`[Apify] Erro ao coletar menções de @${cleanUsername}:`, err)
+    return []
+  }
+}
+
+/**
+ * Coleta posts/comentários de uma Hashtag no Instagram (#)
+ */
+export async function fetchInstagramHashtags(hashtag: string, limit = 20): Promise<any[]> {
+  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const tag = hashtag.replace('#', '')
+  console.log(`[Apify] Buscando hashtag #${tag}...`)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        hashtags: [tag],
+        resultsLimit: limit
+      },
+      { timeout: 300000 }
+    )
+
+    const items = response.data as any[]
+    return items.map(item => ({
+      id: item.id || item.pk,
+      text: item.caption || item.text || '',
+      author: item.ownerUsername || item.username || 'instagram_user',
+      timestamp: item.timestamp || new Date().toISOString(),
+      url: item.url || (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : '')
+    }))
+  } catch (err) {
+    console.error(`[Apify] Erro ao coletar hashtag #${tag}:`, err)
+    return []
+  }
+}
