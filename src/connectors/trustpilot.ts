@@ -12,8 +12,8 @@ import 'dotenv/config'
 import axios from 'axios'
 import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
-import { logger } from '../lib/logger.js'
 import { ingestReviews } from '../lib/ingest.js'
+import { fetchTrustpilotReviews } from '../lib/apify.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
@@ -78,17 +78,38 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   try {
-    // Buscar todos os reviews via paginação
-    const rawItems = await fetchAllPages(connector)
-    result.reviews_fetched = rawItems.length
-
-    if (rawItems.length === 0) {
-      logger.info(`[${CHANNEL}] Nenhum review retornado pela API`, {
-        connector_id: connector.id,
-        business_unit_id: connector.external_id,
+    const externalId = connector.external_id || ''
+    
+    // --- ESTRATÉGIA PRINCIPAL: APIFY (Mais estável e não exige API Key oficial) ---
+    try {
+      if (process.env['APIFY_TOKEN']) {
+        logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, external_id: externalId })
+        const apifyItems = await fetchTrustpilotReviews(externalId, 20)
+        
+        if (apifyItems.length > 0) {
+          const normalized = apifyItems.map(item => normalize(item, connector))
+          const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
+          
+          return {
+            reviews_fetched: apifyItems.length,
+            reviews_new: ingest.reviews_new,
+            reviews_updated: ingest.reviews_updated
+          }
+        }
+      }
+    } catch (apifyError) {
+      logger.warn(`[${CHANNEL}] Falha na Apify, tentando fallback para API Oficial...`, { 
+        error: apifyError instanceof Error ? apifyError.message : String(apifyError) 
       })
-      return result
     }
+
+    // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): API OFICIAL ---
+    logger.info(`[${CHANNEL}] Iniciando busca via API Oficial (Fallback)`, {
+      connector_id: connector.id,
+      business_unit_id: externalId,
+    })
+
+    const rawItems = await fetchAllPages(connector)
 
     // Normalizar para NormalizedReview
     const normalized = rawItems.map(item => normalize(item, connector))

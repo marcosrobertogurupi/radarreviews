@@ -119,3 +119,48 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
     throw err
   }
 }
+
+/**
+ * Coleta reviews do Trustpilot via Apify
+ */
+export async function fetchTrustpilotReviews(domain: string, limit = 20): Promise<any[]> {
+  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+
+  // Se o usuário passar o URL completo, extrair apenas o domínio
+  const sanitizedDomain = domain.replace(/^https?:\/\//, '').split('/')[0]
+  const startUrl = `https://www.trustpilot.com/review/${sanitizedDomain}`
+
+  console.log(`[Apify] Buscando reviews do Trustpilot para: ${sanitizedDomain}...`)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/apify~trustpilot-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      {
+        startUrls: [{ url: startUrl }],
+        maxReviews: limit
+      },
+      { timeout: 300000 }
+    )
+
+    const items = response.data as any[]
+    console.log(`[Apify] Coletados ${items.length} reviews para ${sanitizedDomain}`)
+
+    return items.map(item => ({
+      id: item.id || item.reviewId,
+      stars: item.rating || item.stars,
+      title: item.title,
+      text: item.text || item.content,
+      createdAt: item.createdAt || item.date || item.publishedDate,
+      consumer: {
+        id: item.userId || item.consumerId,
+        displayName: item.userName || item.authorName || item.author
+      },
+      links: [{ rel: 'self', href: item.url || startUrl }]
+    }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[Apify] Erro ao coletar Trustpilot (${sanitizedDomain}):`, msg)
+    throw err
+  }
+}
