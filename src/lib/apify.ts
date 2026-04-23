@@ -57,14 +57,19 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
     const items = commentsResponse.data as any[]
     console.log(`[Apify] Coletados ${items.length} comentários para @${username}`)
 
-    return items.map(item => ({
-      id: item.id,
-      text: item.text,
-      ownerUsername: item.ownerUsername,
-      timestamp: item.timestamp,
-      shortCode: item.shortCode,
-      url: `https://www.instagram.com/reels/${item.shortCode}/`
-    }))
+    return items.map(item => {
+      // Garantir que temos um ID (external_id). Tentar vários campos da Apify.
+      const id = item.id || item.commentId || item.pk || `ig_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      
+      return {
+        id: String(id),
+        text: item.text || '',
+        ownerUsername: item.ownerUsername || item.owner?.username || 'instagram_user',
+        timestamp: item.timestamp || new Date().toISOString(),
+        shortCode: item.shortCode,
+        url: item.url || (item.shortCode ? `https://www.instagram.com/reels/${item.shortCode}/` : undefined)
+      }
+    })
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
