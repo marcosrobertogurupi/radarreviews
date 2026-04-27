@@ -983,7 +983,7 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? '/'
 
   if (url === '/health') {
-    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2025-04-18-scraper' })); return
+    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2026-04-27-contacts-update' })); return
   }
 
   if (url.startsWith('/api/copilot')) {
