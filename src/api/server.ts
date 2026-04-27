@@ -29,6 +29,7 @@ import { handleWidgetRequest } from './widget.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { AuditoriaService } from '../services/auditoria.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -412,11 +413,20 @@ async function handleOnboarding(
 
 // ── Autenticação JWT ──────────────────────────────────────────────
 
-async function getAuthUser(authHeader: string | undefined): Promise<{ userId: string; tenantId: string } | null> {
+async function getAuthUser(authHeader: string | undefined): Promise<{ userId: string; tenantId: string; perfil: string; nome: string; email: string } | null> {
   if (!authHeader?.startsWith('Bearer ')) return null
   const token = authHeader.slice(7)
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user) return null
+
+  // Buscar perfil e dados do usuário na tabela public.usuarios
+  const { data: userData } = await supabaseAdmin
+    .from('usuarios')
+    .select('nome, email, perfil')
+    .eq('id', user.id)
+    .single()
+
+  if (!userData) return null
 
   const { data: tu } = await supabaseAdmin
     .from('tenant_users')
@@ -424,8 +434,24 @@ async function getAuthUser(authHeader: string | undefined): Promise<{ userId: st
     .eq('user_id', user.id)
     .single()
 
-  if (!tu) return null
-  return { userId: user.id, tenantId: (tu as { tenant_id: string }).tenant_id }
+  // Se for admin/operador pode não ter tenant_id fixo
+  const tenantId = (tu as { tenant_id: string })?.tenant_id || ''
+
+  return { 
+    userId: user.id, 
+    tenantId, 
+    perfil: userData.perfil, 
+    nome: userData.nome, 
+    email: userData.email 
+  }
+}
+
+/**
+ * Middleware simplificado para checar permissão
+ */
+function checkPermission(userPerfil: string, allowedPerfis: string[]): boolean {
+  if (userPerfil === 'admin') return true // Superusuário
+  return allowedPerfis.includes(userPerfil)
 }
 
 // ── Handler principal ─────────────────────────────────────────────
@@ -568,6 +594,12 @@ async function handleDeleteTenant(
   const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('?')[0]
   if (!tenantId) { res.writeHead(400); res.end(JSON.stringify({ error: 'tenantId obrigatório' })); return }
 
+  // RBAC: Apenas admin pode excluir
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || auth.perfil !== 'admin') {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Apenas administradores podem excluir assinantes.' })); return
+  }
+
   try {
     // 1. Buscar user_id antes de deletar
     const { data: tu } = await supabaseAdmin
@@ -590,6 +622,18 @@ async function handleDeleteTenant(
     if (tu?.user_id) {
       await supabaseAdmin.auth.admin.deleteUser(tu.user_id)
       console.log(`[delete-tenant] Auth user ${tu.user_id} deletado`)
+    }
+
+    // LOG DE AUDITORIA
+    const auth = await getAuthUser(req.headers.authorization)
+    if (auth) {
+      await AuditoriaService.registrarAcaoAdmin(
+        auth, 
+        'EXCLUIR_ASSINANTE', 
+        `Assinante ${tenantId} removido do sistema`,
+        req.socket.remoteAddress,
+        { tipo: 'assinante', id: tenantId }
+      )
     }
 
     console.log(`[delete-tenant] Tenant ${tenantId} deletado`)
@@ -777,6 +821,13 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
       trial_ends_at?: string | null
     }
 
+    const auth = await getAuthUser(req.headers.authorization)
+    const isChangingPlan = body.plan !== undefined || body.plan_status !== undefined || body.trial_ends_at !== undefined
+    
+    if (isChangingPlan && (!auth || auth.perfil !== 'admin')) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Apenas administradores podem alterar planos ou datas de teste.' })); return
+    }
+
     // Atualizar tenant
     if (body.name || body.plan || body.slug || body.admin_whatsapp !== undefined || body.admin_email !== undefined || body.critical_alert_hours !== undefined) {
       const { error } = await supabaseAdmin
@@ -804,6 +855,17 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: error.message }))
         return
+      }
+
+      // LOG DE AUDITORIA
+      if (auth) {
+        await AuditoriaService.registrarAcaoAdmin(
+          auth,
+          'ALTERAR_ASSINANTE',
+          `Dados do assinante ${tenantId} atualizados. Alterações: ${Object.keys(body).join(', ')}`,
+          req.socket.remoteAddress,
+          { tipo: 'assinante', id: tenantId! }
+        )
       }
     }
 
@@ -1052,6 +1114,7 @@ const server = http.createServer((req, res) => {
       return
     }
     if (method === 'PATCH' && url.match(/^\/api\/admin\/tenant\/[^/]+$/)) {
+      // RBAC: Operador pode editar dados básicos, mas apenas admin altera plano (lógica simplificada aqui ou no handler)
       handleUpdateTenant(req, res).catch(err => {
         console.error('[update-tenant] Erro não tratado:', err)
         if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
@@ -1128,7 +1191,86 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  if (url.startsWith('/webhooks/meta') || url.startsWith('/api/webhooks/meta')) {
+  if (url === '/api/auth/login' && req.method === 'POST') {
+    handleLogin(req, res).catch(err => {
+      console.error('[auth-login] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/admin/relatorios/auditoria' && req.method === 'GET') {
+    handleGetAuditLogs(req, res).catch(err => {
+      console.error('[audit-logs] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+}
+
+async function handleLogin(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  const body = await readBody(req) as { email?: string; password?: string }
+  const { email, password } = body
+  
+  if (!email || !password) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'Email e senha obrigatórios' })); return
+  }
+
+  const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password })
+  
+  if (error || !data.user) {
+    await AuditoriaService.registrar({
+      usuario_nome: 'Desconhecido',
+      usuario_email: email,
+      usuario_perfil: 'desconhecido',
+      operacao: 'LOGIN_FALHA',
+      descricao: `Tentativa de login falhou para o email ${email}`,
+      ip_origem: req.socket.remoteAddress
+    })
+    res.writeHead(401); res.end(JSON.stringify({ error: 'Credenciais inválidas' })); return
+  }
+
+  const { data: userData } = await supabaseAdmin.from('usuarios').select('*').eq('id', data.user.id).single()
+  
+  if (userData) {
+    await AuditoriaService.registrarAcaoAdmin(
+      userData,
+      'LOGIN',
+      `Usuário realizou login com sucesso`,
+      req.socket.remoteAddress
+    )
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ 
+    user: userData,
+    session: data.session
+  }))
+}
+
+async function handleGetAuditLogs(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('auditoria')
+    .select('*')
+    .order('data_hora', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(data))
+}
+
+  if (url.startsWith('/api/auth/meta') || url.startsWith('/api/webhooks/meta')) {
     handleMetaWebhook(req, res).catch(err => {
       console.error('[meta-webhook] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }

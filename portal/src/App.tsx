@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell,
-  Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText
+  Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText, User
 } from 'lucide-react'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
@@ -16,8 +16,9 @@ import Reports from './pages/Reports'
 import Pricing from './pages/Pricing'
 import TrialExpired from './pages/TrialExpired'
 import GenerateReviews from './pages/GenerateReviews'
+import Settings from './pages/Settings'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing' | 'settings'
 type AuthView = 'login' | 'signup'
 
 const NAV = [
@@ -28,6 +29,7 @@ const NAV = [
   { id: 'generate'  as Page, label: 'Gerar Reviews', icon: Send },
   { id: 'reports'   as Page, label: 'Relatórios',    icon: FileText },
   { id: 'pricing'   as Page, label: 'Planos',        icon: CreditCard },
+  { id: 'settings'  as Page, label: 'Meu Perfil',    icon: User },
 ]
 
 export default function App() {
@@ -71,27 +73,51 @@ export default function App() {
   useEffect(() => {
     if (!session) return
     supabase
-      .from('tenant_users')
-      .select('tenant_id, managed_tenant_ids')
-      .eq('user_id', session.user.id)
-      .limit(1)
+      .from('usuarios')
+      .select('id, perfil, nome')
+      .eq('id', session.user.id)
       .single()
-      .then(async ({ data }) => {
-        if (data?.tenant_id) {
-          const mainTenantId = data.tenant_id
-          setTenantId(mainTenantId)
-          setHasTenant(true)
+      .then(async ({ data: userProfile }) => {
+        if (!userProfile) return
 
-          // Modo Agência: Buscar todos os tenants permitidos
-          const allowedIds = [mainTenantId, ...(data.managed_tenant_ids || [])]
-          const { data: tList } = await supabase
-            .from('tenants')
-            .select('id, name')
-            .in('id', allowedIds)
+        if (userProfile.perfil === 'parceiro') {
+          // Buscar assinantes vinculados a este parceiro
+          const { data: indicated } = await supabase
+            .from('assinantes')
+            .select('id, tenants(id, name)')
+            .eq('parceiro_id', userProfile.id)
           
-          setManagedTenants(tList || [])
+          const tList = (indicated || []).map(i => (i as any).tenants).filter(Boolean)
+          setManagedTenants(tList)
+          if (tList.length > 0) {
+            setTenantId(tList[0].id)
+            setHasTenant(true)
+          } else {
+            setHasTenant(false)
+          }
         } else {
-          setHasTenant(false)
+          // Fluxo normal (assinante)
+          const { data: tu } = await supabase
+            .from('tenant_users')
+            .select('tenant_id, managed_tenant_ids')
+            .eq('user_id', session.user.id)
+            .single()
+
+          if (tu?.tenant_id) {
+            const mainTenantId = tu.tenant_id
+            setTenantId(mainTenantId)
+            setHasTenant(true)
+
+            const allowedIds = [mainTenantId, ...(tu.managed_tenant_ids || [])]
+            const { data: tList } = await supabase
+              .from('tenants')
+              .select('id, name')
+              .in('id', allowedIds)
+            
+            setManagedTenants(tList || [])
+          } else {
+            setHasTenant(false)
+          }
         }
       })
   }, [session?.user.id])
@@ -148,6 +174,7 @@ export default function App() {
     generate:  <GenerateReviews tenantId={tenantId} />,
     reports:   <Reports tenantId={tenantId} />,
     pricing:   <Pricing />,
+    settings:  <Settings />,
   }
 
   return (

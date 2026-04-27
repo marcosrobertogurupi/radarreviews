@@ -12,7 +12,7 @@ export default function Login() {
     setLoading(true)
     setError(null)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data: { session: authSession }, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -20,8 +20,49 @@ export default function Login() {
     if (authError) {
       setError('Credenciais inválidas. Verifique seu e-mail e senha.')
       setLoading(false)
+      return
     }
-    // Se o login for bem sucedido, o onAuthStateChange do App.tsx vai capturar e trocar a tela.
+
+    if (authSession?.user) {
+      // Verificar perfil na tabela public.usuarios
+      const { data: userData, error: profileError } = await supabase
+        .from('usuarios')
+        .select('perfil, ativo')
+        .eq('id', authSession.user.id)
+        .single()
+
+      if (profileError || !userData) {
+        await supabase.auth.signOut()
+        setError('Erro ao validar perfil de acesso.')
+        setLoading(false)
+        return
+      }
+
+      if (!userData.ativo) {
+        await supabase.auth.signOut()
+        setError('Esta conta está desativada. Entre em contato com o suporte.')
+        setLoading(false)
+        return
+      }
+
+      if (!['admin', 'operador'].includes(userData.perfil)) {
+        await supabase.auth.signOut()
+        setError('Você não tem permissão para acessar o painel administrativo.')
+        setLoading(false)
+        return
+      }
+      
+      // Registrar login bem sucedido no backend (Auditoria)
+      try {
+        await fetch(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        })
+      } catch (e) {
+        console.warn('Falha ao registrar log de login:', e)
+      }
+    }
   }
 
   return (
