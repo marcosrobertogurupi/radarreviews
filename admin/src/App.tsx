@@ -4,14 +4,13 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
-  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2
+  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Reviews from './pages/Reviews'
 import Alerts from './pages/Alerts'
 import Connectors from './pages/Connectors'
-import Tenants from './pages/Tenants'
 import Tenants from './pages/Tenants'
 import Competitors from './pages/Competitors'
 import Widget from './pages/Widget'
@@ -153,7 +152,7 @@ export default function App() {
             <span className="btn-sidebar-label">Sair</span>
           </button>
           <p className="sidebar-footer-text" style={{ marginTop: 4 }}>
-            Reputei · v0.4.1
+            Reputei · v1.0.0
           </p>
         </div>
       </aside>
