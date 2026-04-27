@@ -4,7 +4,7 @@
 import type { SourceChannel } from './review.js'
 
 /** Status possíveis de um conector — espelha o enum connector_status do banco */
-export type ConnectorStatus = 'active' | 'paused' | 'error' | 'pending_auth'
+export type ConnectorStatus = 'active' | 'paused' | 'error' | 'pending_auth' | 'running'
 
 /** Status possíveis de um job — espelha o enum job_status do banco */
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed'

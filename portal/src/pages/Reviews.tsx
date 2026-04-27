@@ -4,8 +4,9 @@ import type { Review } from '../lib/supabase'
 import {
   CHANNEL_LABELS, CHANNEL_ICONS, SENTIMENT_LABELS, SENTIMENT_COLORS,
   TOPIC_LABELS, formatDate, timeAgo, scoreToEmoji, scoreToColor, ratingStars, API_URL,
+  downloadCSV,
 } from '../lib/utils'
-import { X, ExternalLink, Lightbulb, Loader, MessageCircle } from 'lucide-react'
+import { X, ExternalLink, Lightbulb, Loader, MessageCircle, FileDown } from 'lucide-react'
 
 interface Props { tenantId: string; onNavigateCopilot: () => void }
 
@@ -20,10 +21,13 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
   const [sentiment, setSentiment]   = useState('')
   const [channel, setChannel]       = useState('')
   const [search, setSearch]         = useState('')
+  const [type, setType]             = useState('') // '' | 'review' | 'social'
 
   // Suggest response
   const [suggesting, setSuggesting]   = useState(false)
   const [suggestion, setSuggestion]   = useState('')
+  const [responding, setResponding]   = useState(false)
+  const [responseText, setResponseText] = useState('')
 
   async function load(silent = false) {
     if (!tenantId) return
@@ -69,6 +73,10 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
     let list = reviews
     if (sentiment) list = list.filter(r => r.sentiment === sentiment)
     if (channel)   list = list.filter(r => r.channel === channel)
+    if (type) {
+      if (type === 'social') list = list.filter(r => r.tags?.includes('social_listening'))
+      else list = list.filter(r => !r.tags?.includes('social_listening'))
+    }
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(r =>
@@ -103,16 +111,65 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
     setSuggesting(false)
   }
 
-  function openDetail(r: Review) { setSelected(r); setSuggestion('') }
-  function closeDetail() { setSelected(null); setSuggestion('') }
+  function openDetail(r: Review) { 
+    setSelected(r)
+    setSuggestion('')
+    setResponseText(r.response_text || '')
+  }
+  function closeDetail() { setSelected(null); setSuggestion(''); setResponseText('') }
+
+  async function sendResponse() {
+    if (!selected || !responseText.trim()) return
+    setResponding(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(`${API_URL}/api/reviews/${selected.id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ message: responseText }),
+      })
+      const json = await res.json() as { ok?: boolean; error?: string }
+      if (json.ok) {
+        alert('Resposta enviada com sucesso!')
+        load(true)
+        closeDetail()
+      } else {
+        alert(`Erro ao enviar: ${json.error}`)
+      }
+    } catch {
+      alert('Erro de conexão ao enviar resposta.')
+    }
+    setResponding(false)
+  }
 
   const isActionable = (r: Review) => r.sentiment === 'negative' || r.sentiment === 'critical'
 
+  function handleExport() {
+    const dataToExport = filtered.map(r => ({
+      Data: formatDate(r.published_at),
+      Canal: CHANNEL_LABELS[r.channel],
+      Autor: r.author_name || 'Anônimo',
+      Nota: r.rating ?? 'N/A',
+      Sentimento: SENTIMENT_LABELS[r.sentiment],
+      'Score IA': r.dissatisfaction_score ?? 0,
+      Resumo: r.sentiment_summary || '',
+      Texto: r.body || r.title || '',
+      URL: r.url || ''
+    }))
+    downloadCSV(`reviews_reputei_${new Date().toISOString().split('T')[0]}.csv`, dataToExport)
+  }
+
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Reviews</h1>
-        <p className="page-subtitle">Todos os feedbacks coletados — clique para ver análise da IA e próximos passos.</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 className="page-title">Reviews</h1>
+          <p className="page-subtitle">Todos os feedbacks coletados — clique para ver análise da IA e próximos passos.</p>
+        </div>
+        <button className="btn" onClick={handleExport} disabled={filtered.length === 0}>
+          <FileDown size={16} /> Exportar CSV
+        </button>
       </div>
 
       <div className="filters">
@@ -129,6 +186,11 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
           {(['google_maps','tripadvisor','trustpilot','reclame_aqui','consumidor_gov','facebook','instagram','reddit'] as const).map(c => (
             <option key={c} value={c}>{CHANNEL_ICONS[c]} {CHANNEL_LABELS[c]}</option>
           ))}
+        </select>
+        <select className="filter-select" value={type} onChange={e => setType(e.target.value)}>
+          <option value="">Todos os tipos</option>
+          <option value="review">💬 Reviews Diretos</option>
+          <option value="social">📱 Social Listening</option>
         </select>
         <input
           className="filter-search"
@@ -154,6 +216,11 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
               <div className="review-header">
                 <span className={`badge badge-${r.sentiment}`}>{scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}</span>
                 <div className="review-meta">
+                  {r.tags?.includes('social_listening') && (
+                    <span className="badge" style={{ background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', borderColor: 'rgba(99,102,241,0.3)', fontSize: 10 }}>
+                      SOCIAL LISTENING
+                    </span>
+                  )}
                   <span className="review-channel-tag">{CHANNEL_ICONS[r.channel]} {CHANNEL_LABELS[r.channel]}</span>
                   {r.author_name && <span>{r.author_name}</span>}
                   {r.rating != null && <span className="stars">{ratingStars(r.rating)}</span>}
@@ -307,18 +374,58 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
             {suggestion && (
               <div style={{ marginTop: 16, background: 'rgba(6,182,212,0.07)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-2)', marginBottom: 10 }}>
-                  💬 Resposta Sugerida pela IA
+                  💬 Resposta Sugerida pela IA (Claude)
                 </div>
                 <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{suggestion}</div>
-                <button
-                  className="btn btn-ghost"
-                  style={{ marginTop: 12, fontSize: 12 }}
-                  onClick={() => navigator.clipboard.writeText(suggestion)}
-                >
-                  📋 Copiar texto
-                </button>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12 }}
+                    onClick={() => navigator.clipboard.writeText(suggestion)}
+                  >
+                    📋 Copiar
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, color: 'var(--accent-2)' }}
+                    onClick={() => setResponseText(suggestion)}
+                  >
+                    ✍️ Usar esta resposta
+                  </button>
+                </div>
               </div>
             )}
+
+            {/* Campo de Resposta Direta */}
+            <div style={{ marginTop: 24, paddingTop: 24, borderTop: '2px solid var(--border)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--text-primary)' }}>
+                Responder agora
+              </div>
+              <textarea
+                className="filter-search"
+                style={{ width: '100%', height: 120, padding: 12, borderRadius: 8, fontSize: 13, resize: 'vertical' }}
+                placeholder="Escreva sua resposta para o cliente..."
+                value={responseText}
+                onChange={e => setResponseText(e.target.value)}
+                disabled={responding || (selected.responded_at != null)}
+              />
+              {selected.responded_at ? (
+                <div style={{ marginTop: 8, fontSize: 11, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  ✓ Respondido em {formatDate(selected.responded_at)}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={sendResponse}
+                    disabled={responding || !responseText.trim()}
+                    style={{ padding: '10px 24px' }}
+                  >
+                    {responding ? 'Enviando...' : 'Enviar Resposta Oficial'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -56,7 +56,7 @@ export default function TrialExpired({ plan, onLogout }: Props) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <a
-              href="https://wa.me/5500000000000?text=Quero+ativar+minha+assinatura+Reputei"
+              href="https://wa.me/5563992420061?text=Quero+ativar+minha+assinatura+Reputei"
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -70,7 +70,7 @@ export default function TrialExpired({ plan, onLogout }: Props) {
             </a>
 
             <a
-              href="mailto:contato@reputei.com.br?subject=Quero ativar minha assinatura"
+              href="mailto:suporte@netservice.net.br?subject=Quero ativar minha assinatura"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 padding: '11px 0', borderRadius: 8, fontWeight: 600, fontSize: 14,

@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
-  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck
+  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -12,9 +12,12 @@ import Reviews from './pages/Reviews'
 import Alerts from './pages/Alerts'
 import Connectors from './pages/Connectors'
 import Tenants from './pages/Tenants'
+import Tenants from './pages/Tenants'
+import Competitors from './pages/Competitors'
+import Widget from './pages/Widget'
 import Audit from './pages/Audit'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'audit'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'competitors' | 'widget' | 'tenants' | 'audit'
 
 export interface TenantOption { id: string; name: string }
 
@@ -23,6 +26,8 @@ const NAV = [
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
   { id: 'alerts' as Page,      label: 'Alertas',     icon: Bell },
   { id: 'connectors' as Page,  label: 'Conectores',  icon: Radio },
+  { id: 'competitors' as Page, label: 'Benchmarking', icon: BarChart2 },
+  { id: 'widget' as Page,      label: 'Widgets',      icon: Layout },
   { id: 'tenants' as Page,     label: 'Assinantes',  icon: Building2 },
   { id: 'audit' as Page,       label: 'Auditoria',   icon: ShieldCheck },
 ]
@@ -97,6 +102,8 @@ export default function App() {
     reviews:    <Reviews    {...filterProps} />,
     alerts:     <Alerts     {...filterProps} />,
     connectors: <Connectors />,
+    competitors: <Competitors />,
+    widget:     <Widget {...filterProps} />,
     tenants:    <Tenants />,
     audit:      <Audit />,
   }

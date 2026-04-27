@@ -299,7 +299,7 @@ export default function Pricing() {
                 está sendo implementada. Entre em contato para liberar acesso antecipado.
               </p>
               <div style={{ marginTop: 20, padding: '14px 20px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10, fontSize: 13 }}>
-                📧 <strong>contato@reputei.com.br</strong>
+                📧 <strong>suporte@netservice.net.br</strong>
               </div>
               {pix && (
                 <div style={{ marginTop: 10, padding: '10px 20px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, fontSize: 12, color: '#10b981' }}>

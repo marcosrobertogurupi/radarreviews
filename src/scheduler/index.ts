@@ -20,10 +20,12 @@ import type { ChannelConnector } from '../types/connector.js'
 import type { JobResult } from '../types/connector.js'
 
 import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
+import { runMonthlyReportsJob } from '../lib/monthly-reports-job.js'
 
 // Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
 const POLL_INTERVAL_MS = 120_000
 const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
+const MONTHLY_JOB_INTERVAL_MS = 4 * 3600_000 // 4 horas
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -90,13 +92,18 @@ export async function startScheduler(): Promise<void> {
   await checkCriticalAlerts().catch(err => {
     logger.error('[scheduler] Erro ao verificar alertas críticos na inicialização', { error: err })
   })
+  await runMonthlyReportsJob().catch(err => {
+    logger.error('[scheduler] Erro no job mensal na inicialização', { error: err })
+  })
 
-  // Loop de Sincronização (Robôs)
-  setInterval(async () => {
+  // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
+  async function runSyncCycle() {
     await runOnce().catch(err => {
       logger.error('[scheduler] Erro no ciclo de polling', { error: err })
     })
-  }, POLL_INTERVAL_MS)
+    setTimeout(runSyncCycle, POLL_INTERVAL_MS)
+  }
+  runSyncCycle()
 
   // Loop de Alertas (Assinantes) — Rodar a cada 1 hora
   setInterval(async () => {
@@ -104,6 +111,13 @@ export async function startScheduler(): Promise<void> {
       logger.error('[scheduler] Erro no ciclo de alertas críticos', { error: err })
     })
   }, ALERT_CHECK_INTERVAL_MS)
+
+  // Loop de Relatórios Mensais — Rodar a cada 4 horas (o job filtra dia 1)
+  setInterval(async () => {
+    await runMonthlyReportsJob().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de relatórios mensais', { error: err })
+    })
+  }, MONTHLY_JOB_INTERVAL_MS)
 }
 
 /**
@@ -198,103 +212,128 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
     return
   }
 
-  // Registrar início do job
-  const { data: jobData, error: jobError } = await supabase
-    .from('sync_jobs')
-    .insert({
-      connector_id: connector.id,
-      status: 'running',
-      started_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  if (jobError || !jobData) {
-    logger.error('[scheduler] Falha ao criar sync_job', { error: jobError?.message })
-    return
-  }
-
-  const jobId = (jobData as Record<string, unknown>)['id'] as string
-
-  logger.info(`[scheduler] Iniciando sync`, {
-    connector_id: connector.id,
-    channel: connector.channel,
-    job_id: jobId,
-  })
-
-  // Executar o conector
-  const startMs = Date.now()
-  const result = await runner(connector)
-  const durationMs = Date.now() - startMs
-
-  const success = !result.error
-
-  // Atualizar sync_job com resultado
+  // 1. Bloquear conector (status 'running') para evitar coletas duplicadas por reentrância
   await supabase
-    .from('sync_jobs')
-    .update({
-      status: success ? 'done' : 'failed',
-      finished_at: new Date().toISOString(),
-      reviews_fetched: result.reviews_fetched,
-      reviews_new: result.reviews_new,
-      reviews_updated: result.reviews_updated,
-      ...(result.error
-        ? { error_detail: { message: result.error, type: result.error_type, is_auth: result.is_auth_error } }
-        : {}),
-    })
-    .eq('id', jobId)
+    .from('channel_connectors')
+    .update({ status: 'running' })
+    .eq('id', connector.id)
 
-  // Lógica de Autocura e Alertas
-  const wasInError = (connector.status as string) !== 'active'
-  if (success) {
-    if (wasInError) {
-      await systemNotifications.notifyRecovery(connector)
-    }
-
-    const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 120
-    await supabase
-      .from('channel_connectors')
-      .update({
-        status: 'active',
-        last_sync_at: new Date().toISOString(),
-        next_sync_at: new Date(Date.now() + intervalMinutes * 60_000).toISOString(),
-        error_message: null,
-        error_count: 0,
-        first_error_at: null,
+  try {
+    // Registrar início do job no histórico
+    const { data: jobData, error: jobError } = await supabase
+      .from('sync_jobs')
+      .insert({
+        connector_id: connector.id,
+        status: 'running',
+        started_at: new Date().toISOString(),
       })
-      .eq('id', connector.id)
+      .select('id')
+      .single()
 
-  } else {
-    const isAuth = !!result.is_auth_error || result.error_type === 'fatal'
-    const errorCount = (connector.error_count ?? 0) + 1
-    const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
-    const isWithin24h = (Date.now() - new Date(firstErrorAt).getTime()) < 24 * 60 * 60 * 1000
-
-    const backoffMinutes = Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
-    const shouldAlert = isAuth || !isWithin24h
-
-    if (shouldAlert) {
-      await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
+    if (jobError || !jobData) {
+      logger.error('[scheduler] Falha ao criar sync_job', { error: jobError?.message })
+      // Reverter status para não ficar travado se falhar a criação do job
+      await supabase.from('channel_connectors').update({ status: connector.status }).eq('id', connector.id)
+      return
     }
 
+    const jobId = (jobData as Record<string, unknown>)['id'] as string
+
+    logger.info(`[scheduler] Iniciando sync`, {
+      connector_id: connector.id,
+      channel: connector.channel,
+      job_id: jobId,
+    })
+
+    // Executar o conector
+    const startMs = Date.now()
+    const result = await runner(connector)
+    const durationMs = Date.now() - startMs
+
+    const success = !result.error
+
+    // 2. Atualizar sync_job com resultado final
+    await supabase
+      .from('sync_jobs')
+      .update({
+        status: success ? 'done' : 'failed',
+        finished_at: new Date().toISOString(),
+        reviews_fetched: result.reviews_fetched,
+        reviews_new: result.reviews_new,
+        reviews_updated: result.reviews_updated,
+        ...(result.error
+          ? { error_detail: { message: result.error, type: result.error_type, is_auth: result.is_auth_error } }
+          : {}),
+      })
+      .eq('id', jobId)
+
+    // 3. Lógica de Autocura e Alertas
+    const wasInError = (connector.status as string) !== 'active'
+    if (success) {
+      if (wasInError) {
+        await systemNotifications.notifyRecovery(connector)
+      }
+
+      const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 120
+      await supabase
+        .from('channel_connectors')
+        .update({
+          status: 'active',
+          last_sync_at: new Date().toISOString(),
+          next_sync_at: new Date(Date.now() + intervalMinutes * 60_000).toISOString(),
+          error_message: null,
+          error_count: 0,
+          first_error_at: null,
+        })
+        .eq('id', connector.id)
+
+    } else {
+      const isAuth = !!result.is_auth_error || result.error_type === 'fatal'
+      const errorCount = (connector.error_count ?? 0) + 1
+      const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
+      const isWithin24h = (Date.now() - new Date(firstErrorAt).getTime()) < 24 * 60 * 60 * 1000
+
+      const backoffMinutes = Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
+      const shouldAlert = isAuth || !isWithin24h
+
+      if (shouldAlert) {
+        await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
+      }
+
+      await supabase
+        .from('channel_connectors')
+        .update({
+          status: 'error',
+          error_message: result.error ?? null,
+          error_count: errorCount,
+          first_error_at: firstErrorAt,
+          next_sync_at: new Date(Date.now() + backoffMinutes * 60_000).toISOString(),
+        })
+        .eq('id', connector.id)
+    }
+
+    logger.info(`[scheduler] Sync concluído`, {
+      connector_id: connector.id,
+      channel: connector.channel,
+      job_id: jobId,
+      success,
+    })
+
+  } catch (err) {
+    logger.error('[scheduler] Falha crítica na execução do conector', {
+      connector_id: connector.id,
+      error: err instanceof Error ? err.message : String(err)
+    })
+    // Em caso de erro catastrófico (ex: crash do runner), volta para status error para não travar em 'running'
     await supabase
       .from('channel_connectors')
       .update({
         status: 'error',
-        error_message: result.error ?? null,
-        error_count: errorCount,
-        first_error_at: firstErrorAt,
-        next_sync_at: new Date(Date.now() + backoffMinutes * 60_000).toISOString(),
+        error_message: `Crash crítico: ${err instanceof Error ? err.message : String(err)}`,
+        next_sync_at: new Date(Date.now() + 5 * 60_000).toISOString(), // Tentar de novo em 5 min
       })
       .eq('id', connector.id)
   }
-
-  logger.info(`[scheduler] Sync concluído`, {
-    connector_id: connector.id,
-    channel: connector.channel,
-    job_id: jobId,
-    success,
-  })
 }
 
 // -----------------------------------------------------------------------------

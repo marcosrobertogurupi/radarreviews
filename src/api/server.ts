@@ -20,6 +20,15 @@ import { startScheduler } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
 import { createAsaasCustomer, createAsaasSubscription } from '../lib/asaas.js'
+import { askClaude } from '../services/ai/claude.js'
+import { sendDirectResponse } from '../services/ai/responder.js'
+import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
+import { decrypt, encrypt } from '../lib/crypto.js'
+import { processMonthlyReport } from '../services/reports/pdf-generator.js'
+import { handleWidgetRequest } from './widget.js'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -447,23 +456,34 @@ async function handleCopilot(
   }
 
   try {
-    const ctx    = await getTenantContext(auth.tenantId)
-    const genAI  = getGemini()
-    const model  = genAI.getGenerativeModel({
-      model: 'models/gemini-2.0-flash',
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-      systemInstruction: buildSystemPrompt(ctx),
-    })
+    const ctx = await getTenantContext(auth.tenantId)
+    const systemPrompt = buildSystemPrompt(ctx)
+    let reply = ''
 
-    // Montar histórico para multi-turn
-    const chatHistory = history.map(h => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.text }],
-    }))
+    // Tentar Claude primeiro (conforme solicitado pelo usuário)
+    try {
+      reply = await askClaude(systemPrompt, message, history)
+      console.log(`[copilot] Resposta gerada via Claude para tenant ${auth.tenantId}`)
+    } catch (claudeErr) {
+      console.warn('[copilot] Claude falhou ou sem chave. Usando Gemini como fallback.', claudeErr)
+      
+      const genAI = getGemini()
+      const model = genAI.getGenerativeModel({
+        model: 'models/gemini-2.0-flash',
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+        systemInstruction: systemPrompt,
+      })
 
-    const chat  = model.startChat({ history: chatHistory })
-    const result = await chat.sendMessage(message)
-    const reply  = result.response.text().trim()
+      const chatHistory = history.map(h => ({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.text }],
+      }))
+
+      const chat = model.startChat({ history: chatHistory })
+      const result = await chat.sendMessage(message)
+      reply = result.response.text().trim()
+      console.log(`[copilot] Resposta gerada via Gemini fallback para tenant ${auth.tenantId}`)
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ reply }))
@@ -750,6 +770,11 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
       business_name?: string
       business_cnpj?: string
       business_category?: string
+      whatsapp_token?: string
+      whatsapp_base_url?: string
+      whatsapp_limit_monthly?: number
+      plan_status?: string
+      trial_ends_at?: string | null
     }
 
     // Atualizar tenant
@@ -763,6 +788,11 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
           ...(body.admin_whatsapp !== undefined ? { admin_whatsapp: body.admin_whatsapp } : {}),
           ...(body.admin_email !== undefined ? { admin_email: body.admin_email } : {}),
           ...(body.critical_alert_hours !== undefined ? { critical_alert_hours: body.critical_alert_hours } : {}),
+          ...(body.whatsapp_token !== undefined ? { whatsapp_token_enc: body.whatsapp_token ? encrypt(body.whatsapp_token) : null } : {}),
+          ...(body.whatsapp_base_url !== undefined ? { whatsapp_base_url: body.whatsapp_base_url } : {}),
+          ...(body.whatsapp_limit_monthly !== undefined ? { whatsapp_limit_monthly: body.whatsapp_limit_monthly } : {}),
+          ...(body.plan_status !== undefined ? { plan_status: body.plan_status } : {}),
+          ...(body.trial_ends_at !== undefined ? { trial_ends_at: body.trial_ends_at } : {}),
         })
         .eq('id', tenantId)
       if (error) {
@@ -833,6 +863,120 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
   }
 }
 
+async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser(req.headers.authorization?.split(' ')[1] || '')
+    if (!user) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
+
+    const body = await getBody(req)
+    const { number, text, tenantId } = JSON.parse(body)
+
+    if (!number || !text || !tenantId) {
+      res.writeHead(400).end(JSON.stringify({ error: 'Número, texto e tenantId são obrigatórios' }))
+      return
+    }
+
+    // 1. Buscar config do tenant
+    const { data: tenant, error: tErr } = await supabase
+      .from('tenants')
+      .select('whatsapp_token_enc, whatsapp_base_url, whatsapp_limit_monthly, whatsapp_sent_this_month')
+      .eq('id', tenantId)
+      .single()
+
+    if (tErr || !tenant?.whatsapp_token_enc) {
+      res.writeHead(400).end(JSON.stringify({ error: 'WhatsApp não configurado para este assinante.' }))
+      return
+    }
+
+    // 2. Verificar limite
+    if (tenant.whatsapp_sent_this_month >= tenant.whatsapp_limit_monthly) {
+      res.writeHead(403).end(JSON.stringify({ error: 'Limite mensal de envios atingido.' }))
+      return
+    }
+
+    // 3. Descriptografar token
+    const token = decrypt(tenant.whatsapp_token_enc)
+    if (!token) throw new Error('Falha ao processar credenciais de WhatsApp')
+
+    // 4. Enviar
+    const result = await sendWhatsAppMessage({
+      baseUrl: tenant.whatsapp_base_url || undefined,
+      token: token,
+      number: number,
+      text: text
+    })
+
+    if (result.success) {
+      // 5. Incrementar contador
+      await supabase.rpc('increment_whatsapp_sent', { t_id: tenantId })
+      res.writeHead(200).end(JSON.stringify({ ok: true, messageId: result.messageId }))
+    } else {
+      res.writeHead(500).end(JSON.stringify({ error: result.error }))
+    }
+
+  } catch (err) {
+    logger.error('[api-whatsapp] Erro:', err)
+    res.writeHead(500).end(JSON.stringify({ error: 'Erro interno ao enviar WhatsApp' }))
+  }
+}
+
+async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  try {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
+
+    const body = await getBody(req)
+    const { tenantId, monthYear } = JSON.parse(body)
+
+    if (!tenantId || !monthYear) {
+      res.writeHead(400).end(JSON.stringify({ error: 'tenantId e monthYear são obrigatórios' }))
+      return
+    }
+
+    const url = await processMonthlyReport(tenantId, monthYear)
+    if (url) {
+      res.writeHead(200).end(JSON.stringify({ ok: true, pdfUrl: url }))
+    } else {
+      res.writeHead(404).end(JSON.stringify({ error: 'Nenhum dado encontrado para gerar o relatório neste período.' }))
+    }
+  } catch (err) {
+    logger.error('[api-reports] Erro:', err)
+    res.writeHead(500).end(JSON.stringify({ error: 'Erro interno ao gerar relatório' }))
+  }
+}
+
+async function handleRespondReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'POST')   { res.writeHead(405); res.end('Method not allowed'); return }
+
+  const reviewId = req.url?.split('/api/reviews/')[1]?.split('/respond')[0]
+  if (!reviewId) { res.writeHead(400); res.end(JSON.stringify({ error: 'reviewId obrigatório' })); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const body = await readBody(req) as { message: string }
+    if (!body.message?.trim()) {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'Mensagem de resposta é obrigatória' })); return
+    }
+
+    const result = await sendDirectResponse(reviewId, body.message, auth.userId)
+    
+    if (result.success) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+    } else {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: result.error }))
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 // ── Servidor ──────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
@@ -850,9 +994,41 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  if (url.startsWith('/api/reviews/') && url.endsWith('/respond')) {
+    handleRespondReview(req, res).catch(err => {
+      console.error('[respond-review] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/whatsapp/send' && req.method === 'POST') {
+    handleSendWhatsApp(req, res).catch(err => {
+      console.error('[whatsapp-send] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/widget/')) {
+    handleWidgetRequest(req, res).catch(err => {
+      console.error('[widget] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
   if (url.startsWith('/api/onboarding')) {
     handleOnboarding(req, res).catch(err => {
       console.error('[onboarding] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/reports/generate' && req.method === 'POST') {
+    handleGenerateReport(req, res).catch(err => {
+      console.error('[reports-gen] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return
@@ -957,6 +1133,22 @@ const server = http.createServer((req, res) => {
       console.error('[meta-webhook] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
+    return
+  }
+
+  if (url.startsWith('/static/')) {
+    const fileName = url.split('/static/')[1]
+    const __dirname = path.dirname(fileURLToPath(import.meta.url))
+    const filePath = path.join(__dirname, 'static', fileName)
+    try {
+      const content = await fs.readFile(filePath)
+      const ext = path.extname(fileName)
+      const contentType = ext === '.js' ? 'application/javascript' : 'text/plain'
+      res.writeHead(200, { 'Content-Type': contentType, 'Access-Control-Allow-Origin': '*' })
+      res.end(content)
+    } catch {
+      res.writeHead(404); res.end('Not found')
+    }
     return
   }
 

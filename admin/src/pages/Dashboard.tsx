@@ -16,6 +16,7 @@ import type { TenantOption } from '../App'
 import ReputationScore from '../components/dashboard/ReputationScore'
 import ReputationTimeline from '../components/dashboard/ReputationTimeline'
 import TopicsCloud from '../components/dashboard/TopicsCloud'
+import { CompetitorStats } from '../components/dashboard/CompetitorStats'
 import { getReputationData } from '../services/reputation'
 import type { ReputationScoreData, TimelinePoint } from '../services/reputation'
 import type { TopicData } from '../components/dashboard/TopicsCloud'
@@ -74,6 +75,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [reputation, setReputation] = useState<ReputationScoreData | null>(null)
   const [timeline, setTimeline] = useState<TimelinePoint[]>([])
   const [topics, setTopics] = useState<TopicData[]>([])
+  const [business, setBusiness] = useState<any | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -133,6 +135,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       loadRanking(),
       loadReputation(),
       loadTopics(),
+      loadBusinessInfo(),
     ])
     
     setLoading(false)
@@ -343,6 +346,18 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     }
   }
 
+  async function loadBusinessInfo() {
+    if (!selectedTenantId) return
+    const { data } = await supabase
+      .from('monitored_businesses')
+      .select('*')
+      .eq('tenant_id', selectedTenantId)
+      .limit(1)
+    
+    if (data && data.length > 0) setBusiness(data[0])
+    else setBusiness(null)
+  }
+
   // ── Skeleton ────────────────────────────────────────────────
   if (loading) {
     return (
@@ -426,10 +441,20 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         </div>
       </div>
 
-      {/* ── Fase 1: Timeline e Tópicos ────────────────────── */}
+      {/* ── Fase 2: Benchmarking e Tópicos ────────────────── */}
       <div className="grid-2" style={{ marginBottom: 24 }}>
-        <ReputationTimeline data={timeline} />
+        <CompetitorStats 
+          tenantId={selectedTenantId}
+          businessId={business?.id || ''}
+          myRating={business?.google_rating || 0}
+          myReviews={business?.google_reviews_count || 0}
+        />
         <TopicsCloud topics={topics} />
+      </div>
+
+      {/* ── Fase 1: Timeline ────────────────────── */}
+      <div style={{ marginBottom: 24 }}>
+        <ReputationTimeline data={timeline} />
       </div>
 
       {/* ── Gráficos ─────────────────────────────────────────── */}

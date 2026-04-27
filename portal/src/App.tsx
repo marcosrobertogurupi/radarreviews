@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell,
-  Bot, ChevronRight, LogOut, RefreshCw, CreditCard,
+  Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText
 } from 'lucide-react'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
@@ -12,10 +12,12 @@ import Dashboard from './pages/Dashboard'
 import Reviews from './pages/Reviews'
 import Alerts from './pages/Alerts'
 import Copilot from './pages/Copilot'
+import Reports from './pages/Reports'
 import Pricing from './pages/Pricing'
 import TrialExpired from './pages/TrialExpired'
+import GenerateReviews from './pages/GenerateReviews'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'pricing'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing'
 type AuthView = 'login' | 'signup'
 
 const NAV = [
@@ -23,6 +25,8 @@ const NAV = [
   { id: 'reviews'   as Page, label: 'Reviews',      icon: MessageSquare },
   { id: 'alerts'    as Page, label: 'Alertas',      icon: Bell },
   { id: 'copilot'   as Page, label: 'IA Copilot',   icon: Bot },
+  { id: 'generate'  as Page, label: 'Gerar Reviews', icon: Send },
+  { id: 'reports'   as Page, label: 'Relatórios',    icon: FileText },
   { id: 'pricing'   as Page, label: 'Planos',        icon: CreditCard },
 ]
 
@@ -38,6 +42,7 @@ export default function App() {
   const [tenantTrial, setTenantTrial] = useState<{
     plan: string; plan_status: string; trial_ends_at: string | null
   } | null>(null)
+  const [managedTenants, setManagedTenants] = useState<any[]>([])
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -67,13 +72,24 @@ export default function App() {
     if (!session) return
     supabase
       .from('tenant_users')
-      .select('tenant_id')
+      .select('tenant_id, managed_tenant_ids')
+      .eq('user_id', session.user.id)
       .limit(1)
       .single()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (data?.tenant_id) {
-          setTenantId(data.tenant_id)
+          const mainTenantId = data.tenant_id
+          setTenantId(mainTenantId)
           setHasTenant(true)
+
+          // Modo Agência: Buscar todos os tenants permitidos
+          const allowedIds = [mainTenantId, ...(data.managed_tenant_ids || [])]
+          const { data: tList } = await supabase
+            .from('tenants')
+            .select('id, name')
+            .in('id', allowedIds)
+          
+          setManagedTenants(tList || [])
         } else {
           setHasTenant(false)
         }
@@ -129,6 +145,8 @@ export default function App() {
     reviews:   <Reviews tenantId={tenantId} onNavigateCopilot={() => setPage('copilot')} />,
     alerts:    <Alerts tenantId={tenantId} />,
     copilot:   <Copilot session={session} />,
+    generate:  <GenerateReviews tenantId={tenantId} />,
+    reports:   <Reports tenantId={tenantId} />,
     pricing:   <Pricing />,
   }
 
@@ -166,6 +184,34 @@ export default function App() {
               paddingTop: 2,
             }}>
               {businessName}
+            </div>
+          )}
+
+          {/* Switcher de Tenant (Agência) */}
+          {managedTenants.length > 1 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 700, textTransform: 'uppercase' }}>
+                🏢 Alternar Cliente
+              </div>
+              <select
+                value={tenantId}
+                onChange={e => setTenantId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'var(--bg-darker)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+              >
+                {managedTenants.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             </div>
           )}
         </div>

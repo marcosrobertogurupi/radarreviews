@@ -9,7 +9,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts'
-import { MessageSquare, Bell, TrendingDown, Star, AlertTriangle } from 'lucide-react'
+import { MessageSquare, Bell, TrendingDown, Star, AlertTriangle, FileText } from 'lucide-react'
 
 interface KPI {
   total: number
@@ -28,6 +28,7 @@ export default function Dashboard({ tenantId }: Props) {
   const [dist, setDist]         = useState<Array<{ name: string; value: number; color: string }>>([])
   const [recent, setRecent]     = useState<Review[]>([])
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
+  const [competitors, setCompetitors] = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
   const [, setRefreshing]         = useState(false)
 
@@ -51,7 +52,7 @@ export default function Dashboard({ tenantId }: Props) {
       .eq('tenant_id', tenantId)
     const bizIds = (bizData ?? []).map(b => b.id)
 
-    const [rvRes, alRes, recentRes, alertRes] = await Promise.all([
+    const [rvRes, alRes, recentRes, alertRes, compRes] = await Promise.all([
       supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at')
         .eq('tenant_id', tenantId).gte('published_at', since30),
       bizIds.length
@@ -62,6 +63,7 @@ export default function Dashboard({ tenantId }: Props) {
       bizIds.length
         ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).in('business_id', bizIds).order('triggered_at', { ascending: false }).limit(3)
         : Promise.resolve({ data: [], error: null }),
+      supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
     ])
 
     const reviews = rvRes.data ?? []
@@ -125,6 +127,7 @@ export default function Dashboard({ tenantId }: Props) {
 
     setRecent(recentRes.data ?? [])
     setAlerts(alertRes.data ?? [])
+    setCompetitors(compRes.data ?? [])
     setLoading(false)
     setRefreshing(false)
   }
@@ -169,9 +172,14 @@ export default function Dashboard({ tenantId }: Props) {
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Visão Geral</h1>
-        <p className="page-subtitle">Últimos 30 dias de monitoramento de reputação</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 className="page-title">Visão Geral</h1>
+          <p className="page-subtitle">Últimos 30 dias de monitoramento de reputação</p>
+        </div>
+        <button className="btn btn-primary no-print" onClick={() => window.print()}>
+          <FileText size={16} /> Exportar PDF (Relatório)
+        </button>
       </div>
 
       {/* KPIs */}
@@ -298,6 +306,42 @@ export default function Dashboard({ tenantId }: Props) {
               ))}
             </div>
           )}
+        </div>
+
+      <div className="grid-2">
+        {/* Benchmarking */}
+        <div className="card" style={{ padding: 20 }}>
+          <div className="section-title">📊 Benchmarking (Nota Média)</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Empresa do Usuário */}
+            <div style={{ background: 'rgba(99,102,241,0.06)', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>Você (Sua Empresa)</span>
+                <span style={{ color: '#f59e0b', fontWeight: 700 }}>{kpi?.avg_rating.toFixed(1)}</span>
+              </div>
+              <div className="score-bar-bg"><div className="score-bar-fill" style={{ width: `${(kpi?.avg_rating ?? 0) * 20}%`, background: '#f59e0b' }} /></div>
+            </div>
+
+            {/* Concorrentes */}
+            {competitors.length === 0 ? (
+              <div className="empty-state" style={{ padding: '20px 0' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhum concorrente cadastrado.</div>
+              </div>
+            ) : (
+              competitors.map(c => {
+                const rating = c.last_stats?.rating || 0
+                return (
+                  <div key={c.id} style={{ padding: '8px 16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.name}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{rating.toFixed(1)}</span>
+                    </div>
+                    <div className="score-bar-bg"><div className="score-bar-fill" style={{ width: `${rating * 20}%`, background: 'var(--text-muted)', opacity: 0.5 }} /></div>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
 
         {/* Alertas ativos */}

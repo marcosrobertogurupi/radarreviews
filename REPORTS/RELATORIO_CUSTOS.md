@@ -24,7 +24,8 @@ Este relatório detalha os serviços de terceiros integrados ao sistema, suas fi
 
 | Serviço | Finalidade | Modelo de Cobrança | Custo Estimado (Mensal) |
 | :--- | :--- | :--- | :--- |
-| **Google Gemini API** | Análise de Sentimento (1.5 Flash) e Copiloto | Pay-as-you-go | **$1.00 - $3.00** (Extremamente barato) |
+| **Google Gemini API** | Análise de Sentimento (1.5 Flash) e Fallback | Pay-as-you-go | **$1.00 - $3.00** (Extremamente barato) |
+| **Anthropic Claude API** | Copiloto de Respostas (3 Haiku) | Pay-per-token | **$2.00 - $5.00** (Alta qualidade/baixo custo) |
 
 ---
 
@@ -34,7 +35,8 @@ Este relatório detalha os serviços de terceiros integrados ao sistema, suas fi
 *   **Custo por Novo Cliente:** Praticamente irrisório, escalando apenas o uso da Apify e IA conforme o volume de reviews aumenta.
 
 ### Observações de Eficiência:
-*   **Gemini 1.5 Flash:** Escolhemos este modelo justamente por ser até 10x mais barato que o GPT-4, mantendo a mesma precisão para português.
+*   **Gemini 1.5 Flash:** Escolhemos este modelo para análise de sentimento e fallback devido ao seu custo imbatível.
+*   **Claude 3 Haiku:** Implementado no Copiloto para garantir respostas mais naturais e empáticas que o Gemini, com custo significativamente inferior ao GPT-4.
 *   **Apify Optimization:** Com as travas de "Anti-Spam" e o intervalo de 2 horas que implementamos, reduzimos o seu custo potencial de Apify em cerca de **60%**.
 
 ---

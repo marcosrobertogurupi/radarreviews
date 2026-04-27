@@ -100,3 +100,30 @@ export function ratingStars(rating: number): string {
 }
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://reputei-api.railway.app'
+
+/**
+ * Utilitário para baixar dados como CSV (Excel compatível)
+ */
+export function downloadCSV(filename: string, rows: any[]) {
+  if (!rows.length) return
+  
+  const headers = Object.keys(rows[0])
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => headers.map(fieldName => {
+      const value = row[fieldName] ?? ''
+      const stringified = String(value).replace(/"/g, '""')
+      return `"${stringified}"`
+    }).join(','))
+  ].join('\n')
+
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.setAttribute('href', url)
+  link.setAttribute('download', filename)
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}

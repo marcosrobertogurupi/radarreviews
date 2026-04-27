@@ -128,6 +128,15 @@ export async function checkAlerts(
   for (const event of events) {
     const rule = rulesById.get(event.rule_id)
     if (rule?.notify_webhook) {
+      // Verificar Horário de Silêncio
+      if (isQuietTime(rule) && (event.detail.urgency_level as string) !== 'urgente') {
+        logger.info('[alerts] Alerta silenciado por Horário de Silêncio', {
+          rule_id: rule.id,
+          urgency: event.detail.urgency_level,
+        })
+        continue
+      }
+
       const extraData = {
         subscriber_whatsapp: tenant?.admin_whatsapp || '',
         subscriber_email: tenant?.admin_email || '',
@@ -140,6 +149,30 @@ export async function checkAlerts(
         })
       })
     }
+  }
+}
+
+/**
+ * Verifica se a hora atual está dentro do período de silêncio da regra.
+ */
+function isQuietTime(rule: any): boolean {
+  const start = rule.quiet_hours_start ?? 22
+  const end = rule.quiet_hours_end ?? 7
+  
+  // Se start == end, silêncio está desativado
+  if (start === end) return false
+
+  const now = new Date()
+  // Ajustar para fuso horário de Brasília (UTC-3) se necessário
+  // Simplificado: usa a hora local do servidor (que deve estar em BRT/UTC-3)
+  const hour = now.getHours()
+
+  if (start > end) {
+    // Ex: 22h às 07h (atravessa meia-noite)
+    return hour >= start || hour < end
+  } else {
+    // Ex: 08h às 10h
+    return hour >= start && hour < end
   }
 }
 

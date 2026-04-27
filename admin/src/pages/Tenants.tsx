@@ -20,6 +20,13 @@ interface Tenant {
   admin_email?: string
   critical_alert_hours?: number
   cnpj?: string
+  widget_token?: string
+  widget_config?: any
+  whatsapp_token?: string
+  whatsapp_base_url?: string
+  whatsapp_limit_monthly?: number
+  trial_ends_at?: string | null
+  plan_status?: string
 }
 
 interface Business {
@@ -129,6 +136,11 @@ export default function Tenants() {
           admin_email: editingTenant.admin_email || null,
           critical_alert_hours: editingTenant.critical_alert_hours || null,
           business_cnpj: editingTenant.cnpj !== undefined ? (editingTenant.cnpj || null) : undefined,
+          whatsapp_token: editingTenant.whatsapp_token,
+          whatsapp_base_url: editingTenant.whatsapp_base_url,
+          whatsapp_limit_monthly: editingTenant.whatsapp_limit_monthly,
+          plan_status: editingTenant.plan_status,
+          trial_ends_at: editingTenant.trial_ends_at
         }),
       })
 
@@ -165,6 +177,32 @@ export default function Tenants() {
       alert(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`)
       // Atualiza locamente para imediato visual feedback
       setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
+    } catch {
+      alert('Não foi possível conectar à API.')
+    }
+  }
+  
+  async function extendTrial(t: Tenant) {
+    const currentEnd = t.trial_ends_at ? new Date(t.trial_ends_at) : new Date()
+    const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
+    
+    if (!confirm(`Deseja estender o trial de ${t.name} por +7 dias?\nNova data: ${newEnd.toLocaleDateString()}`)) return
+
+    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+    try {
+      const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trial_ends_at: newEnd.toISOString() }),
+      })
+      
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        return alert('Erro ao estender trial: ' + (err.error ?? resp.statusText))
+      }
+
+      alert('Trial estendido com sucesso!')
+      loadAll()
     } catch {
       alert('Não foi possível conectar à API.')
     }
@@ -280,16 +318,27 @@ export default function Tenants() {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                       <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
-                      <div style={{ 
-                        display: 'flex', alignItems: 'center', gap: 4, 
-                        fontSize: 11, padding: '2px 8px', borderRadius: 99, 
-                        background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(156, 163, 175, 0.1)',
-                        color: isActive ? '#10b981' : '#9ca3af',
-                        border: `1px solid ${isActive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(156, 163, 175, 0.2)'}`
-                      }}>
-                        <span>{isActive ? '🟢' : '⚫'}</span>
-                        {isActive ? 'Ativo' : 'Desativado'}
-                      </div>
+                      {(() => {
+                        const trialExpired = t.plan_status === 'trial' && t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
+                        const statusColor = !isActive ? '#ef4444' : (trialExpired ? '#f59e0b' : '#10b981')
+                        const statusBg = !isActive ? 'rgba(239, 68, 68, 0.1)' : (trialExpired ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)')
+                        const statusBorder = !isActive ? 'rgba(239, 68, 68, 0.2)' : (trialExpired ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)')
+                        const label = !isActive ? 'Bloqueado' : (trialExpired ? 'Trial Expirado' : 'Ativo')
+                        const emoji = !isActive ? '⚫' : (trialExpired ? '⏰' : '🟢')
+                        
+                        return (
+                          <div style={{ 
+                            display: 'flex', alignItems: 'center', gap: 4, 
+                            fontSize: 11, padding: '2px 8px', borderRadius: 99, 
+                            background: statusBg,
+                            color: statusColor,
+                            border: `1px solid ${statusBorder}`
+                          }}>
+                            <span>{emoji}</span>
+                            {label}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.slug}</code>
@@ -301,11 +350,21 @@ export default function Tenants() {
                           </span>
                         )
                       })()}
+                      {t.plan_status === 'trial' && t.trial_ends_at && (
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                          Expira: {new Date(t.trial_ends_at).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 8 }}>
+                  {t.plan_status === 'trial' && (
+                    <button onClick={() => extendTrial(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="+7 dias de trial">
+                      <Plus size={14} color="#f59e0b" />
+                    </button>
+                  )}
                   <button onClick={() => {
                     const b = businesses[t.id]?.[0]
                     setEditingTenant({ ...t, cnpj: b?.cnpj || '' })
@@ -567,6 +626,30 @@ export default function Tenants() {
                 </select>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="modal-section" style={{ margin: 0 }}>
+                  <label className="modal-label">Status do Plano</label>
+                  <select
+                    value={editingTenant.plan_status ?? 'trial'}
+                    onChange={e => setEditingTenant(prev => prev ? { ...prev, plan_status: e.target.value } : null)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                  >
+                    <option value="trial">Trial</option>
+                    <option value="active">Ativo (Pago)</option>
+                    <option value="paused">Pausado/Bloqueado</option>
+                  </select>
+                </div>
+                <div className="modal-section" style={{ margin: 0 }}>
+                  <label className="modal-label">Data de Fim do Trial</label>
+                  <input
+                    type="date"
+                    value={editingTenant.trial_ends_at ? new Date(editingTenant.trial_ends_at).toISOString().split('T')[0] : ''}
+                    onChange={e => setEditingTenant(prev => prev ? { ...prev, trial_ends_at: e.target.value ? new Date(e.target.value).toISOString() : null } : null)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                  />
+                </div>
+              </div>
+
               <div style={{ borderTop: '1px dashed var(--border)', margin: '16px 0' }} />
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 🔔 Escalada de Alertas Críticos
@@ -604,6 +687,73 @@ export default function Tenants() {
                   style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
                   placeholder="Ex: 24 (acionar após 24h sem resolução)"
                 />
+              </div>
+              <div style={{ borderTop: '1px dashed var(--border)', margin: '16px 0' }} />
+              <div style={{ fontSize: 11, color: 'var(--accent-2)', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                🌐 Widget de Reviews para Site
+              </div>
+
+              <div className="modal-section" style={{ background: 'rgba(99,102,241,0.05)', borderRadius: 8, padding: 12 }}>
+                <label className="modal-label">Token do Widget</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    readOnly
+                    value={editingTenant.widget_token || 'Gerando...'}
+                    style={{ flex: 1, padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 4, fontFamily: 'monospace', fontSize: 11 }}
+                  />
+                  <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => navigator.clipboard.writeText(editingTenant.widget_token || '')}>Copiar</button>
+                </div>
+                
+                <div style={{ marginTop: 12 }}>
+                  <label className="modal-label">Código de Embed (HTML)</label>
+                  <textarea
+                    readOnly
+                    rows={4}
+                    value={`<!-- Widget Reputei -->\n<div id="reputei-widget" data-token="${editingTenant.widget_token}"></div>\n<script src="https://radar-views-api.railway.app/static/widget.js" async></script>`}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: '#a5b4fc', borderRadius: 4, fontFamily: 'monospace', fontSize: 10, resize: 'none' }}
+                  />
+                  <p style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Cole este código no local onde deseja que os reviews apareçam no seu site.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border)', margin: '16px 0' }} />
+              <div style={{ fontSize: 11, color: '#10b981', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                🟢 WhatsApp (UAZAPI)
+              </div>
+
+              <div className="modal-section">
+                <label className="modal-label">Token da Instância (UAZAPI)</label>
+                <input
+                  type="password"
+                  value={editingTenant.whatsapp_token ?? ''}
+                  onChange={e => setEditingTenant(prev => prev ? { ...prev, whatsapp_token: e.target.value } : null)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4, fontFamily: 'monospace' }}
+                  placeholder="Deixe em branco para não alterar"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12 }}>
+                <div className="modal-section" style={{ margin: 0 }}>
+                  <label className="modal-label">Base URL</label>
+                  <input
+                    value={editingTenant.whatsapp_base_url ?? ''}
+                    onChange={e => setEditingTenant(prev => prev ? { ...prev, whatsapp_base_url: e.target.value } : null)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                    placeholder="https://api.uazapi.com"
+                  />
+                </div>
+                <div className="modal-section" style={{ margin: 0 }}>
+                  <label className="modal-label">Limite Mensal</label>
+                  <input
+                    type="number"
+                    value={editingTenant.whatsapp_limit_monthly ?? ''}
+                    onChange={e => setEditingTenant(prev => prev ? { ...prev, whatsapp_limit_monthly: e.target.value ? parseInt(e.target.value) : undefined } : null)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                    placeholder="30"
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
