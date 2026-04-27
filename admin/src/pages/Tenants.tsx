@@ -311,25 +311,27 @@ export default function Tenants() {
             <div key={t.id} className="card" style={{ padding: 20, opacity: isActive ? 1 : 0.6 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ background: isActive ? 'rgba(99,102,241,0.1)' : 'rgba(156,163,175,0.1)', padding: 10, borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                  <div style={{ background: isActive ? 'rgba(99,102,241,0.1)' : 'rgba(156,163,175,0.1)', padding: 10, borderRadius: 8, flexShrink: 0 }}>
                     <Building2 size={24} color={isActive ? "#a5b4fc" : "#9ca3af"} />
                   </div>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                       <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
                       {(() => {
                         const trialExpired = t.plan_status === 'trial' && t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
-                        const statusColor = !isActive ? '#ef4444' : (trialExpired ? '#f59e0b' : '#10b981')
-                        const statusBg = !isActive ? 'rgba(239, 68, 68, 0.1)' : (trialExpired ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)')
-                        const statusBorder = !isActive ? 'rgba(239, 68, 68, 0.2)' : (trialExpired ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)')
-                        const label = !isActive ? 'Bloqueado' : (trialExpired ? 'Trial Expirado' : 'Ativo')
-                        const emoji = !isActive ? '⚫' : (trialExpired ? '⏰' : '🟢')
+                        const trialActive = t.plan_status === 'trial' && (!t.trial_ends_at || new Date(t.trial_ends_at) >= new Date())
+                        const statusColor = !isActive ? '#ef4444' : (trialExpired ? '#f59e0b' : (trialActive ? '#60a5fa' : '#10b981'))
+                        const statusBg = !isActive ? 'rgba(239, 68, 68, 0.1)' : (trialExpired ? 'rgba(245, 158, 11, 0.1)' : (trialActive ? 'rgba(96, 165, 250, 0.1)' : 'rgba(16, 185, 129, 0.1)'))
+                        const statusBorder = !isActive ? 'rgba(239, 68, 68, 0.2)' : (trialExpired ? 'rgba(245, 158, 11, 0.2)' : (trialActive ? 'rgba(96, 165, 250, 0.2)' : 'rgba(16, 185, 129, 0.2)'))
+                        const label = !isActive ? 'Bloqueado' : (trialExpired ? 'Trial Expirado' : (trialActive ? 'Trial Ativo' : 'Ativo'))
+                        const emoji = !isActive ? '⚫' : (trialExpired ? '⏰' : (trialActive ? '⏳' : '🟢'))
                         
                         return (
                           <div style={{ 
                             display: 'flex', alignItems: 'center', gap: 4, 
                             fontSize: 11, padding: '2px 8px', borderRadius: 99, 
+                            whiteSpace: 'nowrap',
                             background: statusBg,
                             color: statusColor,
                             border: `1px solid ${statusBorder}`
@@ -359,7 +361,7 @@ export default function Tenants() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 8, flexShrink: 0 }}>
                   {t.plan_status === 'trial' && (
                     <button onClick={() => extendTrial(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="+7 dias de trial">
                       <Plus size={14} color="#f59e0b" />
