@@ -53,9 +53,17 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
   const origin = Array.isArray(originHeader) ? originHeader[0] : (originHeader || '')
   // Whitelist de produção
   const allowed = [
+    // Domínios de produção
+    'https://reputei.com.br',
+    'https://www.reputei.com.br',
+    'https://admin.reputei.com.br',
+    'https://app.reputei.com.br',
+    // Legado Vercel
     'https://reputei-portal.vercel.app',
     'https://admin-reputei.vercel.app',
     'https://reputei.vercel.app',
+    'https://radarreviews.vercel.app',
+    // Dev local
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:3000',
