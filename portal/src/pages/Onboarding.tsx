@@ -410,7 +410,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 })}
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                {channels.length} de {planConfig.max_channels} canal{planConfig.max_channels !== 1 ? 'is' : ''} selecionado{channels.length !== 1 ? 's' : ''}
+                {channels.length} de {planConfig.max_channels} {planConfig.max_channels !== 1 ? 'canais' : 'canal'} selecionado{channels.length !== 1 ? 's' : ''}
               </p>
 
               {/* Configuração Condicional do Instagram */}

@@ -363,7 +363,7 @@ async function handleOnboarding(
       asaasCustomerId = customer.id;
 
       // Calcular Preço (Básico: 139, Completo: 199, Custom: 149)
-      const basePrices: Record<string, number> = { basico: 139, completo: 199, enterprise: 797, custom: 149 };
+      const basePrices: Record<string, number> = { basico: 139, completo: 199, enterprise: 1500, custom: 149 };
       const basePrice = basePrices[plan] || 139;
       
       // Descontos por periodicidade (Trimestral: 5%, Semestral: 10%, Anual: 20%)
@@ -1014,7 +1014,7 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
       res.writeHead(404).end(JSON.stringify({ error: 'Nenhum dado encontrado para gerar o relatório neste período.' }))
     }
   } catch (err) {
-    logger.error('[api-reports] Erro:', err)
+    console.error('[api-reports] Erro:', err)
     res.writeHead(500).end(JSON.stringify({ error: 'Erro interno ao gerar relatório' }))
   }
 }

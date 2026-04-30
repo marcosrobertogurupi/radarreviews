@@ -271,7 +271,7 @@ export default function App() {
             <LogOut size={14} style={{ flexShrink: 0 }} />
             <span className="btn-sidebar-label">Sair</span>
           </button>
-          <p className="sidebar-footer-text" style={{ marginTop: 12 }}>Reputei · v1.0.0</p>
+          <p className="sidebar-footer-text" style={{ marginTop: 12 }}>Reputei · v1.0.1</p>
         </div>
       </aside>
 
