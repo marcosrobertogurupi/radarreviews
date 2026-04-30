@@ -1056,8 +1056,8 @@ async function handleRespondReview(req: http.IncomingMessage, res: http.ServerRe
 const server = http.createServer((req, res) => {
   const url = req.url ?? '/'
 
-  if (url === '/health') {
-    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2026-04-27-contacts-update' })); return
+  if (url === '/' || url === '/health') {
+    res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2026-04-30-v1' })); return
   }
 
   if (url.startsWith('/api/copilot')) {
@@ -1405,7 +1405,7 @@ async function checkEscalations(): Promise<void> {
 // Rodar a cada 15 minutos
 const ESCALATION_INTERVAL_MS = 15 * 60 * 1000
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[api] Servidor Copilot rodando em http://localhost:${PORT}`)
   console.log(`[api] Gemini API Key: ${process.env['GEMINI_API_KEY'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
   console.log(`[api] Supabase URL:   ${process.env['SUPABASE_URL'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
