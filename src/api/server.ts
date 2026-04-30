@@ -63,6 +63,8 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
     'https://admin-reputei.vercel.app',
     'https://reputei.vercel.app',
     'https://radarreviews.vercel.app',
+    'https://radarreviews-spnb.vercel.app',
+    'https://radar-views.vercel.app',
     // Dev local
     'http://localhost:5173',
     'http://localhost:5174',
@@ -266,7 +268,7 @@ async function handleOnboarding(
     const maxChannels = PLAN_MAX_CHANNELS[plan] ?? 3
     if (channels.length > maxChannels) {
       res.writeHead(422)
-      res.end(JSON.stringify({ error: `O plano ${plan} permite no máximo ${maxChannels} canais.` }))
+      res.end(JSON.stringify({ error: `O plano ${plan} permite no máximo ${maxChannels} ${maxChannels !== 1 ? 'canais' : 'canal'}.` }))
       return
     }
 

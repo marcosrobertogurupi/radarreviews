@@ -378,7 +378,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 Canais para monitorar
               </h2>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Plano <strong style={{ color: planConfig.color }}>{planConfig.label}</strong> · {planConfig.max_channels} canal{planConfig.max_channels !== 1 ? 'is' : ''} disponível{planConfig.max_channels !== 1 ? 'is' : ''}
+                Plano <strong style={{ color: planConfig.color }}>{planConfig.label}</strong> · {planConfig.max_channels} {planConfig.max_channels !== 1 ? 'canais' : 'canal'} {planConfig.max_channels !== 1 ? 'disponíveis' : 'disponível'}
               </p>
               {channels.length >= planConfig.max_channels && (
                 <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '6px 10px' }}>
