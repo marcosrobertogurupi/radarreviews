@@ -106,7 +106,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
       const json = await res.json() as { reply?: string; error?: string }
       setSuggestion(json.reply ?? json.error ?? 'Erro ao gerar sugestão.')
     } catch {
-      setSuggestion('Não foi possível conectar ao servidor de IA. Verifique se o servidor está rodando.')
+      setSuggestion('Serviço de IA temporariamente indisponível. Tente novamente em instantes.')
     }
     setSuggesting(false)
   }

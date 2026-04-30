@@ -183,7 +183,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
       setTimeout(onComplete, 2000)
 
     } catch {
-      setError('Não foi possível conectar ao servidor. Verifique se o servidor está rodando.')
+      setError('Erro ao criar sua conta. Tente novamente em instantes ou entre em contato com o suporte.')
     }
 
     setLoading(false)

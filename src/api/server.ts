@@ -1218,10 +1218,9 @@ const server = http.createServer((req, res) => {
     })
     return
   }
-}
 
-async function handleLogin(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res)
+  async function handleLogin(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    setCors(req, res)
   const body = await readBody(req) as { email?: string; password?: string }
   const { email, password } = body
   
@@ -1254,33 +1253,32 @@ async function handleLogin(req: http.IncomingMessage, res: http.ServerResponse):
     )
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ 
-    user: userData,
-    session: data.session
-  }))
-}
-
-async function handleGetAuditLogs(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res, 'Content-Type, Authorization')
-  const auth = await getAuthUser(req.headers.authorization)
-  if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
-    res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    res.end(JSON.stringify({ 
+      user: userData,
+      session: data.session
+    }))
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('auditoria')
-    .select('*')
-    .order('data_hora', { ascending: false })
-    .limit(100)
+  async function handleGetAuditLogs(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    setCors(req, res, 'Content-Type, Authorization')
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
 
-  if (error) {
-    res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return
+    const { data, error } = await supabaseAdmin
+      .from('auditoria')
+      .select('*')
+      .order('data_hora', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(data))
   }
-
-  res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
 
   if (url.startsWith('/api/auth/meta') || url.startsWith('/api/webhooks/meta')) {
     handleMetaWebhook(req, res).catch(err => {
