@@ -59,6 +59,10 @@ export interface Review {
     method: 'gemini' | 'heuristic' | 'rating_only'
   }
   published_at: string
+  tags?: string[]
+  response_text?: string
+  responded_at?: string
+  connector_id?: string
   monitored_businesses?: { name: string }
 }
 

@@ -307,6 +307,7 @@ export default function Dashboard({ tenantId }: Props) {
             </div>
           )}
         </div>
+      </div>
 
       <div className="grid-2">
         {/* Benchmarking */}

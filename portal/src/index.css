@@ -526,7 +526,7 @@ select option { background-color: #0e1525 !important; color: var(--text-primary)
 
 @media (max-width: 480px) { .channel-grid { grid-template-columns: repeat(2, 1fr); } }
 
-/* ── Responsive ── */
+@media (max-width: 768px) {
   .kpi-grid, .grid-2, .grid-3 { grid-template-columns: 1fr; }
 }
 

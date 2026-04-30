@@ -12,6 +12,8 @@ export default defineConfig({
       },
     },
   },
+  // Base path: assets referenciados como /portalcliente/assets/... no HTML
+  base: '/portalcliente',
   build: {
     outDir: 'dist',
     sourcemap: false,
