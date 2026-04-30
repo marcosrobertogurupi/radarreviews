@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { Radio } from 'lucide-react'
 
-const ADMIN_URL  = process.env.NEXT_PUBLIC_ADMIN_URL  ?? 'https://reputei-admin.vercel.app'
 const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL ?? 'https://reputei-portal.vercel.app'
 
 export default function Navbar() {
@@ -31,12 +30,12 @@ export default function Navbar() {
             >
               Portal do Cliente
             </a>
-            <a
-              href={ADMIN_URL}
+            <Link
+              href="/admin"
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all shadow-lg shadow-indigo-500/20 font-medium"
             >
               Painel Admin
-            </a>
+            </Link>
           </div>
 
           {/* Mobile Menu Placeholder (simplificado para o MVP) */}

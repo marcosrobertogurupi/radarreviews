@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Connector, SyncJob, SourceChannel } from '../lib/supabase'
-import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
-import { AlertCircle, CheckCircle2, Clock, History, Search, ShieldAlert } from 'lucide-react'
+import type { Connector, SyncJob } from '../lib/supabase'
+import { formatDate } from '../lib/utils'
+import { History, ShieldAlert } from 'lucide-react'
 
 interface QuietFailure {
   connector: Connector
   consecutiveZeroes: number
 }
 
+export default function Audit() {
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [errorConnectors, setErrorConnectors] = useState<Connector[]>([])
+  const [healingConnectors, setHealingConnectors] = useState<Connector[]>([])
+  const [recentJobs, setRecentJobs] = useState<SyncJob[]>([])
+  const [quietFailures, setQuietFailures] = useState<QuietFailure[]>([])
   const [auditLogs, setAuditLogs] = useState<any[]>([])
   const [tab, setTab] = useState<'robots' | 'users'>('robots')
 
@@ -44,7 +51,6 @@ interface QuietFailure {
     if (!silent) setLoading(true)
     else setRefreshing(true)
 
-    // ... (restante do código original de robots permanece igual)
     const { data: allErrors } = await supabase
       .from('channel_connectors')
       .select('*, monitored_businesses(name)')
@@ -89,7 +95,7 @@ interface QuietFailure {
 
     setErrorConnectors(critical)
     setHealingConnectors(healing)
-    setRecentJobs(jobs || [])
+    setRecentJobs((jobs || []) as SyncJob[])
     setQuietFailures(qFailures)
     setLoading(false)
     setRefreshing(false)
@@ -145,17 +151,21 @@ interface QuietFailure {
                 </h3>
                 {errorConnectors.map(c => (
                   <div key={c.id} className="card" style={{ padding: 16, borderLeft: '4px solid #ef4444', marginBottom: 12 }}>
-                    <span style={{ fontWeight: 600 }}>{c.monitored_businesses?.name}</span>
+                    <span style={{ fontWeight: 600 }}>{(c as any).monitored_businesses?.name}</span>
                     <div style={{ fontSize: 13, color: '#fca5a5' }}>{c.error_message || 'Erro na extração'}</div>
                   </div>
                 ))}
+                {errorConnectors.length === 0 && !loading && (
+                  <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Nenhuma falha crítica encontrada.
+                  </div>
+                )}
               </section>
             </div>
             <div>
               <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <History size={20} color="var(--accent)" /> Histórico de Sincronização
               </h3>
-              {/* ... (Tabela de jobs simplificada aqui) */}
               <div className="card" style={{ padding: 0 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
