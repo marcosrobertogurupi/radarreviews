@@ -36,6 +36,18 @@ export default function Login({ onSignup }: Props) {
       }} />
 
       <div style={{ width: '100%', maxWidth: 400, padding: '0 24px' }}>
+        {/* Link voltar ao site */}
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <a
+            href="https://www.reputei.com.br"
+            style={{ fontSize: 13, color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#06b6d4')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            ← Voltar ao site principal
+          </a>
+        </div>
+
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{

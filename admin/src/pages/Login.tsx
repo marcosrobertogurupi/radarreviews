@@ -67,7 +67,20 @@ export default function Login() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main)' }}>
-      <div className="card" style={{ width: '100%', maxWidth: 380, padding: '40px 32px' }}>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        {/* Link voltar ao site */}
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <a
+            href="https://www.reputei.com.br"
+            style={{ fontSize: 13, color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#a5b4fc')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            ← Voltar ao site principal
+          </a>
+        </div>
+
+        <div className="card" style={{ padding: '40px 32px' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 12, background: 'rgba(99, 102, 241, 0.1)', color: '#a5b4fc', fontSize: 24, marginBottom: 16 }}>
             📡
@@ -116,6 +129,7 @@ export default function Login() {
             {loading ? 'Autenticando...' : 'Entrar no painel'}
           </button>
         </form>
+        </div>
       </div>
     </div>
   )

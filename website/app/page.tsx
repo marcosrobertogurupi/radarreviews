@@ -44,12 +44,12 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link 
-              href="/portal" 
-              className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xl font-bold transition-all shadow-2xl shadow-indigo-500/40 transform hover:-translate-y-1"
-            >
-              Assine Reputei
-            </Link>
+              <Link 
+                href="/portalcliente" 
+                className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xl font-bold transition-all shadow-2xl shadow-indigo-500/40 transform hover:-translate-y-1"
+              >
+                Assine Reputei
+              </Link>
             <Link 
               href="#canais" 
               className="px-8 py-5 bg-gray-900 hover:bg-gray-800 text-white rounded-2xl text-xl font-semibold transition-all border border-gray-800"
@@ -112,73 +112,145 @@ export default function Home() {
             <p className="text-gray-400 max-w-2xl mx-auto">Escolha o plano que melhor se adapta ao tamanho da sua operação.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {/* Plano Basic */}
-            <div className="p-10 bg-gray-900/50 border border-gray-800 rounded-[2.5rem] hover:border-gray-700 transition-all flex flex-col">
-              <div className="mb-8">
-                <h3 className="text-2xl font-bold mb-2">Plano Basic</h3>
-                <p className="text-gray-400 text-sm">Ideal para pequenos negócios locais.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+            {/* Plano Básico */}
+            <div className="p-8 bg-gray-900/50 border border-gray-800 rounded-[2rem] hover:border-gray-700 transition-all flex flex-col group">
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-1 group-hover:text-cyan-400 transition-colors">Básico</h3>
+                <p className="text-gray-400 text-xs">Para pequenos negócios locais.</p>
               </div>
-              <div className="mb-10 flex items-baseline gap-2">
-                <span className="text-5xl font-black font-outfit">R$ 119</span>
-                <span className="text-gray-500 text-lg">/mês</span>
+              <div className="mb-8 flex items-baseline gap-1">
+                <span className="text-sm font-bold text-gray-500">R$</span>
+                <span className="text-4xl font-black font-outfit">99</span>
+                <span className="text-gray-500 text-sm">/mês</span>
               </div>
-              <ul className="space-y-4 mb-10 flex-1">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
-                  'Monitoramento Google Maps',
-                  'Frequência de atualização Diária',
-                  'Análise de Sentimento Básica',
-                  'Suporte via Chat/E-mail',
-                  '1 Unidade de Negócio'
+                  '3 canais monitorados',
+                  '500 reviews/mês',
+                  'Google Maps & TripAdvisor',
+                  'Alertas por e-mail',
+                  'Relatórios semanais',
+                  'Suporte por e-mail'
                 ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3 text-gray-300">
-                    <Check size={18} className="text-indigo-500 flex-shrink-0" />
+                  <li key={i} className="flex items-center gap-2 text-xs text-gray-300">
+                    <Check size={14} className="text-indigo-500 flex-shrink-0" />
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
               <Link 
-                href="/portal" 
-                className="w-full py-4 bg-gray-800 hover:bg-gray-700 text-white rounded-2xl font-bold text-center transition-all"
+                href="/portalcliente" 
+                className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-bold text-center text-sm transition-all"
               >
                 Começar agora
               </Link>
             </div>
 
-            {/* Plano Complete */}
-            <div className="p-10 bg-indigo-600/10 border-2 border-indigo-600 rounded-[2.5rem] relative hover:bg-indigo-600/15 transition-all flex flex-col">
-              <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-black uppercase tracking-widest px-6 py-2 rounded-full shadow-lg shadow-indigo-500/40">
-                Mais Vendido
+            {/* Plano Completo */}
+            <div className="p-8 bg-indigo-600/10 border-2 border-indigo-600 rounded-[2rem] relative hover:bg-indigo-600/15 transition-all flex flex-col group">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
+                Mais Popular
               </div>
-              <div className="mb-8">
-                <h3 className="text-2xl font-bold mb-2 text-white">Plano Complete</h3>
-                <p className="text-indigo-300 text-sm opacity-80">Monitoramento total e IA avançada.</p>
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-1 text-white">Completo</h3>
+                <p className="text-indigo-300 text-xs opacity-80">Monitoramento total + IA.</p>
               </div>
-              <div className="mb-10 flex items-baseline gap-2">
-                <span className="text-5xl font-black font-outfit text-white">R$ 239</span>
-                <span className="text-indigo-300 text-lg opacity-80">/mês</span>
+              <div className="mb-8 flex items-baseline gap-1">
+                <span className="text-sm font-bold text-indigo-400">R$</span>
+                <span className="text-4xl font-black font-outfit text-white">199</span>
+                <span className="text-indigo-300 text-sm opacity-80">/mês</span>
               </div>
-              <ul className="space-y-4 mb-10 flex-1">
+              <ul className="space-y-3 mb-8 flex-1">
                 {[
-                  'Tudo do Plano Basic',
-                  'Reclame Aqui & Consumidor.gov',
-                  'Redes Sociais & TripAdvisor',
-                  'Alertas Críticos em Real-time',
-                  'Análise Avançada com Gemini 2.0',
-                  'Relatórios de Auditoria'
+                  '8 canais monitorados',
+                  'Reviews ilimitados',
+                  'Todos os canais disponíveis',
+                  'IA Copilot incluso',
+                  'Alertas via WhatsApp/SMS',
+                  'Suporte prioritário'
                 ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3 text-white">
-                    <Check size={18} className="text-indigo-400 flex-shrink-0" />
+                  <li key={i} className="flex items-center gap-2 text-xs text-white">
+                    <Check size={14} className="text-indigo-400 flex-shrink-0" />
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
               <Link 
-                href="/portal" 
-                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-center transition-all shadow-xl shadow-indigo-500/20"
+                href="/portalcliente" 
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-center text-sm transition-all shadow-lg shadow-indigo-500/20"
               >
-                Assinar Plano Complete
+                Assinar agora
               </Link>
+            </div>
+
+            {/* Plano Custom */}
+            <div className="p-8 bg-gray-900/50 border border-gray-800 rounded-[2rem] hover:border-gray-700 transition-all flex flex-col group">
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-1 group-hover:text-amber-400 transition-colors">Custom</h3>
+                <p className="text-gray-400 text-xs">Flexibilidade para sua marca.</p>
+              </div>
+              <div className="mb-8 flex items-baseline gap-1">
+                <span className="text-sm font-bold text-gray-500">R$</span>
+                <span className="text-4xl font-black font-outfit">149</span>
+                <span className="text-gray-500 text-sm">/mês*</span>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                {[
+                  'Canais sob demanda',
+                  'Reviews ilimitados',
+                  'IA Copilot incluso',
+                  'Relatórios personalizados',
+                  'Multi-unidades',
+                  'Gerente de conta'
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-gray-300">
+                    <Check size={14} className="text-indigo-500 flex-shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link 
+                href="/portalcliente" 
+                className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-bold text-center text-sm transition-all"
+              >
+                Personalizar
+              </Link>
+            </div>
+
+            {/* Plano Enterprise */}
+            <div className="p-8 bg-gray-900/50 border border-gray-800 rounded-[2rem] hover:border-gray-700 transition-all flex flex-col group">
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-1 group-hover:text-red-400 transition-colors">Enterprise</h3>
+                <p className="text-gray-400 text-xs">Escala e performance máxima.</p>
+              </div>
+              <div className="mb-8 flex items-baseline gap-1">
+                <span className="text-sm font-bold text-gray-500">R$</span>
+                <span className="text-4xl font-black font-outfit">1.500</span>
+                <span className="text-gray-500 text-sm">+/mês</span>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                {[
+                  'Canais ilimitados',
+                  'SLA garantido',
+                  'Integrações via API/Webhooks',
+                  'Suporte 24/7 dedicado',
+                  'Consultoria trimestral',
+                  'Desconto por volume'
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-gray-300">
+                    <Check size={14} className="text-indigo-500 flex-shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <a 
+                href="https://wa.me/5563992420061" 
+                target="_blank"
+                className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-bold text-center text-sm transition-all"
+              >
+                Falar com Vendas
+              </a>
             </div>
           </div>
         </div>
@@ -199,7 +271,7 @@ export default function Home() {
            <div className="flex gap-10 text-sm font-medium text-gray-400">
               <Link href="/" className="hover:text-white">Home</Link>
               <Link href="/parceiros" className="hover:text-white">Parceiros</Link>
-              <Link href="/portal" className="hover:text-white text-indigo-400">Login Cliente</Link>
+              <Link href="/portalcliente" className="hover:text-white text-indigo-400">Login Cliente</Link>
            </div>
            <div className="text-gray-500 text-sm">
               &copy; 2026 Reputei SaaS. Todos os direitos reservados.
