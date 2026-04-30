@@ -234,7 +234,7 @@ async function handleOnboarding(
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
   }
 
-  const { email, password, businessName, channels = [], plan = 'starter', billingMethod = 'pix', periodicity = 'trimestral' } = body
+  const { email, password, businessName, channels = [], plan: requestedPlan = 'trial', billingMethod = 'pix', periodicity = 'trimestral' } = body
   if (!email?.trim() || !password || !businessName?.trim()) {
     res.writeHead(400)
     res.end(JSON.stringify({ error: 'email, password e businessName são obrigatórios' }))
@@ -262,7 +262,7 @@ async function handleOnboarding(
     const PLAN_MAX_CHANNELS: Record<string, number> = {
       basico: 3, completo: 8, enterprise: 99, trial: 3,
     }
-    const plan = (body.plan && body.plan in PLAN_MAX_CHANNELS) ? body.plan : 'trial'
+    const plan = (requestedPlan && requestedPlan in PLAN_MAX_CHANNELS) ? requestedPlan : 'trial'
     const maxChannels = PLAN_MAX_CHANNELS[plan] ?? 3
     if (channels.length > maxChannels) {
       res.writeHead(422)
