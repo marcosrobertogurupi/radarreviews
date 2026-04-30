@@ -121,7 +121,7 @@ export default function Home() {
               </div>
               <div className="mb-8 flex items-baseline gap-1">
                 <span className="text-sm font-bold text-gray-500">R$</span>
-                <span className="text-4xl font-black font-outfit">99</span>
+                <span className="text-4xl font-black font-outfit">139</span>
                 <span className="text-gray-500 text-sm">/mês</span>
               </div>
               <ul className="space-y-3 mb-8 flex-1">
@@ -195,6 +195,7 @@ export default function Home() {
                 <span className="text-4xl font-black font-outfit">149</span>
                 <span className="text-gray-500 text-sm">/mês*</span>
               </div>
+              <p className="text-[10px] text-gray-500 mb-4">*+ R$49 por canal extra</p>
               <ul className="space-y-3 mb-8 flex-1">
                 {[
                   'Canais sob demanda',

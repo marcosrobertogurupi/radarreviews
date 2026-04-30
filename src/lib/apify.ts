@@ -1,6 +1,12 @@
 import axios from 'axios'
+import { logApiUsage } from './usage.js'
 
 const APIFY_TOKEN = process.env['APIFY_TOKEN']
+
+export interface ApifyContext {
+  tenant_id: string
+  connector_id?: string
+}
 
 export interface ApifyInstagramComment {
   id: string
@@ -14,7 +20,7 @@ export interface ApifyInstagramComment {
 /**
  * Chama a Apify para coletar comentários recentes de um perfil do Instagram
  */
-export async function fetchInstagramComments(username: string, limit = 50): Promise<ApifyInstagramComment[]> {
+export async function fetchInstagramComments(username: string, limit = 50, ctx?: ApifyContext): Promise<ApifyInstagramComment[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
 
   console.log(`[Apify] Passo 1: Buscando posts recentes de @${username}...`)
@@ -54,16 +60,23 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
     )
 
     const items = (commentsResponse.data as any[]).filter(item => !item.error && !item.requestErrorMessages)
-    console.log(`[Apify] Coletados ${items.length} comentários válidos para @${username}`)
-
-    if (items.length > 0) {
-      console.log('[Apify] DEBUG - Estrutura do primeiro comentário real:', JSON.stringify(items[0], null, 2))
+    
+    // Log de consumo
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'instagram-comments',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.15 // Estimativa baseada em tempo de execução
+      })
     }
 
+    console.log(`[Apify] Coletados ${items.length} comentários válidos para @${username}`)
+    // ... restante da normalização
     return items.map(item => {
-      // Garantir que temos um ID (external_id). Tentar vários campos da Apify.
       const id = item.id || item.commentId || item.pk || `ig_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-      
       return {
         id: String(id),
         text: item.text || item.text_content || item.body || item.caption || '',
@@ -73,7 +86,6 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
         url: item.url || (item.shortCode ? `https://www.instagram.com/reels/${item.shortCode}/` : undefined)
       }
     })
-
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[Apify] Erro ao coletar @${username}:`, msg)
@@ -84,24 +96,28 @@ export async function fetchInstagramComments(username: string, limit = 50): Prom
 /**
  * Coleta reclamações do Reclame Aqui via Apify
  */
-export async function fetchReclameAquiComplaints(companySlug: string, limit = 20): Promise<any[]> {
+export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
-
-  console.log(`[Apify] Buscando reclamações do Reclame Aqui para: ${companySlug}...`)
 
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-      {
-        companySlug,
-        maxItems: limit,
-        scrapeDetailedComplaints: true // Trazer o texto completo
-      },
+      { companySlug, maxItems: limit, scrapeDetailedComplaints: true },
       { timeout: 300000 }
     )
 
     const items = response.data as any[]
-    console.log(`[Apify] Coletadas ${items.length} reclamações para ${companySlug}`)
+    
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'reclame-aqui',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.25 // Scraping do RA é mais custoso
+      })
+    }
 
     return items.map(item => ({
       id: item.id || item.complaintId,
@@ -112,10 +128,7 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
       date: item.datetime || item.date || item.createdAt,
       url: item.url
     }))
-
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[Apify] Erro ao coletar Reclame Aqui (${companySlug}):`, msg)
     throw err
   }
 }
@@ -123,44 +136,38 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
 /**
  * Coleta reviews do Trustpilot via Apify
  */
-export async function fetchTrustpilotReviews(domain: string, limit = 20): Promise<any[]> {
+export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
-
-  // Se o usuário passar o URL completo, extrair apenas o domínio
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').split('/')[0]
   const startUrl = `https://www.trustpilot.com/review/${sanitizedDomain}`
-
-  console.log(`[Apify] Buscando reviews do Trustpilot para: ${sanitizedDomain}...`)
 
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/apify~trustpilot-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-      {
-        startUrls: [{ url: startUrl }],
-        maxReviews: limit
-      },
+      { startUrls: [{ url: startUrl }], maxReviews: limit },
       { timeout: 300000 }
     )
-
     const items = response.data as any[]
-    console.log(`[Apify] Coletados ${items.length} reviews para ${sanitizedDomain}`)
-
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'trustpilot',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.10
+      })
+    }
     return items.map(item => ({
       id: item.id || item.reviewId,
       stars: item.rating || item.stars,
       title: item.title,
       text: item.text || item.content,
       createdAt: item.createdAt || item.date || item.publishedDate,
-      consumer: {
-        id: item.userId || item.consumerId,
-        displayName: item.userName || item.authorName || item.author
-      },
+      consumer: { id: item.userId || item.consumerId, displayName: item.userName || item.authorName || item.author },
       links: [{ rel: 'self', href: item.url || startUrl }]
     }))
-
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[Apify] Erro ao coletar Trustpilot (${sanitizedDomain}):`, msg)
     throw err
   }
 }
@@ -168,24 +175,25 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20): Promis
 /**
  * Coleta reviews de páginas do Facebook via Apify
  */
-export async function fetchFacebookReviews(pageUrl: string, limit = 20): Promise<any[]> {
+export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
-
-  console.log(`[Apify] Buscando reviews do Facebook para: ${pageUrl}...`)
-
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-      {
-        startUrls: [{ url: pageUrl }],
-        maxResults: limit
-      },
+      { startUrls: [{ url: pageUrl }], maxResults: limit },
       { timeout: 300000 }
     )
-
     const items = response.data as any[]
-    console.log(`[Apify] Coletados ${items.length} reviews do Facebook para ${pageUrl}`)
-
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'facebook-reviews',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.10
+      })
+    }
     return items.map(item => ({
       id: item.reviewId || item.id,
       stars: item.rating || item.score,
@@ -194,10 +202,7 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20): Promise
       author: item.authorName || item.user?.name || 'Usuário do Facebook',
       url: item.url || pageUrl
     }))
-
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[Apify] Erro ao coletar Facebook (${pageUrl}):`, msg)
     throw err
   }
 }
@@ -205,22 +210,26 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20): Promise
 /**
  * Coleta menções de um perfil no Instagram (@)
  */
-export async function fetchInstagramMentions(username: string, limit = 20): Promise<any[]> {
+export async function fetchInstagramMentions(username: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
   const cleanUsername = username.replace('@', '')
-  console.log(`[Apify] Buscando menções para @${cleanUsername}...`)
-
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-      {
-        usernames: [cleanUsername],
-        limit
-      },
+      { usernames: [cleanUsername], limit },
       { timeout: 300000 }
     )
-    
     const items = response.data as any[]
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'instagram-mentions',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.10
+      })
+    }
     return items.map(item => ({
       id: item.id || item.pk,
       text: item.caption?.text || item.text || '',
@@ -229,7 +238,6 @@ export async function fetchInstagramMentions(username: string, limit = 20): Prom
       url: item.url || (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : '')
     }))
   } catch (err) {
-    console.error(`[Apify] Erro ao coletar menções de @${cleanUsername}:`, err)
     return []
   }
 }
@@ -237,22 +245,26 @@ export async function fetchInstagramMentions(username: string, limit = 20): Prom
 /**
  * Coleta posts/comentários de uma Hashtag no Instagram (#)
  */
-export async function fetchInstagramHashtags(hashtag: string, limit = 20): Promise<any[]> {
+export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
   const tag = hashtag.replace('#', '')
-  console.log(`[Apify] Buscando hashtag #${tag}...`)
-
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-      {
-        hashtags: [tag],
-        resultsLimit: limit
-      },
+      { hashtags: [tag], resultsLimit: limit },
       { timeout: 300000 }
     )
-
     const items = response.data as any[]
+    if (ctx?.tenant_id) {
+      await logApiUsage({
+        tenant_id: ctx.tenant_id,
+        connector_id: ctx.connector_id,
+        service_name: 'apify',
+        operation_type: 'instagram-hashtags',
+        units_consumed: items.length,
+        estimated_cost_brl: 0.10
+      })
+    }
     return items.map(item => ({
       id: item.id || item.pk,
       text: item.caption || item.text || '',
@@ -261,7 +273,7 @@ export async function fetchInstagramHashtags(hashtag: string, limit = 20): Promi
       url: item.url || (item.shortCode ? `https://www.instagram.com/p/${item.shortCode}/` : '')
     }))
   } catch (err) {
-    console.error(`[Apify] Erro ao coletar hashtag #${tag}:`, err)
     return []
   }
 }
+

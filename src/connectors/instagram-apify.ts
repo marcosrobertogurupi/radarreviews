@@ -14,11 +14,22 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   try {
+    // Buscar tenant_id primeiro para log de consumo
+    const { data: biz } = await supabase
+      .from('monitored_businesses')
+      .select('tenant_id')
+      .eq('id', business_id)
+      .single()
+
+    if (!biz) throw new Error('Empresa não encontrada para o conector')
+
+    const ctx = { tenant_id: biz.tenant_id, connector_id }
+
     // 1. Coleta Multidimensional
     const [ownComments, mentions, ...tagResults] = await Promise.all([
-      fetchInstagramComments(username, 20),
-      fetchInstagramMentions(username, 20),
-      ...hashtags.map(tag => fetchInstagramHashtags(tag, 20))
+      fetchInstagramComments(username, 20, ctx),
+      fetchInstagramMentions(username, 20, ctx),
+      ...hashtags.map(tag => fetchInstagramHashtags(tag, 20, ctx))
     ])
     
     // Unificar todos os resultados
@@ -28,15 +39,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       ...tagResults.flat().map(t => ({ ...t, source: 'hashtag' }))
     ]
     
-    // Buscar tenant_id para a ingestão
-    const { data: biz } = await supabase
-      .from('monitored_businesses')
-      .select('tenant_id')
-      .eq('id', business_id)
-      .single()
-
-    if (!biz) throw new Error('Empresa não encontrada para o conector')
-
     const normalized: NormalizedReview[] = allRaw.map(item => ({
       tenant_id: biz.tenant_id,
       business_id: business_id,

@@ -110,7 +110,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   try {
     if (process.env['APIFY_TOKEN']) {
       logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, slug })
-      const apifyComplaints = await fetchReclameAquiComplaints(slug, 20)
+      const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
+      const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx)
       
       if (apifyComplaints.length > 0) {
         const normalized = apifyComplaints.map(c => normalize(c, connector))

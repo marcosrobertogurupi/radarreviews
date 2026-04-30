@@ -6,7 +6,7 @@ import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info } from 'luci
 type Period = 'trimestral' | 'semestral' | 'anual'
 
 const PERIOD_OPTIONS: { value: Period; label: string; discount: number; months: number }[] = [
-  { value: 'trimestral', label: 'Trimestral', discount: 0,  months: 3  },
+  { value: 'trimestral', label: 'Trimestral', discount: 5,  months: 3  },
   { value: 'semestral',  label: 'Semestral',  discount: 10, months: 6  },
   { value: 'anual',      label: 'Anual',      discount: 20, months: 12 },
 ]
@@ -47,10 +47,10 @@ export default function Pricing() {
   const activePeriod  = PERIOD_OPTIONS.find(p => p.value === period)!
   const totalDiscount = activePeriod.discount + (pix ? PIX_EXTRA : 0)
 
-  // Preços calculados
-  const basic    = calcPrice(99,  period, pix)
+  // Preços calculados conforme XML
+  const basic    = calcPrice(139, period, pix)
   const complete = calcPrice(199, period, pix)
-  const customBase = 149 + (customCh - 3) * 39
+  const customBase = 149 + (customCh - 3) * 49
   const custom   = calcPrice(customBase, period, pix)
 
   return (
