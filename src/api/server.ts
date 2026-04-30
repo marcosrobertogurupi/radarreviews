@@ -360,18 +360,18 @@ async function handleOnboarding(
       });
       asaasCustomerId = customer.id;
 
-      // Calcular Preço (Starter: 197, Pro: 397, Enterprise: 797)
-      const basePrices: Record<string, number> = { starter: 197, pro: 397, enterprise: 797 };
-      const basePrice = basePrices[plan] || 197;
+      // Calcular Preço (Básico: 139, Completo: 199, Custom: 149)
+      const basePrices: Record<string, number> = { basico: 139, completo: 199, enterprise: 797, custom: 149 };
+      const basePrice = basePrices[plan] || 139;
       
       // Descontos por periodicidade (Trimestral: 5%, Semestral: 10%, Anual: 20%)
       const periodDiscounts: Record<string, number> = { monthly: 0, trimestral: 0.05, semestral: 0.10, anual: 0.20 };
       const periodDiscount = periodDiscounts[periodicity] || 0;
       
-      // Desconto PIX (5% adicional)
-      const pixDiscount = billingMethod === 'pix' ? 0.05 : 0;
+      // Desconto PIX (5% adicional sobre o valor já com desconto de período)
+      const pixDiscountMult = billingMethod === 'pix' ? 0.95 : 1;
       
-      const finalPrice = basePrice * (1 - periodDiscount) * (1 - pixDiscount);
+      const finalPrice = (basePrice * (1 - periodDiscount)) * pixDiscountMult;
       const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
       const subscription = await createAsaasSubscription({
@@ -379,7 +379,9 @@ async function handleOnboarding(
         billingType: billingMethod === 'pix' ? 'PIX' : 'CREDIT_CARD',
         value: Number(finalPrice.toFixed(2)),
         nextDueDate: trialEndsAt.split('T')[0], // 7 dias a partir de hoje
-        cycle: periodicity === 'anual' ? 'ANNUALLY' : (periodicity === 'semestral' ? 'SEMIANNUALLY' : 'MONTHLY'),
+        cycle: periodicity === 'anual' ? 'ANNUALLY' : 
+               periodicity === 'semestral' ? 'SEMIANNUALLY' : 
+               periodicity === 'trimestral' ? 'QUARTERLY' : 'MONTHLY',
         description: `Plano ${plan.toUpperCase()} - Reputei SaaS (${periodicity})`,
         externalReference: tenant.id
       });
