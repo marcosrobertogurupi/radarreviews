@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
-import { Trash2, AlertTriangle, Activity, Facebook } from 'lucide-react'
+import { Trash2, AlertTriangle, Activity } from 'lucide-react'
 import { MetaConnectButton } from '../components/MetaConnectButton'
 
 // ──────────────────────────────────────────────────────────────
@@ -352,14 +352,14 @@ export default function Connectors() {
                 <div className="connector-icon">{CHANNEL_ICONS[channel as SourceChannel] || '📱'}</div>
                 <div className="connector-name">
                   {CHANNEL_LABELS[channel as SourceChannel] || channel}
-                  {primaryConn.channel === 'facebook' && primaryConn.config?.page_name && (
+                  {primaryConn.channel === 'facebook' && (primaryConn.config as any)?.page_name && (
                     <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>
-                      ({primaryConn.config.page_name})
+                      ({(primaryConn.config as any).page_name})
                     </span>
                   )}
-                  {primaryConn.channel === 'instagram' && primaryConn.config?.username && (
+                  {primaryConn.channel === 'instagram' && (primaryConn.config as any)?.username && (
                     <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>
-                      (@{primaryConn.config.username})
+                      (@{(primaryConn.config as any).username})
                     </span>
                   )}
                 </div>
@@ -467,14 +467,14 @@ export default function Connectors() {
                   >
                     <td style={{ padding: '12px 20px', fontSize: 13 }}>
                       {CHANNEL_ICONS[c.channel]} {CHANNEL_LABELS[c.channel]}
-                      {c.channel === 'facebook' && c.config?.page_name && (
+                      {c.channel === 'facebook' && (c.config as any)?.page_name && (
                         <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>
-                          ({c.config.page_name})
+                          ({(c.config as any).page_name})
                         </span>
                       )}
-                      {c.channel === 'instagram' && c.config?.username && (
+                      {c.channel === 'instagram' && (c.config as any)?.username && (
                         <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>
-                          (@{c.config.username})
+                          (@{(c.config as any).username})
                         </span>
                       )}
                     </td>
