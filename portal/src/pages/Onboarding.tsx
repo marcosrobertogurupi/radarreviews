@@ -15,7 +15,7 @@ const PLANS = [
   {
     id: 'basico',
     label: 'Básico',
-    price: 'R$ 99/mês',
+    price: 'R$ 139/mês',
     max_channels: 3,
     features: ['3 canais monitorados', '500 reviews/mês', 'Alertas por e-mail', 'Relatórios semanais'],
     color: '#06b6d4',
