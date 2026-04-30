@@ -939,11 +939,11 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
 
 async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   try {
-    const { data: { user } } = await supabase.auth.getUser(req.headers.authorization?.split(' ')[1] || '')
+    const { data: { user } } = await supabaseAdmin.auth.getUser(req.headers.authorization?.split(' ')[1] || '')
     if (!user) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
 
-    const body = await getBody(req)
-    const { number, text, tenantId } = JSON.parse(body)
+    const body = await readBody(req)
+    const { number, text, tenantId } = body as { number: string; text: string; tenantId: string }
 
     if (!number || !text || !tenantId) {
       res.writeHead(400).end(JSON.stringify({ error: 'Número, texto e tenantId são obrigatórios' }))
@@ -951,7 +951,7 @@ async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerRes
     }
 
     // 1. Buscar config do tenant
-    const { data: tenant, error: tErr } = await supabase
+    const { data: tenant, error: tErr } = await supabaseAdmin
       .from('tenants')
       .select('whatsapp_token_enc, whatsapp_base_url, whatsapp_limit_monthly, whatsapp_sent_this_month')
       .eq('id', tenantId)
@@ -982,14 +982,14 @@ async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerRes
 
     if (result.success) {
       // 5. Incrementar contador
-      await supabase.rpc('increment_whatsapp_sent', { t_id: tenantId })
+      await supabaseAdmin.rpc('increment_whatsapp_sent', { t_id: tenantId })
       res.writeHead(200).end(JSON.stringify({ ok: true, messageId: result.messageId }))
     } else {
       res.writeHead(500).end(JSON.stringify({ error: result.error }))
     }
 
   } catch (err) {
-    logger.error('[api-whatsapp] Erro:', err)
+    console.error('[api-whatsapp] Erro:', err)
     res.writeHead(500).end(JSON.stringify({ error: 'Erro interno ao enviar WhatsApp' }))
   }
 }
@@ -999,8 +999,8 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
     const auth = await getAuthUser(req.headers.authorization)
     if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
 
-    const body = await getBody(req)
-    const { tenantId, monthYear } = JSON.parse(body)
+    const body = await readBody(req)
+    const { tenantId, monthYear } = body as { tenantId: string; monthYear: string }
 
     if (!tenantId || !monthYear) {
       res.writeHead(400).end(JSON.stringify({ error: 'tenantId e monthYear são obrigatórios' }))
@@ -1289,18 +1289,20 @@ const server = http.createServer((req, res) => {
   }
 
   if (url.startsWith('/static/')) {
-    const fileName = url.split('/static/')[1]
+    const fileName = url.split('/static/')[1] ?? ''
     const __dirname = path.dirname(fileURLToPath(import.meta.url))
     const filePath = path.join(__dirname, 'static', fileName)
-    try {
-      const content = await fs.readFile(filePath)
-      const ext = path.extname(fileName)
-      const contentType = ext === '.js' ? 'application/javascript' : 'text/plain'
-      res.writeHead(200, { 'Content-Type': contentType, 'Access-Control-Allow-Origin': '*' })
-      res.end(content)
-    } catch {
-      res.writeHead(404); res.end('Not found')
-    }
+    ;(async () => {
+      try {
+        const content = await fs.readFile(filePath)
+        const ext = path.extname(fileName)
+        const contentType = ext === '.js' ? 'application/javascript' : 'text/plain'
+        res.writeHead(200, { 'Content-Type': contentType, 'Access-Control-Allow-Origin': '*' })
+        res.end(content)
+      } catch {
+        res.writeHead(404); res.end('Not found')
+      }
+    })()
     return
   }
 

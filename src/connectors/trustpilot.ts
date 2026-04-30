@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { supabase } from '../lib/supabase.js'
 import { ingestReviews } from '../lib/ingest.js'
 import { fetchTrustpilotReviews } from '../lib/apify.js'
+import { logger } from '../lib/logger.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 

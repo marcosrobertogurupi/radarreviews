@@ -28,6 +28,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { z } from 'zod'
 import { ingestReviews } from '../lib/ingest.js'
 import { fetchReclameAquiComplaints } from '../lib/apify.js'
+import { logger } from '../lib/logger.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
