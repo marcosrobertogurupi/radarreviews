@@ -5,5 +5,14 @@
       "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "ALLOW-FROM https://reputei.com.br" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'self' https://reputei.com.br https://*.reputei.com.br" }
+      ]
+    }
   ]
 }
