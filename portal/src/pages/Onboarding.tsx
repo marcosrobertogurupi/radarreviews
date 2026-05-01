@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
 import { supabase } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, API_URL } from '../lib/utils'
 import type { SourceChannel } from '../lib/supabase'
