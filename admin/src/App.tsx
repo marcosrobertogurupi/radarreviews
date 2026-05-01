@@ -40,25 +40,67 @@ const NAV = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loadingSession, setLoadingSession] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [page, setPage] = useState<Page>('dashboard')
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState('')
 
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setLoadingSession(false)
+    async function validateProfile(session: Session) {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('perfil, ativo')
+        .eq('id', session.user.id)
+        .single()
+
+      if (error || !data) {
+        await supabase.auth.signOut()
+        setAuthError('Erro ao validar perfil de acesso.')
+        return false
+      }
+
+      if (!data.ativo) {
+        await supabase.auth.signOut()
+        setAuthError('Esta conta está desativada.')
+        return false
+      }
+
+      if (!['admin', 'operador'].includes(data.perfil)) {
+        await supabase.auth.signOut()
+        setAuthError('Você não tem permissão de acesso.')
+        return false
+      }
+
+      setAuthError(null)
+      return true
+    }
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        loadTenants()
+        const isValid = await validateProfile(session)
+        if (isValid) {
+          setSession(session)
+          loadTenants()
+        }
+      }
+      setLoadingSession(false)
+    })
+
+    const authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        const isValid = await validateProfile(session)
+        if (isValid) {
+          setSession(session)
+          loadTenants()
+        } else {
+          setSession(null)
+        }
+      } else {
+        setSession(null)
       }
     })
 
-    const authSub = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session) {
-        loadTenants()
-      }
-    })
 
     async function loadTenants() {
       const { data } = await supabase.from('tenants').select('id, name').order('name')
@@ -97,8 +139,9 @@ export default function App() {
   }
 
   if (!session) {
-    return <Login />
+    return <Login externalError={authError} />
   }
+
 
   const filterProps = { tenants, selectedTenantId, onTenantChange: setSelectedTenantId }
 

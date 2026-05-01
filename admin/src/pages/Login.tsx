@@ -1,69 +1,38 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function Login() {
+interface LoginProps {
+  externalError?: string | null
+}
+
+export default function Login({ externalError }: LoginProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
+
+  const error = externalError || localError
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setError(null)
+    setLocalError(null)
 
-    const { data: { session: authSession }, error: authError } = await supabase.auth.signInWithPassword({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
     if (authError) {
-      setError('Credenciais inválidas. Verifique seu e-mail e senha.')
+      setLocalError('Credenciais inválidas. Verifique seu e-mail e senha.')
       setLoading(false)
       return
     }
-
-    if (authSession?.user) {
-      // Verificar perfil na tabela public.usuarios
-      const { data: userData, error: profileError } = await supabase
-        .from('usuarios')
-        .select('perfil, ativo')
-        .eq('id', authSession.user.id)
-        .single()
-
-      if (profileError || !userData) {
-        await supabase.auth.signOut()
-        setError('Erro ao validar perfil de acesso.')
-        setLoading(false)
-        return
-      }
-
-      if (!userData.ativo) {
-        await supabase.auth.signOut()
-        setError('Esta conta está desativada. Entre em contato com o suporte.')
-        setLoading(false)
-        return
-      }
-
-      if (!['admin', 'operador'].includes(userData.perfil)) {
-        await supabase.auth.signOut()
-        setError('Você não tem permissão para acessar o painel administrativo.')
-        setLoading(false)
-        return
-      }
-      
-      // Registrar login bem sucedido no backend (Auditoria)
-      try {
-        await fetch(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        })
-      } catch (e) {
-        console.warn('Falha ao registrar log de login:', e)
-      }
-    }
+    
+    // O App.tsx via onAuthStateChange cuidará de validar o perfil
+    // e redirecionar ou mostrar erro se necessário.
   }
+
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main)' }}>
