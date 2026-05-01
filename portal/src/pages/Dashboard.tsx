@@ -12,7 +12,8 @@ import {
 import { MessageSquare, Bell, TrendingDown, Star, AlertTriangle, FileText } from 'lucide-react'
 
 interface KPI {
-  total: number
+  total: number       // últimos 30 dias
+  total_all: number   // todo o histórico
   negative_rate: number
   critical_count: number
   avg_rating: number
@@ -69,15 +70,17 @@ export default function Dashboard({ tenantId }: Props) {
     const reviews = rvRes.data ?? []
 
     // KPIs com contagem nativa para evitar limites de fetch
-    const [totalRes, negCritRes, critRes] = await Promise.all([
+    const [totalRes, negCritRes, critRes, totalAllRes] = await Promise.all([
       supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30),
       supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
       supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).eq('sentiment', 'critical'),
+      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
     ])
 
-    const total = totalRes.count ?? 0
+    const total    = totalRes.count    ?? 0
+    const totalAll = totalAllRes.count ?? 0
     const negCritCount = negCritRes.count ?? 0
-    const critCount = critRes.count ?? 0
+    const critCount    = critRes.count    ?? 0
 
     // Para média e score, ainda buscamos uma amostra
     const { data: metricsData } = await supabase
@@ -94,6 +97,7 @@ export default function Dashboard({ tenantId }: Props) {
 
     setKpi({
       total,
+      total_all: totalAll,
       negative_rate: total ? Math.round((negCritCount / total) * 100) : 0,
       critical_count: critCount,
       avg_rating: avgRating,
@@ -186,8 +190,12 @@ export default function Dashboard({ tenantId }: Props) {
       <div className="kpi-grid">
         <div className="card kpi-card" style={{ '--kpi-color': '#6366f1', '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as React.CSSProperties}>
           <div className="kpi-label">Reviews Coletados</div>
-          <div className="kpi-value">{kpi?.total ?? 0}</div>
-          <div className="kpi-sub"><MessageSquare size={12} /> últimos 30 dias</div>
+          <div className="kpi-value">{kpi?.total_all ?? 0}</div>
+          <div className="kpi-sub" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <MessageSquare size={12} /> últimos 30 dias: <strong style={{ color: 'var(--text-primary)' }}>{kpi?.total ?? 0}</strong>
+            </span>
+          </div>
           <div className="kpi-icon"><MessageSquare size={18} color="#a5b4fc" /></div>
         </div>
 
