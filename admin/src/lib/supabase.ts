@@ -96,7 +96,7 @@ export interface Connector {
   id: string
   business_id: string
   channel: SourceChannel
-  status: 'active' | 'paused' | 'error' | 'pending'
+  status: 'active' | 'paused' | 'error' | 'pending' | 'pending_config'
   external_id?: string
   last_sync_at?: string
   next_sync_at?: string

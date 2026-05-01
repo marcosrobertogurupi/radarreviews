@@ -204,6 +204,51 @@ ${critSummaries}
 - Se perguntarem sobre recursos do sistema, explique brevemente e redirecione para ações práticas`
 }
 
+// ── Notificação admin: novo assinante com canais pendentes ───────
+
+const CHANNEL_CONFIG_HINT: Record<string, string> = {
+  google_maps:    'Google Maps — informe o Place ID (ChIJ...)',
+  tripadvisor:    'TripAdvisor — informe o url_path (/Restaurant_Reviews-...)',
+  trustpilot:     'Trustpilot — informe o slug da empresa',
+  reclame_aqui:   'Reclame Aqui — informe o slug da empresa',
+  consumidor_gov: 'Consumidor.gov — informe a URL do CSV',
+}
+
+async function notifyAdminNewSubscriber(data: {
+  businessName: string
+  email: string
+  plan: string
+  pendingChannels: string[]
+}): Promise<void> {
+  const adminPhone  = process.env['ADMIN_PHONE']
+  const uazapiToken = process.env['UAZAPI_TOKEN']
+
+  if (!adminPhone || !uazapiToken) {
+    console.log('[admin-notify] ADMIN_PHONE ou UAZAPI_TOKEN não configurados — notificação WhatsApp pulada.')
+    return
+  }
+
+  const channelList = data.pendingChannels
+    .map(ch => `• ${CHANNEL_CONFIG_HINT[ch] ?? ch}`)
+    .join('\n')
+
+  const message =
+    `🔔 *Novo assinante cadastrado!*\n\n` +
+    `🏢 Empresa: *${data.businessName}*\n` +
+    `📧 E-mail: ${data.email}\n` +
+    `💼 Plano: ${data.plan}\n\n` +
+    `⚠️ *${data.pendingChannels.length} canal(is) aguardando configuração:*\n` +
+    `${channelList}\n\n` +
+    `Acesse o painel admin → Conectores para configurar.`
+
+  const result = await sendWhatsAppMessage({ token: uazapiToken, number: adminPhone, text: message })
+  if (result.success) {
+    console.log(`[admin-notify] Notificação enviada para ${adminPhone}`)
+  } else {
+    console.warn('[admin-notify] Falha ao enviar WhatsApp:', result.error)
+  }
+}
+
 // ── Onboarding — cria tenant + usuário ───────────────────────────
 
 function slugify(name: string): string {
@@ -301,6 +346,11 @@ async function handleOnboarding(
       const connectors = await Promise.all(channels.map(async (ch) => {
         const connData: any = { business_id: biz.id, channel: ch, status: 'active' }
         
+        // Google Maps sempre precisa de place_id configurado pelo admin
+        if (ch === 'google_maps') {
+          connData.status = 'pending_config'
+        }
+
         // Configuração Inteligente para Instagram
         if (ch === 'instagram') {
           connData.external_id = body.instagramUsername?.replace('@', '') || businessName.trim();
@@ -347,6 +397,19 @@ async function handleOnboarding(
       }))
 
       await supabaseAdmin.from('channel_connectors').insert(connectors)
+
+      const pendingChannels = connectors
+        .filter(c => c.status === 'pending_config')
+        .map(c => c.channel as string)
+
+      if (pendingChannels.length > 0) {
+        notifyAdminNewSubscriber({
+          businessName: businessName.trim(),
+          email: email.trim(),
+          plan,
+          pendingChannels,
+        }).catch(e => console.error('[onboarding] Falha ao notificar admin:', e))
+      }
     }
 
     // 6. Criar Assinatura no Asaas (Trial 7 dias)

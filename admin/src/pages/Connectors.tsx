@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
-import { Trash2, AlertTriangle, Activity } from 'lucide-react'
+import { Trash2, AlertTriangle, Activity, Settings } from 'lucide-react'
 import { MetaConnectButton } from '../components/MetaConnectButton'
 
 // ──────────────────────────────────────────────────────────────
@@ -10,17 +10,19 @@ import { MetaConnectButton } from '../components/MetaConnectButton'
 // ──────────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<string, string> = {
-  active: 'Ativo',
-  paused: 'Pausado',
-  error:  'Erro',
-  pending: 'Aguardando',
+  active:         'Ativo',
+  paused:         'Pausado',
+  error:          'Erro',
+  pending:        'Aguardando',
+  pending_config: 'Config. Pendente',
 }
 
 const STATUS_DOT: Record<string, string> = {
-  active:  '🟢',
-  paused:  '⚫',
-  error:   '🔴',
-  pending: '🟡',
+  active:         '🟢',
+  paused:         '⚫',
+  error:          '🔴',
+  pending:        '🟡',
+  pending_config: '🟠',
 }
 
 // Todos os 8 canais suportados pelo sistema
@@ -312,6 +314,51 @@ export default function Connectors() {
         </div>
         <button className="btn" onClick={() => setShowCreateModal(true)}>+ Novo Conector</button>
       </div>
+
+      {/* ── Banner: conectores aguardando configuração ────────── */}
+      {(() => {
+        const pending = connectors.filter(c => c.status === 'pending_config')
+        if (pending.length === 0) return null
+        return (
+          <div style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 10,
+            padding: '14px 18px',
+            marginBottom: 24,
+            display: 'flex',
+            gap: 14,
+            alignItems: 'flex-start',
+          }}>
+            <AlertTriangle size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#fbbf24', marginBottom: 8 }}>
+                {pending.length} conector{pending.length > 1 ? 'es precisam' : ' precisa'} de configuração manual
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pending.map(c => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'rgba(245,158,11,0.06)', borderRadius: 6, padding: '6px 10px' }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                      <span style={{ marginRight: 6 }}>{CHANNEL_ICONS[c.channel as SourceChannel]}</span>
+                      <strong>{CHANNEL_LABELS[c.channel as SourceChannel] || c.channel}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 8 }}>
+                        {businesses[c.business_id] || '—'}
+                      </span>
+                    </div>
+                    <button
+                      className="btn"
+                      style={{ padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)', flexShrink: 0 }}
+                      onClick={() => setSelected(c)}
+                    >
+                      <Settings size={12} /> Configurar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Cards de status por canal ─────────────────────────── */}
       {loading ? (
