@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_B8iBbZ0AfSgbTtEcYbkXUpFiT3Wv",
+  "orgId": "team_yBslq8q715fa5J8E1TIERl7r",
+  "projectName": "reputei-website",
+  "settings": {
+    "createdAt": 1776173290721,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

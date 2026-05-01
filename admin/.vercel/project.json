@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_kfgjAj4OooAT0uadniAfQOZrr1ht",
+  "orgId": "team_yBslq8q715fa5J8E1TIERl7r",
+  "projectName": "reputei-admin",
+  "settings": {
+    "createdAt": 1776173401351,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist",
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
