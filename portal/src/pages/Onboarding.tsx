@@ -63,6 +63,11 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   const [plans, setPlans] = useState<PlanData[]>([])
   const [plansLoading, setPlansLoading] = useState(true)
   const [channels,  setChannels] = useState<SourceChannel[]>([])
+  
+  // Carousel e Custom Plan
+  const [carouselIdx, setCarouselIdx] = useState(0)
+  const [customCh, setCustomCh] = useState(3)
+
 
   
   // Configurações específicas por canal
@@ -73,6 +78,20 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   // ── Helpers ──────────────────────────────────────────────────
 
   const planConfig = plans.find(p => p.slug === selectedPlan) || plans[0] || { color: '#6b7280', name: 'Carregando...', max_channels: 3 }
+  
+  // Preço dinâmico para o Custom
+  const getPlanPrice = (plan: PlanData) => {
+    if (plan.slug === 'custom') {
+      return 149 + (customCh - 3) * 49
+    }
+    return plan.price_monthly
+  }
+
+  const getPlanMaxChannels = (plan: PlanData) => {
+    if (plan.slug === 'custom') return customCh
+    return plan.max_channels
+  }
+
 
 
   useEffect(() => {
@@ -101,8 +120,10 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   function toggleChannel(ch: SourceChannel) {
     setChannels(prev => {
       if (prev.includes(ch)) return prev.filter(c => c !== ch)
-      if (planConfig && prev.length >= planConfig.max_channels) return prev // limite do plano
+      const max = getPlanMaxChannels(planConfig as PlanData)
+      if (planConfig && prev.length >= max) return prev // limite do plano
       return [...prev, ch]
+
 
     })
   }
@@ -151,6 +172,15 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
     submit()
   }
 
+  function nextCarousel() {
+    if (carouselIdx < plans.length - 2) setCarouselIdx(v => v + 1)
+  }
+
+  function prevCarousel() {
+    if (carouselIdx > 0) setCarouselIdx(v => v - 1)
+  }
+
+
   // ── Submit ───────────────────────────────────────────────────
 
   async function submit() {
@@ -166,7 +196,9 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
           password,
           businessName: bizName.trim(),
           plan: selectedPlan,
+          ...(selectedPlan === 'custom' ? { customChannels: customCh } : {}),
           ...(category ? { category } : {}),
+
           ...(cnpj ? { cnpj } : {}),
           channels,
           instagramUsername: igUser,
@@ -359,41 +391,89 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                   ))}
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  {plans.map(plan => {
-                    const active = selectedPlan === plan.slug
-                    return (
-                      <button
-                        key={plan.id}
-                        type="button"
-                        onClick={() => { setSelectedPlan(plan.slug); setChannels([]) }}
-                        style={{
-                          border: `2px solid ${active ? plan.color : 'var(--border)'}`,
-                          borderRadius: 12, padding: '16px 14px', background: active ? `rgba(100,100,255,0.08)` : 'var(--bg-darker)',
-                          cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
-                        }}
-                      >
-                        {plan.is_popular && (
-                          <div style={{ position: 'absolute', top: -10, right: 12, background: plan.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                            Mais popular
+                <div style={{ position: 'relative' }}>
+                  <div style={{ overflow: 'hidden', margin: '0 -4px' }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      transform: `translateX(-${carouselIdx * 50}%)`,
+                    }}>
+                      {plans.map((plan, idx) => {
+                        const active = selectedPlan === plan.slug
+                        return (
+                          <div key={plan.id} style={{ minWidth: '50%', padding: '0 4px', boxSizing: 'border-box' }}>
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedPlan(plan.slug); setChannels([]) }}
+                              style={{
+                                width: '100%',
+                                border: `2px solid ${active ? plan.color : 'var(--border)'}`,
+                                borderRadius: 12, padding: '16px 14px', background: active ? `rgba(100,100,255,0.08)` : 'var(--bg-darker)',
+                                cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
+                                height: '100%', display: 'flex', flexDirection: 'column'
+                              }}
+                            >
+                              {plan.is_popular && (
+                                <div style={{ position: 'absolute', top: -10, right: 12, background: plan.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                                  Mais popular
+                                </div>
+                              )}
+                              <div style={{ fontSize: 14, fontWeight: 700, color: active ? plan.color : 'var(--text-primary)', marginBottom: 2 }}>{plan.name}</div>
+                              <div style={{ fontSize: 17, fontWeight: 800, color: active ? plan.color : 'var(--text-primary)', marginBottom: 8 }}>
+                                R$ {getPlanPrice(plan)}/mês
+                              </div>
+
+                              {/* Slider para Plano Custom */}
+                              {plan.slug === 'custom' && (
+                                <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>Canais: <strong>{customCh}</strong></span>
+                                    <span>Base + {(customCh-3)}x R$49</span>
+                                  </div>
+                                  <input 
+                                    type="range" min={3} max={10} value={customCh} 
+                                    onChange={e => setCustomCh(Number(e.target.value))}
+                                    style={{ width: '100%', accentColor: plan.color, cursor: 'pointer' }}
+                                  />
+                                </div>
+                              )}
+
+                              <ul style={{ margin: 0, padding: 0, listStyle: 'none', flex: 1 }}>
+                                {plan.benefits.map(f => (
+                                  <li key={f} style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 4 }}>
+                                    <Check size={10} color={plan.color} style={{ marginTop: 2, flexShrink: 0 }} />{f}
+                                  </li>
+                                ))}
+                              </ul>
+                              {active && (
+                                <div style={{ marginTop: 10, fontSize: 11, color: plan.color, fontWeight: 600 }}>✓ Selecionado</div>
+                              )}
+                            </button>
                           </div>
-                        )}
-                        <div style={{ fontSize: 15, fontWeight: 700, color: active ? plan.color : 'var(--text-primary)', marginBottom: 2 }}>{plan.name}</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: active ? plan.color : 'var(--text-primary)', marginBottom: 8 }}>R$ {plan.price_monthly}/mês</div>
-                        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                          {plan.benefits.map(f => (
-                            <li key={f} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 4 }}>
-                              <Check size={11} color={plan.color} style={{ marginTop: 2, flexShrink: 0 }} />{f}
-                            </li>
-                          ))}
-                        </ul>
-                        {active && (
-                          <div style={{ marginTop: 10, fontSize: 11, color: plan.color, fontWeight: 600 }}>✓ Selecionado</div>
-                        )}
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Controles do Carrossel */}
+                  {plans.length > 2 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+                      <button 
+                        type="button" onClick={prevCarousel} disabled={carouselIdx === 0}
+                        style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: carouselIdx === 0 ? 0.3 : 1 }}
+                      >
+                        <ChevronLeft size={16} />
                       </button>
-                    )
-                  })}
+                      <button 
+                        type="button" onClick={nextCarousel} disabled={carouselIdx >= plans.length - 2}
+                        style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: carouselIdx >= plans.length - 2 ? 0.3 : 1 }}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
+
               )}
 
             </div>
@@ -406,7 +486,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 Canais para monitorar
               </h2>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Plano <strong style={{ color: planConfig?.color }}>{planConfig?.name}</strong> · {planConfig?.max_channels} {planConfig?.max_channels !== 1 ? 'canais' : 'canal'} {planConfig?.max_channels !== 1 ? 'disponíveis' : 'disponível'}
+                Plano <strong style={{ color: planConfig?.color }}>{planConfig?.name}</strong> · {getPlanMaxChannels(planConfig as PlanData)} {getPlanMaxChannels(planConfig as PlanData) !== 1 ? 'canais' : 'canal'} {getPlanMaxChannels(planConfig as PlanData) !== 1 ? 'disponíveis' : 'disponível'}
+
 
               </p>
               {channels.length >= planConfig.max_channels && (
@@ -417,7 +498,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
               <div className="channel-grid">
                 {ALL_CHANNELS.map(ch => {
                     const selected = channels.includes(ch)
-                    const atLimit = !selected && channels.length >= (planConfig?.max_channels || 0)
+                    const max = getPlanMaxChannels(planConfig as PlanData)
+                    const atLimit = !selected && channels.length >= (max || 0)
                     return (
                       <button
                         key={ch}
@@ -425,8 +507,9 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                         className={`channel-card ${selected ? 'selected' : ''}`}
                         onClick={() => toggleChannel(ch)}
                         style={{ opacity: atLimit ? 0.4 : 1, cursor: atLimit ? 'not-allowed' : 'pointer' }}
-                        title={atLimit ? `Limite de ${planConfig?.max_channels} canais do plano ${planConfig?.name}` : undefined}
+                        title={atLimit ? `Limite de ${max} canais do plano ${planConfig?.name}` : undefined}
                       >
+
 
                       <span className="channel-card-icon">{CHANNEL_ICONS[ch]}</span>
                       <span className="channel-card-label">{CHANNEL_LABELS[ch]}</span>
@@ -440,7 +523,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 })}
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                {channels.length} de {planConfig?.max_channels} {planConfig?.max_channels !== 1 ? 'canais' : 'canal'} selecionado{channels.length !== 1 ? 's' : ''}
+                {channels.length} de {getPlanMaxChannels(planConfig as PlanData)} {getPlanMaxChannels(planConfig as PlanData) !== 1 ? 'canais' : 'canal'} selecionado{channels.length !== 1 ? 's' : ''}
+
 
               </p>
 
