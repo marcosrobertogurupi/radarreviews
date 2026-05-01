@@ -23,6 +23,7 @@ import { createAsaasCustomer, createAsaasSubscription } from '../lib/asaas.js'
 import { askClaude } from '../services/ai/claude.js'
 import { sendDirectResponse } from '../services/ai/responder.js'
 import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
+import { notifyAdminChannels } from '../lib/notify.js'
 import { decrypt, encrypt } from '../lib/crypto.js'
 import { processMonthlyReport } from '../services/reports/pdf-generator.js'
 import { handleWidgetRequest } from './widget.js'
@@ -204,50 +205,7 @@ ${critSummaries}
 - Se perguntarem sobre recursos do sistema, explique brevemente e redirecione para ações práticas`
 }
 
-// ── Notificação admin: novo assinante com canais pendentes ───────
-
-const CHANNEL_CONFIG_HINT: Record<string, string> = {
-  google_maps:    'Google Maps — informe o Place ID (ChIJ...)',
-  tripadvisor:    'TripAdvisor — informe o url_path (/Restaurant_Reviews-...)',
-  trustpilot:     'Trustpilot — informe o slug da empresa',
-  reclame_aqui:   'Reclame Aqui — informe o slug da empresa',
-  consumidor_gov: 'Consumidor.gov — informe a URL do CSV',
-}
-
-async function notifyAdminNewSubscriber(data: {
-  businessName: string
-  email: string
-  plan: string
-  pendingChannels: string[]
-}): Promise<void> {
-  const adminPhone  = process.env['ADMIN_PHONE']
-  const uazapiToken = process.env['UAZAPI_TOKEN']
-
-  if (!adminPhone || !uazapiToken) {
-    console.log('[admin-notify] ADMIN_PHONE ou UAZAPI_TOKEN não configurados — notificação WhatsApp pulada.')
-    return
-  }
-
-  const channelList = data.pendingChannels
-    .map(ch => `• ${CHANNEL_CONFIG_HINT[ch] ?? ch}`)
-    .join('\n')
-
-  const message =
-    `🔔 *Novo assinante cadastrado!*\n\n` +
-    `🏢 Empresa: *${data.businessName}*\n` +
-    `📧 E-mail: ${data.email}\n` +
-    `💼 Plano: ${data.plan}\n\n` +
-    `⚠️ *${data.pendingChannels.length} canal(is) aguardando configuração:*\n` +
-    `${channelList}\n\n` +
-    `Acesse o painel admin → Conectores para configurar.`
-
-  const result = await sendWhatsAppMessage({ token: uazapiToken, number: adminPhone, text: message })
-  if (result.success) {
-    console.log(`[admin-notify] Notificação enviada para ${adminPhone}`)
-  } else {
-    console.warn('[admin-notify] Falha ao enviar WhatsApp:', result.error)
-  }
-}
+// ── Notificação admin: ver src/lib/notify.ts ─────────────────────
 
 // ── Onboarding — cria tenant + usuário ───────────────────────────
 
@@ -398,17 +356,19 @@ async function handleOnboarding(
 
       await supabaseAdmin.from('channel_connectors').insert(connectors)
 
-      const pendingChannels = connectors
-        .filter(c => c.status === 'pending_config')
+      // Canais que sempre exigem verificação do admin
+      const ALWAYS_NOTIFY = ['google_maps', 'tripadvisor']
+      const channelsToNotify = connectors
         .map(c => c.channel as string)
+        .filter(ch => ALWAYS_NOTIFY.includes(ch) || connectors.find(c => c.channel === ch)?.status === 'pending_config')
 
-      if (pendingChannels.length > 0) {
-        notifyAdminNewSubscriber({
+      if (channelsToNotify.length > 0) {
+        notifyAdminChannels({
           businessName: businessName.trim(),
           email: email.trim(),
           plan,
-          pendingChannels,
-        }).catch(e => console.error('[onboarding] Falha ao notificar admin:', e))
+          channels: channelsToNotify,
+        }).catch((e: unknown) => console.error('[onboarding] Falha ao notificar admin:', e))
       }
     }
 

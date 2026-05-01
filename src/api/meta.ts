@@ -2,6 +2,7 @@ import http from 'node:http'
 import { createClient } from '@supabase/supabase-js'
 import { encrypt } from '../lib/crypto.js'
 import { processMetaWebhookEvent } from '../services/meta/webhook-processor.js'
+import { notifyAdminChannels } from '../lib/notify.js'
 
 const supabaseAdmin = createClient(
   process.env['SUPABASE_URL']!,
@@ -135,6 +136,16 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
 
     // PASSO 6: Subscrever Webhook na página
     await subscribePageToWebhook(mainPage.id, mainPage.access_token)
+
+    // PASSO 7: Notificar admin para verificar conexão
+    const connectedChannels = ['facebook', ...(igAccount ? ['instagram'] : [])]
+    const { data: bizData } = await supabaseAdmin
+      .from('monitored_businesses').select('name').eq('id', business_id).single()
+    notifyAdminChannels({
+      businessName: bizData?.name ?? business_id,
+      channels: connectedChannels,
+      title: '🔗 *Assinante conectou conta Meta (OAuth)!*',
+    }).catch((e: unknown) => console.error('[meta-notify] Falha ao notificar admin:', e))
 
     res.writeHead(302, { 'Location': `${adminUrl}/settings/connectors?success=meta_connected` })
     res.end()
