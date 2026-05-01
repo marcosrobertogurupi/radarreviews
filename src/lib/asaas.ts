@@ -2,12 +2,15 @@ import axios from 'axios';
 import 'dotenv/config';
 
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+if (!ASAAS_API_KEY) {
+  console.warn('[Asaas] ASAAS_API_KEY não configurada. Operações de pagamento irão falhar.');
+}
 const ASAAS_API_URL = process.env.ASAAS_API_URL || 'https://www.asaas.com/api/v3';
 
 const asaas = axios.create({
   baseURL: ASAAS_API_URL,
   headers: {
-    'access_token': ASAAS_API_KEY,
+    'access_token': ASAAS_API_KEY || '',
     'Content-Type': 'application/json'
   }
 });

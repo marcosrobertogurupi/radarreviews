@@ -16,12 +16,14 @@ export async function sendWhatsAppMessage(params: {
     // Formatar número para o padrão internacional (apenas números)
     const formattedNumber = number.replace(/\D/g, '')
 
-    const url = `${baseUrl}/send/text`
+    const url = `${baseUrl}/message/text`
     
     const body = {
-      phone: formattedNumber,
-      message: text,
+      number: formattedNumber,
+      text: text,
     }
+
+    console.log(`[uazapi] Enviando para ${url} (número: ${formattedNumber})`)
 
     const response = await axios.post(url, body, {
       headers: {

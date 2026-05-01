@@ -11,6 +11,8 @@ export default function Settings() {
   const [email, setEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [profile, setProfile] = useState<string>('')
+  const [tenantId, setTenantId] = useState('')
+  const [hasMeta, setHasMeta] = useState(false)
 
   useEffect(() => {
     loadProfile()
@@ -31,7 +33,34 @@ export default function Settings() {
       setEmail(userData.email)
       setProfile(userData.perfil)
     }
+
+    const { data: tu } = await supabase
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', session.user.id)
+      .single()
+
+    if (tu?.tenant_id) {
+      setTenantId(tu.tenant_id)
+      
+      // Verificar se já tem conector Meta configurado
+      const { data: metaConn } = await supabase
+        .from('channel_connectors')
+        .select('id, config')
+        .eq('business_id', tu.tenant_id) // simplificado para este exemplo
+        .in('channel', ['facebook', 'instagram'])
+        .not('config->access_token', 'is', null)
+        .maybeSingle()
+      
+      if (metaConn) setHasMeta(true)
+    }
+
     setLoading(false)
+  }
+
+  function handleMetaConnect() {
+    const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+    window.location.href = `${apiUrl}/api/auth/meta/connect?tenantId=${tenantId}`
   }
 
   async function handleUpdateProfile(e: React.FormEvent) {
@@ -159,6 +188,43 @@ export default function Settings() {
           </button>
 
         </form>
+
+        <div className="card p-6 mt-8" style={{ background: 'rgba(99,102,241,0.03)', border: '1px solid rgba(99,102,241,0.1)' }}>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+            🔗 Conexões Sociais
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+            Conecte sua conta oficial do Facebook ou Instagram para obter métricas mais precisas e automações avançadas.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'var(--bg-darker)', borderRadius: 12, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 20 }}>
+                f
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>Meta (Facebook & Instagram)</div>
+                <div style={{ fontSize: 12, color: hasMeta ? '#10b981' : 'var(--text-muted)' }}>
+                  {hasMeta ? '● Conectado oficialmente' : '○ Não conectado'}
+                </div>
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={handleMetaConnect}
+              className="btn"
+              style={{ 
+                background: hasMeta ? 'rgba(16,185,129,0.1)' : 'var(--accent)',
+                color: hasMeta ? '#10b981' : 'white',
+                border: hasMeta ? '1px solid rgba(16,185,129,0.2)' : 'none',
+                padding: '8px 16px',
+                fontSize: 13
+              }}
+            >
+              {hasMeta ? 'Reconectar' : 'Conectar Agora'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

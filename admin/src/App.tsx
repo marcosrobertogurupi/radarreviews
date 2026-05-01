@@ -56,7 +56,7 @@ export default function App() {
 
       if (error || !data) {
         console.error('Erro de validação de perfil:', error)
-        await supabase.auth.signOut()
+        // Não deslogar automaticamente aqui para evitar loop infinito de redirects se for erro temporário
         setAuthError(`Erro ao validar perfil: ${error?.message || 'Perfil não encontrado'}`)
         return false
       }
@@ -78,14 +78,30 @@ export default function App() {
       return true
     }
 
+    // Timeout de segurança para evitar tela preta infinita
+    const timeout = setTimeout(() => {
+      setLoadingSession(false)
+    }, 8000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const isValid = await validateProfile(session)
-        if (isValid) {
-          setSession(session)
-          loadTenants()
+      try {
+        if (session) {
+          const isValid = await validateProfile(session)
+          if (isValid) {
+            setSession(session)
+            await loadTenants()
+          }
         }
+      } catch (err) {
+        console.error('Erro fatal no getSession:', err)
+        setAuthError('Erro ao iniciar sessão. Tente recarregar a página.')
+      } finally {
+        clearTimeout(timeout)
+        setLoadingSession(false)
       }
+    }).catch(err => {
+      console.error('Falha na promessa getSession:', err)
+      clearTimeout(timeout)
       setLoadingSession(false)
     })
 
@@ -105,8 +121,13 @@ export default function App() {
 
 
     async function loadTenants() {
-      const { data } = await supabase.from('tenants').select('id, name').order('name')
-      setTenants(data ?? [])
+      try {
+        const { data, error } = await supabase.from('tenants').select('id, name').order('name')
+        if (error) throw error
+        setTenants(data ?? [])
+      } catch (err) {
+        console.error('Erro ao carregar tenants:', err)
+      }
     }
 
     const handleRefresh = () => loadTenants()

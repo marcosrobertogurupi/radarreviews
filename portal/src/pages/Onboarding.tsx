@@ -554,6 +554,9 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                       style={INPUT_STYLE} 
                     />
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Separe hashtags por vírgula.</div>
+                    <div style={{ marginTop: 12, padding: 10, background: 'rgba(99,102,241,0.1)', borderRadius: 8, fontSize: 11, color: '#a5b4fc', border: '1px dashed rgba(99,102,241,0.3)' }}>
+                      💡 <strong>Dica:</strong> Após criar sua conta, você poderá conectar oficialmente via Meta (Facebook/Instagram) nas configurações para obter dados ainda mais precisos.
+                    </div>
                   </div>
                 </div>
               )}

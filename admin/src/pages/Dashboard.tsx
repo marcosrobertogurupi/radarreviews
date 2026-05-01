@@ -127,92 +127,110 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     if (!silent) setLoading(true)
     else setRefreshing(true)
 
-    await Promise.all([
-      loadKPIs(),
-      loadRecentReviews(),
-      loadAlerts(),
-      loadTrend(),
-      loadChannelData(),
-      loadRanking(),
-      loadReputation(),
-      loadTopics(),
-      loadBusinessInfo(),
-      loadSystemNotifications(),
-    ])
-    
-    setLoading(false)
-    setRefreshing(false)
+    try {
+      await Promise.all([
+        loadKPIs(),
+        loadRecentReviews(),
+        loadAlerts(),
+        loadTrend(),
+        loadChannelData(),
+        loadRanking(),
+        loadReputation(),
+        loadTopics(),
+        loadBusinessInfo(),
+        loadSystemNotifications(),
+      ])
+    } catch (err) {
+      console.error('Erro ao carregar dados do dashboard:', err)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
   }
 
   async function loadKPIs() {
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
 
-    // 1. Contagem Total de Reviews (30 dias)
-    let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30)
-    if (selectedTenantId) qTotal = qTotal.eq('tenant_id', selectedTenantId)
-    const { count: totalCount } = await qTotal
+    try {
+      // 1. Contagem Total de Reviews (30 dias)
+      let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30)
+      if (selectedTenantId) qTotal = qTotal.eq('tenant_id', selectedTenantId)
+      const { count: totalCount } = await qTotal
 
-    // 2. Contagem de Negativos/Críticos (30 dias)
-    let qNeg = supabase.from('reviews').select('id', { count: 'exact', head: true })
-      .gte('published_at', since30)
-      .in('sentiment', ['negative', 'critical'])
-    if (selectedTenantId) qNeg = qNeg.eq('tenant_id', selectedTenantId)
-    const { count: negCritCount } = await qNeg
+      // 2. Contagem de Negativos/Críticos (30 dias)
+      let qNeg = supabase.from('reviews').select('id', { count: 'exact', head: true })
+        .gte('published_at', since30)
+        .in('sentiment', ['negative', 'critical'])
+      if (selectedTenantId) qNeg = qNeg.eq('tenant_id', selectedTenantId)
+      const { count: negCritCount } = await qNeg
 
-    // 3. Contagem de Críticos (30 dias)
-    let qCrit = supabase.from('reviews').select('id', { count: 'exact', head: true })
-      .gte('published_at', since30)
-      .eq('sentiment', 'critical')
-    if (selectedTenantId) qCrit = qCrit.eq('tenant_id', selectedTenantId)
-    const { count: critCount } = await qCrit
+      // 3. Contagem de Críticos (30 dias)
+      let qCrit = supabase.from('reviews').select('id', { count: 'exact', head: true })
+        .gte('published_at', since30)
+        .eq('sentiment', 'critical')
+      if (selectedTenantId) qCrit = qCrit.eq('tenant_id', selectedTenantId)
+      const { count: critCount } = await qCrit
 
-    // 4. Score Médio (30 dias)
-    let qScore = supabase.from('reviews').select('dissatisfaction_score')
-      .gte('published_at', since30)
-      .not('dissatisfaction_score', 'is', null)
-    if (selectedTenantId) qScore = qScore.eq('tenant_id', selectedTenantId)
-    const { data: scoresData } = await qScore.limit(1000)
-    const scores = (scoresData || []).map(r => r.dissatisfaction_score as number)
-    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+      // 4. Score Médio (30 dias)
+      let qScore = supabase.from('reviews').select('dissatisfaction_score')
+        .gte('published_at', since30)
+        .not('dissatisfaction_score', 'is', null)
+      if (selectedTenantId) qScore = qScore.eq('tenant_id', selectedTenantId)
+      const { data: scoresData } = await qScore.limit(1000)
+      const scores = (scoresData || []).map(r => r.dissatisfaction_score as number)
+      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
 
-    // 5. Conectores Ativos (Filtrado por tenant)
-    let qConn = supabase.from('channel_connectors').select('id, monitored_businesses!inner(tenant_id)', { count: 'exact', head: true })
-      .eq('status', 'active')
-    if (selectedTenantId) qConn = qConn.eq('monitored_businesses.tenant_id', selectedTenantId)
-    const { count: connCount } = await qConn
+      // 5. Conectores Ativos e Alertas Pendentes (Lógica simplificada para evitar 400)
+      let activeConnectors = 0
+      let pendingAlerts = 0
 
-    // 6. Alertas Pendentes (Filtrado por tenant)
-    let qAlert = supabase.from('alert_events').select('id, monitored_businesses!inner(tenant_id)', { count: 'exact', head: true })
-      .is('resolved_at', null)
-    if (selectedTenantId) qAlert = qAlert.eq('monitored_businesses.tenant_id', selectedTenantId)
-    const { count: alertCount } = await qAlert
+      if (selectedTenantId) {
+        // Buscar IDs das empresas do tenant primeiro
+        const { data: bizIds } = await supabase.from('monitored_businesses').select('id').eq('tenant_id', selectedTenantId)
+        const ids = (bizIds || []).map(b => b.id)
 
-    setKpis({
-      totalReviews: totalCount ?? 0,
-      negativeRate: totalCount ? Math.round(((negCritCount ?? 0) / totalCount) * 100) : 0,
-      criticalCount: critCount ?? 0,
-      activeConnectors: connCount ?? 0,
-      pendingAlerts: alertCount ?? 0,
-      avgScore: avg,
-    })
+        if (ids.length > 0) {
+          const { count: cCount } = await supabase.from('channel_connectors').select('id', { count: 'exact', head: true }).eq('status', 'active').in('business_id', ids)
+          const { count: aCount } = await supabase.from('alert_events').select('id', { count: 'exact', head: true }).is('resolved_at', null).in('business_id', ids)
+          activeConnectors = cCount ?? 0
+          pendingAlerts = aCount ?? 0
+        }
+      } else {
+        const { count: cCount } = await supabase.from('channel_connectors').select('id', { count: 'exact', head: true }).eq('status', 'active')
+        const { count: aCount } = await supabase.from('alert_events').select('id', { count: 'exact', head: true }).is('resolved_at', null)
+        activeConnectors = cCount ?? 0
+        pendingAlerts = aCount ?? 0
+      }
 
-    // 7. Distribuição de sentimento (30 dias)
-    let qDist = supabase.from('reviews').select('sentiment').gte('published_at', since30)
-    if (selectedTenantId) qDist = qDist.eq('tenant_id', selectedTenantId)
-    const { data: distData } = await qDist.limit(1000)
-    
-    const dist: Record<string, number> = {}
-    for (const r of distData ?? []) {
-      dist[r.sentiment] = (dist[r.sentiment] || 0) + 1
+      setKpis({
+        totalReviews: totalCount ?? 0,
+        negativeRate: totalCount ? Math.round(((negCritCount ?? 0) / totalCount) * 100) : 0,
+        criticalCount: critCount ?? 0,
+        activeConnectors,
+        pendingAlerts,
+        avgScore: avg,
+      })
+
+      // 7. Distribuição de sentimento (30 dias)
+      let qDist = supabase.from('reviews').select('sentiment').gte('published_at', since30)
+      if (selectedTenantId) qDist = qDist.eq('tenant_id', selectedTenantId)
+      const { data: distData } = await qDist.limit(1000)
+      
+      const dist: Record<string, number> = {}
+      for (const r of distData ?? []) {
+        dist[r.sentiment] = (dist[r.sentiment] || 0) + 1
+      }
+
+      setSentimentDist(
+        Object.entries(dist).map(([name, value]) => ({
+          name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
+          value,
+          color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
+        }))
+      )
+    } catch (err) {
+      console.error('Erro ao carregar KPIs:', err)
     }
-
-    setSentimentDist(
-      Object.entries(dist).map(([name, value]) => ({
-        name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
-        value,
-        color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
-      }))
-    )
   }
 
   async function loadRecentReviews() {
@@ -324,26 +342,40 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
 
   async function loadTopics() {
-    // Buscar do cache review_topics
-    let q = supabase.from('review_topics')
-      .select('topics')
-      .order('generated_at', { ascending: false })
-      .limit(1)
-    
-    if (selectedTenantId) {
-      // Aqui precisaríamos de um monitored_business_id, mas para o dashboard 
-      // do tenant, pegamos o mais recente do tenant
-      const { data: biz } = await supabase.from('monitored_businesses')
-        .select('id').eq('tenant_id', selectedTenantId).limit(1)
-      if (biz && biz.length > 0) {
-        q = q.eq('business_id', biz[0].id)
+    try {
+      // Buscar do cache review_topics
+      let q = supabase.from('review_topics')
+        .select('topics')
+        .order('generated_at', { ascending: false })
+        .limit(1)
+      
+      if (selectedTenantId) {
+        // Aqui precisaríamos de um monitored_business_id, mas para o dashboard 
+        // do tenant, pegamos o mais recente do tenant
+        const { data: biz } = await supabase.from('monitored_businesses')
+          .select('id').eq('tenant_id', selectedTenantId).limit(1)
+        if (biz && biz.length > 0) {
+          q = q.eq('business_id', biz[biz.length - 1].id)
+        }
       }
-    }
 
-    const { data } = await q
-    if (data && data.length > 0) {
-      setTopics(data[0].topics as TopicData[])
-    } else {
+      const { data, error } = await q
+      if (error) {
+        if (error.code === 'PGRST116' || error.message.includes('not found')) {
+           // Tabela pode não existir ainda
+           setTopics([])
+           return
+        }
+        throw error
+      }
+
+      if (data && data.length > 0) {
+        setTopics(data[0].topics as TopicData[])
+      } else {
+        setTopics([])
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar tópicos (pode ser tabela inexistente):', err)
       setTopics([])
     }
   }

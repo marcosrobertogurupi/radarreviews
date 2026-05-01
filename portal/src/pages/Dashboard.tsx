@@ -191,7 +191,13 @@ export default function Dashboard({ tenantId }: Props) {
         <div className="card kpi-card" style={{ '--kpi-color': '#6366f1', '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as React.CSSProperties}>
           <div className="kpi-label">Reviews nos últimos 30 dias</div>
           <div className="kpi-value">{kpi?.total ?? 0}</div>
-          <div className="kpi-sub"><MessageSquare size={12} /> {kpi?.total_all ?? 0} coletados no histórico</div>
+          <div className="kpi-sub">
+            {kpi?.total_all === 0 ? (
+              <span style={{ color: '#6366f1', fontWeight: 600 }}>✨ Coletando seus primeiros dados...</span>
+            ) : (
+              <><MessageSquare size={12} /> {kpi?.total_all ?? 0} coletados no histórico</>
+            )}
+          </div>
           <div className="kpi-icon"><MessageSquare size={18} color="#a5b4fc" /></div>
         </div>
 
@@ -284,7 +290,14 @@ export default function Dashboard({ tenantId }: Props) {
         <div className="card" style={{ padding: 20 }}>
           <div className="section-title">💬 Reviews Recentes</div>
           {recent.length === 0 ? (
-            <div className="empty-state"><div className="empty-state-icon">💬</div><div className="empty-state-text">Nenhum review ainda</div></div>
+            <div className="empty-state">
+              <div className="empty-state-icon">🛰️</div>
+              <div className="empty-state-text">
+                {kpi?.total_all === 0 
+                  ? 'Seja bem-vindo! Estamos preparando seus conectores para buscar os primeiros reviews.' 
+                  : 'Nenhum review recente encontrado.'}
+              </div>
+            </div>
           ) : (
             <div className="review-list">
               {recent.map(r => (
