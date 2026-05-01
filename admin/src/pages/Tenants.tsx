@@ -273,8 +273,14 @@ export default function Tenants() {
     const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n- Login de acesso do assinante.\n\nEsta ação NÃO PODE SER DESFEITA.`)
     if (!pass) return
 
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return toast('Sessão expirada. Faça login novamente.', 'error')
+
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, { method: 'DELETE' })
+    const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+    })
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }))
       toast('Não foi possível excluir: ' + (err.error ?? resp.statusText), 'error')
