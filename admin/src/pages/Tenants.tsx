@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound } from 'lucide-react'
 import { useToast } from '../components/Toast'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const PLAN_CONFIG: Record<string, { label: string; color: string; max_channels: number }> = {
   trial:      { label: 'Trial',      color: '#6b7280', max_channels: 3  },
@@ -55,6 +56,10 @@ export default function Tenants() {
   const [credentialsTenant, setCredentialsTenant] = useState<Tenant | null>(null)
   const [credentials, setCredentials] = useState({ email: '', password: '' })
   const [savingCreds, setSavingCreds] = useState(false)
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string; message: string; confirmLabel?: string; dangerous?: boolean; onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     loadAll()
@@ -159,54 +164,62 @@ export default function Tenants() {
     }
   }
 
-  async function toggleActive(t: Tenant) {
+  function toggleActive(t: Tenant) {
     const newVal = !(t.is_active ?? true)
-    if (!confirm(`Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de ${t.name}?`)) return
-
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    try {
-      const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: newVal }),
-      })
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return toast('Erro ao alterar status: ' + (err.error ?? resp.statusText), 'error')
-      }
-
-      toast(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`, 'success')
-      setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
-    } catch {
-      toast('Não foi possível conectar à API.', 'error')
-    }
+    setConfirmDialog({
+      title: newVal ? 'Ativar monitoramento' : 'Desativar monitoramento',
+      message: `Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de "${t.name}"?`,
+      confirmLabel: newVal ? 'Ativar' : 'Desativar',
+      dangerous: !newVal,
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+        try {
+          const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: newVal }),
+          })
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }))
+            return toast('Erro ao alterar status: ' + (err.error ?? resp.statusText), 'error')
+          }
+          toast(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`, 'success')
+          setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
+        } catch {
+          toast('Não foi possível conectar à API.', 'error')
+        }
+      },
+    })
   }
 
-  async function extendTrial(t: Tenant) {
+  function extendTrial(t: Tenant) {
     const currentEnd = t.trial_ends_at ? new Date(t.trial_ends_at) : new Date()
     const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-    if (!confirm(`Deseja estender o trial de ${t.name} por +7 dias?\nNova data: ${newEnd.toLocaleDateString()}`)) return
-
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    try {
-      const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trial_ends_at: newEnd.toISOString() }),
-      })
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return toast('Erro ao estender trial: ' + (err.error ?? resp.statusText), 'error')
-      }
-
-      toast('Trial estendido com sucesso!', 'success')
-      loadAll()
-    } catch {
-      toast('Não foi possível conectar à API.', 'error')
-    }
+    setConfirmDialog({
+      title: 'Estender Trial',
+      message: `Deseja estender o trial de "${t.name}" por +7 dias?\nNova data: ${newEnd.toLocaleDateString()}`,
+      confirmLabel: '+7 dias',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+        try {
+          const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trial_ends_at: newEnd.toISOString() }),
+          })
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }))
+            return toast('Erro ao estender trial: ' + (err.error ?? resp.statusText), 'error')
+          }
+          toast('Trial estendido com sucesso!', 'success')
+          loadAll()
+        } catch {
+          toast('Não foi possível conectar à API.', 'error')
+        }
+      },
+    })
   }
 
   async function handleUpdateCredentials(e: React.FormEvent) {
@@ -269,27 +282,36 @@ export default function Tenants() {
     }
   }
 
-  async function handleDelete(t: Tenant) {
-    const pass = confirm(`⚠️ CUIDADO: Deletar Permanentemente?\n\nIsso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\nIsso apagará em cascata:\n- Todas as empresas associadas\n- Todos as Regras e Alertas\n- TODOS OS REVIEWS.\n- Login de acesso do assinante.\n\nEsta ação NÃO PODE SER DESFEITA.`)
-    if (!pass) return
-
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return toast('Sessão expirada. Faça login novamente.', 'error')
-
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${session.access_token}` },
+  function handleDelete(t: Tenant) {
+    setConfirmDialog({
+      title: 'Deletar Permanentemente',
+      message: `Isso irá apagar DEFINITIVAMENTE o assinante "${t.name}".\n\nSerá removido em cascata:\n- Todas as empresas associadas\n- Todas as Regras e Alertas\n- TODOS OS REVIEWS\n- Login de acesso do assinante\n\nEsta ação NÃO PODE SER DESFEITA.`,
+      confirmLabel: 'Deletar Permanentemente',
+      dangerous: true,
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) return toast('Sessão expirada. Faça login novamente.', 'error')
+          const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+          const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session.access_token}` },
+          })
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }))
+            toast('Não foi possível excluir: ' + (err.error ?? resp.statusText), 'error')
+          } else {
+            setTenants(prev => prev.filter(x => x.id !== t.id))
+            setBusinesses(prev => { const n = {...prev}; delete n[t.id]; return n; })
+            window.dispatchEvent(new Event('refresh_data'))
+            toast(`Assinante "${t.name}" removido com sucesso.`, 'success')
+          }
+        } catch {
+          toast('Não foi possível conectar à API.', 'error')
+        }
+      },
     })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      toast('Não foi possível excluir: ' + (err.error ?? resp.statusText), 'error')
-    } else {
-      setTenants(prev => prev.filter(x => x.id !== t.id))
-      setBusinesses(prev => { const n = {...prev}; delete n[t.id]; return n; })
-      window.dispatchEvent(new Event('refresh_data'))
-      toast(`Assinante "${t.name}" removido com sucesso.`, 'success')
-    }
   }
 
   return (
@@ -773,6 +795,17 @@ export default function Tenants() {
             </form>
           </div>
         </div>
+      )}
+
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          dangerous={confirmDialog.dangerous}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
       )}
     </div>
   )
