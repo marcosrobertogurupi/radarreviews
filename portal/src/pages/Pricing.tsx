@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
 import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 
