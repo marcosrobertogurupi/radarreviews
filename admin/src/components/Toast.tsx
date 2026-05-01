@@ -33,7 +33,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ position: 'fixed', top: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
         {toasts.map(t => (
           <div key={t.id} style={{
             background: '#1e1e2e',
@@ -51,7 +51,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           </div>
         ))}
       </div>
-      <style>{`@keyframes slideIn { from { opacity:0; transform: translateX(40px) } to { opacity:1; transform: translateX(0) } }`}</style>
+      <style>{`@keyframes slideIn { from { opacity:0; transform: translateY(-16px) } to { opacity:1; transform: translateY(0) } }`}</style>
     </ToastContext.Provider>
   )
 }

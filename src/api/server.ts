@@ -1175,7 +1175,7 @@ const server = http.createServer((req, res) => {
       return
     }
     if (method === 'OPTIONS') {
-      setCors(req, res)
+      setCors(req, res, 'Content-Type, Authorization')
       res.writeHead(204)
       res.end()
       return
