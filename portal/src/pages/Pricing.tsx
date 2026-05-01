@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info } from 'lucide-react'
+import { API_URL } from '../lib/utils'
+
 
 // ── Tipos ────────────────────────────────────────────────────────
 
@@ -43,15 +45,38 @@ export default function Pricing() {
   const [pix,      setPix]      = useState(false)
   const [customCh, setCustomCh] = useState(3)
   const [modal,    setModal]    = useState<string | null>(null)
+  const [plans,    setPlans]    = useState<any[]>([])
+
+  useEffect(() => {
+    async function loadPlans() {
+      try {
+        const res = await fetch(`${API_URL}/api/plans`)
+        if (res.ok) {
+          const data = await res.json()
+          setPlans(data)
+        }
+      } catch (err) {
+        console.error('Erro ao carregar planos:', err)
+      }
+    }
+    loadPlans()
+  }, [])
+
+
 
   const activePeriod  = PERIOD_OPTIONS.find(p => p.value === period)!
   const totalDiscount = activePeriod.discount + (pix ? PIX_EXTRA : 0)
 
-  // Preços calculados conforme XML
-  const basic    = calcPrice(139, period, pix)
-  const complete = calcPrice(199, period, pix)
+  // Preços calculados conforme API
+  const baseBasico   = plans.find(p => p.slug === 'basico')?.price_monthly ?? 139
+  const baseCompleto = plans.find(p => p.slug === 'completo')?.price_monthly ?? 199
+  const baseEnterprise = plans.find(p => p.slug === 'enterprise')?.price_monthly ?? 1500
+
+  const basic    = calcPrice(baseBasico, period, pix)
+  const complete = calcPrice(baseCompleto, period, pix)
   const customBase = 149 + (customCh - 3) * 49
   const custom   = calcPrice(customBase, period, pix)
+
 
   return (
     <div>
@@ -252,7 +277,8 @@ export default function Pricing() {
           <div className="plan-name">Enterprise</div>
           <div className="plan-price">
             <span className="plan-currency">R$</span>
-            <span className="plan-amount">1.500</span>
+            <span className="plan-amount">{fmt(baseEnterprise)}</span>
+
             <span className="plan-period">+/mês</span>
           </div>
           <div className="plan-subtotal">Desconto por volume disponível</div>

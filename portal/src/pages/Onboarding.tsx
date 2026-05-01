@@ -11,27 +11,17 @@ const ALL_CHANNELS: SourceChannel[] = [
   'reddit', 'facebook', 'instagram', 'reclame_aqui',
 ]
 
-const PLANS = [
-  {
-    id: 'basico',
-    label: 'Básico',
-    price: 'R$ 139/mês',
-    max_channels: 3,
-    features: ['3 canais monitorados', '500 reviews/mês', 'Alertas por e-mail', 'Relatórios semanais'],
-    color: '#06b6d4',
-  },
-  {
-    id: 'completo',
-    label: 'Completo',
-    price: 'R$ 199/mês',
-    max_channels: 8,
-    features: ['8 canais monitorados', 'Reviews ilimitados', 'IA Copilot', 'Alertas avançados (WhatsApp)'],
-    color: '#6366f1',
-    popular: true,
-  },
-]
+interface PlanData {
+  id: string
+  slug: string
+  name: string
+  price_monthly: number
+  max_channels: number
+  color: string
+  is_popular: boolean
+  benefits: string[]
+}
 
-type PlanId = 'basico' | 'completo'
 
 const CATEGORIES = [
   'Hotel / Pousada',
@@ -68,8 +58,11 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   const [category,  setCategory] = useState('')
   const [cnpj,      setCnpj]     = useState('')
 
-  const [selectedPlan, setSelectedPlan] = useState<PlanId>('basico')
+  const [selectedPlan, setSelectedPlan] = useState<string>('basico')
+  const [plans, setPlans] = useState<PlanData[]>([])
+  const [plansLoading, setPlansLoading] = useState(true)
   const [channels,  setChannels] = useState<SourceChannel[]>([])
+
   
   // Configurações específicas por canal
   const [igUser,     setIgUser]     = useState('')
@@ -78,13 +71,37 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
 
   // ── Helpers ──────────────────────────────────────────────────
 
-  const planConfig = PLANS.find(p => p.id === selectedPlan)!
+  const planConfig = plans.find(p => p.slug === selectedPlan) || plans[0]
+
+  useEffect(() => {
+    async function loadPlans() {
+      try {
+        const res = await fetch(`${API_URL}/api/plans`)
+        if (res.ok) {
+          const data = await res.json()
+          setPlans(data)
+          if (data.length > 0) {
+            // Se houver planos, tenta manter o 'basico' como default se ele existir na lista
+            const hasBasico = data.some((p: PlanData) => p.slug === 'basico')
+            if (!hasBasico) setSelectedPlan(data[0].slug)
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao carregar planos:', err)
+      } finally {
+        setPlansLoading(false)
+      }
+    }
+    loadPlans()
+  }, [])
+
 
   function toggleChannel(ch: SourceChannel) {
     setChannels(prev => {
       if (prev.includes(ch)) return prev.filter(c => c !== ch)
-      if (prev.length >= planConfig.max_channels) return prev // limite do plano
+      if (planConfig && prev.length >= planConfig.max_channels) return prev // limite do plano
       return [...prev, ch]
+
     })
   }
 
@@ -333,41 +350,50 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
                 7 dias grátis · sem cartão de crédito · cancele quando quiser
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {PLANS.map(plan => {
-                  const active = selectedPlan === plan.id
-                  return (
-                    <button
-                      key={plan.id}
-                      type="button"
-                      onClick={() => { setSelectedPlan(plan.id as PlanId); setChannels([]) }}
-                      style={{
-                        border: `2px solid ${active ? plan.color : 'var(--border)'}`,
-                        borderRadius: 12, padding: '16px 14px', background: active ? `rgba(${plan.color === '#06b6d4' ? '6,182,212' : '99,102,241'},0.08)` : 'var(--bg-darker)',
-                        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
-                      }}
-                    >
-                      {plan.popular && (
-                        <div style={{ position: 'absolute', top: -10, right: 12, background: plan.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                          Mais popular
-                        </div>
-                      )}
-                      <div style={{ fontSize: 15, fontWeight: 700, color: active ? plan.color : 'var(--text-primary)', marginBottom: 2 }}>{plan.label}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: active ? plan.color : 'var(--text-primary)', marginBottom: 8 }}>{plan.price}</div>
-                      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                        {plan.features.map(f => (
-                          <li key={f} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 4 }}>
-                            <Check size={11} color={plan.color} style={{ marginTop: 2, flexShrink: 0 }} />{f}
-                          </li>
-                        ))}
-                      </ul>
-                      {active && (
-                        <div style={{ marginTop: 10, fontSize: 11, color: plan.color, fontWeight: 600 }}>✓ Selecionado</div>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+              {plansLoading ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {[1, 2].map(i => (
+                    <div key={i} className="animate-pulse" style={{ height: 160, background: 'var(--bg-darker)', borderRadius: 12, border: '2px solid var(--border)' }} />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {plans.map(plan => {
+                    const active = selectedPlan === plan.slug
+                    return (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        onClick={() => { setSelectedPlan(plan.slug); setChannels([]) }}
+                        style={{
+                          border: `2px solid ${active ? plan.color : 'var(--border)'}`,
+                          borderRadius: 12, padding: '16px 14px', background: active ? `rgba(100,100,255,0.08)` : 'var(--bg-darker)',
+                          cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
+                        }}
+                      >
+                        {plan.is_popular && (
+                          <div style={{ position: 'absolute', top: -10, right: 12, background: plan.color, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                            Mais popular
+                          </div>
+                        )}
+                        <div style={{ fontSize: 15, fontWeight: 700, color: active ? plan.color : 'var(--text-primary)', marginBottom: 2 }}>{plan.name}</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: active ? plan.color : 'var(--text-primary)', marginBottom: 8 }}>R$ {plan.price_monthly}/mês</div>
+                        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                          {plan.benefits.map(f => (
+                            <li key={f} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 4 }}>
+                              <Check size={11} color={plan.color} style={{ marginTop: 2, flexShrink: 0 }} />{f}
+                            </li>
+                          ))}
+                        </ul>
+                        {active && (
+                          <div style={{ marginTop: 10, fontSize: 11, color: plan.color, fontWeight: 600 }}>✓ Selecionado</div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
             </div>
           )}
 
@@ -378,7 +404,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 Canais para monitorar
               </h2>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Plano <strong style={{ color: planConfig.color }}>{planConfig.label}</strong> · {planConfig.max_channels} {planConfig.max_channels !== 1 ? 'canais' : 'canal'} {planConfig.max_channels !== 1 ? 'disponíveis' : 'disponível'}
+                Plano <strong style={{ color: planConfig?.color }}>{planConfig?.name}</strong> · {planConfig?.max_channels} {planConfig?.max_channels !== 1 ? 'canais' : 'canal'} {planConfig?.max_channels !== 1 ? 'disponíveis' : 'disponível'}
+
               </p>
               {channels.length >= planConfig.max_channels && (
                 <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '6px 10px' }}>

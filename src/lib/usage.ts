@@ -49,16 +49,20 @@ async function checkUsageAlerts(tenantId: string) {
 
   if (!tenant) return
 
-  // Mapeamento de preços base (deve estar sincronizado com o Pricing.tsx)
-  const planPrices: Record<string, number> = {
-    'free':       0,
-    'basico':     139,
-    'completo':   199,
-    'custom':     149,
-    'enterprise': 1500
+  // 1.5. Buscar preços de todos os planos para referência
+  const { data: plans } = await supabase
+    .from('plans')
+    .select('slug, price_monthly')
+
+  const planPrices: Record<string, number> = {}
+  if (plans) {
+    plans.forEach(p => {
+      planPrices[p.slug] = Number(p.price_monthly)
+    })
   }
 
   const planBasePrice = planPrices[tenant.plan] || 139
+
   if (planBasePrice === 0) return
 
   // 2. Calcular consumo do mês atual

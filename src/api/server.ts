@@ -264,11 +264,13 @@ async function handleOnboarding(
       .from('tenants').select('slug').eq('slug', slug).maybeSingle()
     if (slugExists) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`
 
-    const PLAN_MAX_CHANNELS: Record<string, number> = {
-      basico: 3, completo: 8, enterprise: 99, trial: 3,
-    }
-    const plan = (requestedPlan && requestedPlan in PLAN_MAX_CHANNELS) ? requestedPlan : 'trial'
-    const maxChannels = PLAN_MAX_CHANNELS[plan] ?? 3
+    const { data: planData } = await supabaseAdmin
+      .from('plans')
+      .select('slug, max_channels, price_monthly')
+      .eq('slug', requestedPlan ?? 'trial')
+      .maybeSingle()
+    const plan = planData?.slug ?? 'trial'
+    const maxChannels = planData?.max_channels ?? 3
     if (channels.length > maxChannels) {
       res.writeHead(422)
       res.end(JSON.stringify({ error: `O plano ${plan} permite no máximo ${maxChannels} ${maxChannels !== 1 ? 'canais' : 'canal'}.` }))
@@ -385,9 +387,7 @@ async function handleOnboarding(
       });
       asaasCustomerId = customer.id;
 
-      // Calcular Preço (Básico: 139, Completo: 199, Custom: 149)
-      const basePrices: Record<string, number> = { basico: 139, completo: 199, enterprise: 1500, custom: 149 };
-      const basePrice = basePrices[plan] || 139;
+      const basePrice = planData?.price_monthly ?? 139;
       
       // Descontos por periodicidade (Trimestral: 5%, Semestral: 10%, Anual: 20%)
       const periodDiscounts: Record<string, number> = { monthly: 0, trimestral: 0.05, semestral: 0.10, anual: 0.20 };
@@ -613,6 +613,136 @@ async function handleUpdateCredentials(
     console.error('[credentials] Erro:', msg)
     res.writeHead(500); res.end(JSON.stringify({ error: msg }))
   }
+}
+
+// ── Planos: endpoint público ─────────────────────────────────────
+
+async function handleGetPlans(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'GET') { res.writeHead(405); res.end(); return }
+
+  const { data, error } = await supabaseAdmin
+    .from('plans')
+    .select('*, plan_benefits(id, description, sort_order)')
+    .eq('is_active', true)
+    .eq('is_public', true)
+    .order('sort_order')
+
+  if (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return }
+
+  const result = (data ?? []).map((p: any) => ({
+    id: p.id, slug: p.slug, name: p.name, description: p.description,
+    price_monthly: p.price_monthly, max_channels: p.max_channels,
+    color: p.color, is_popular: p.is_popular, sort_order: p.sort_order,
+    benefits: (p.plan_benefits ?? [])
+      .sort((a: any, b: any) => a.sort_order - b.sort_order)
+      .map((b: any) => b.description),
+  }))
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(result))
+}
+
+// ── Planos: CRUD admin ───────────────────────────────────────────
+
+async function handleAdminPlans(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || auth.perfil !== 'admin') {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Apenas administradores.' })); return
+  }
+
+  const url = req.url ?? ''
+  const planId = url.split('/api/admin/plans/')[1]?.split('/')[0] || null
+
+  // GET /api/admin/plans — todos os planos (inclusive inativos)
+  if (req.method === 'GET') {
+    const { data, error } = await supabaseAdmin
+      .from('plans')
+      .select('*, plan_benefits(id, description, sort_order)')
+      .order('sort_order')
+
+    if (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return }
+
+    const result = (data ?? []).map((p: any) => ({
+      id: p.id, slug: p.slug, name: p.name, description: p.description,
+      price_monthly: p.price_monthly, max_channels: p.max_channels,
+      color: p.color, is_active: p.is_active, is_public: p.is_public,
+      is_popular: p.is_popular, sort_order: p.sort_order,
+      benefits: (p.plan_benefits ?? [])
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((b: any) => b.description),
+    }))
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(result))
+    return
+  }
+
+  // POST /api/admin/plans — criar novo plano
+  if (req.method === 'POST' && !planId) {
+    const body = await readBody(req) as any
+    const { benefits = [], ...planData } = body
+
+    const { data: newPlan, error } = await supabaseAdmin
+      .from('plans').insert(planData).select('id').single()
+
+    if (error || !newPlan) { res.writeHead(500); res.end(JSON.stringify({ error: error?.message })); return }
+
+    if ((benefits as string[]).length > 0) {
+      await supabaseAdmin.from('plan_benefits').insert(
+        (benefits as string[]).map((desc, i) => ({ plan_id: newPlan.id, description: desc, sort_order: i + 1 }))
+      )
+    }
+
+    res.writeHead(201, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, id: newPlan.id }))
+    return
+  }
+
+  // PATCH /api/admin/plans/:id — atualizar plano + benefícios
+  if (req.method === 'PATCH' && planId) {
+    const body = await readBody(req) as any
+    const { benefits, ...planData } = body
+
+    if (Object.keys(planData).length > 0) {
+      const { error } = await supabaseAdmin.from('plans').update(planData).eq('id', planId)
+      if (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return }
+    }
+
+    if (Array.isArray(benefits)) {
+      await supabaseAdmin.from('plan_benefits').delete().eq('plan_id', planId)
+      if (benefits.length > 0) {
+        await supabaseAdmin.from('plan_benefits').insert(
+          (benefits as string[]).map((desc, i) => ({ plan_id: planId, description: desc, sort_order: i + 1 }))
+        )
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+
+  // DELETE /api/admin/plans/:id
+  if (req.method === 'DELETE' && planId) {
+    const { error } = await supabaseAdmin.from('plans').delete().eq('id', planId)
+    if (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+
+  res.writeHead(404); res.end(JSON.stringify({ error: 'Rota não encontrada' }))
 }
 
 // ── Deletar tenant e usuário auth ────────────────────────────────
@@ -1121,6 +1251,22 @@ const server = http.createServer((req, res) => {
   if (url.startsWith('/api/widget/')) {
     handleWidgetRequest(req, res).catch(err => {
       console.error('[widget] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/plans') {
+    handleGetPlans(req, res).catch(err => {
+      console.error('[plans] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/admin/plans')) {
+    handleAdminPlans(req, res).catch(err => {
+      console.error('[admin-plans] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return
