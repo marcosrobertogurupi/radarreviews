@@ -952,6 +952,17 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
       supabaseAdmin.from('monitored_businesses').update({ is_active: body.is_active }).eq('tenant_id', tenantId),
     ])
 
+    const authUser = await getAuthUser(req.headers.authorization)
+    if (authUser) {
+      await AuditoriaService.registrarAcaoAdmin(
+        { id: authUser.userId, nome: authUser.nome, email: authUser.email, perfil: authUser.perfil },
+        body.is_active ? 'ATIVAR_ASSINANTE' : 'DESATIVAR_ASSINANTE',
+        `Assinante ${tenantId} ${body.is_active ? 'ativado' : 'desativado'}`,
+        req.socket.remoteAddress,
+        { tipo: 'assinante', id: tenantId! }
+      )
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))
   } catch (err) {
@@ -1289,11 +1300,27 @@ const server = http.createServer((req, res) => {
       res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
     }
 
-    const { data, error } = await supabaseAdmin
+    const qs = new URL(req.url!, `http://localhost`).searchParams
+    const from      = qs.get('from')
+    const to        = qs.get('to')
+    const usuario   = qs.get('usuario')
+    const operacao  = qs.get('operacao')
+    const status    = qs.get('status')
+    const limit     = Math.min(parseInt(qs.get('limit') ?? '200'), 500)
+
+    let query = supabaseAdmin
       .from('auditoria')
       .select('*')
       .order('data_hora', { ascending: false })
-      .limit(100)
+      .limit(limit)
+
+    if (from)     query = query.gte('data_hora', from)
+    if (to)       query = query.lte('data_hora', to + 'T23:59:59Z')
+    if (usuario)  query = query.ilike('usuario_email', `%${usuario}%`)
+    if (operacao) query = query.eq('operacao', operacao)
+    if (status)   query = query.eq('status', status)
+
+    const { data, error } = await query
 
     if (error) {
       res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return

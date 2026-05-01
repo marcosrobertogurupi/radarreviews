@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 const PLAN_CONFIG: Record<string, { label: string; color: string; max_channels: number }> = {
   trial:      { label: 'Trial',      color: '#6b7280', max_channels: 3  },
@@ -37,6 +38,7 @@ interface Business {
 }
 
 export default function Tenants() {
+  const { toast } = useToast()
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [businesses, setBusinesses] = useState<Record<string, Business[]>>({})
   const [loading, setLoading] = useState(true)
@@ -104,16 +106,16 @@ export default function Tenants() {
       const data = await res.json()
       if (!res.ok) {
         const msg = res.status === 409 ? 'Este e-mail já está cadastrado.' : (data.error ?? 'Erro ao criar assinante')
-        return alert(msg)
+        return toast(msg, 'error')
       }
 
       setShowModal(false)
       setNewTenant({ name: '', slug: '', initialBusiness: '', cnpj: '', email: '', password: '' })
       loadAll()
-      // Atualiza o combobox de tenants no App.tsx (e demais páginas que dependem da lista)
       window.dispatchEvent(new Event('refresh_data'))
+      toast('Assinante criado com sucesso!', 'success')
     } catch {
-      alert('Não foi possível conectar à API. Verifique se o servidor está online.')
+      toast('Não foi possível conectar à API. Verifique se o servidor está online.', 'error')
     } finally {
       setSaving(false)
     }
@@ -146,21 +148,21 @@ export default function Tenants() {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return alert(err.error ?? resp.statusText)
+        return toast(err.error ?? resp.statusText, 'error')
       }
 
-      alert('Assinante atualizado com sucesso!')
+      toast('Assinante atualizado com sucesso!', 'success')
       setEditingTenant(null)
       loadAll()
     } catch {
-      alert('Não foi possível conectar à API. Verifique se o servidor está online.')
+      toast('Não foi possível conectar à API. Verifique se o servidor está online.', 'error')
     }
   }
 
   async function toggleActive(t: Tenant) {
     const newVal = !(t.is_active ?? true)
     if (!confirm(`Deseja realmente ${newVal ? 'ativar' : 'DESATIVAR'} o monitoramento de ${t.name}?`)) return
-    
+
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
       const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
@@ -168,24 +170,23 @@ export default function Tenants() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: newVal }),
       })
-      
+
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return alert('Erro ao alterar status: ' + (err.error ?? resp.statusText))
+        return toast('Erro ao alterar status: ' + (err.error ?? resp.statusText), 'error')
       }
 
-      alert(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`)
-      // Atualiza locamente para imediato visual feedback
+      toast(`Assinante ${newVal ? 'ativado' : 'desativado'} com sucesso!`, 'success')
       setTenants(prev => prev.map(x => x.id === t.id ? { ...x, is_active: newVal } : x))
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     }
   }
-  
+
   async function extendTrial(t: Tenant) {
     const currentEnd = t.trial_ends_at ? new Date(t.trial_ends_at) : new Date()
     const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
-    
+
     if (!confirm(`Deseja estender o trial de ${t.name} por +7 dias?\nNova data: ${newEnd.toLocaleDateString()}`)) return
 
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
@@ -195,23 +196,23 @@ export default function Tenants() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trial_ends_at: newEnd.toISOString() }),
       })
-      
+
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return alert('Erro ao estender trial: ' + (err.error ?? resp.statusText))
+        return toast('Erro ao estender trial: ' + (err.error ?? resp.statusText), 'error')
       }
 
-      alert('Trial estendido com sucesso!')
+      toast('Trial estendido com sucesso!', 'success')
       loadAll()
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     }
   }
 
   async function handleUpdateCredentials(e: React.FormEvent) {
     e.preventDefault()
     if (!credentialsTenant) return
-    if (!credentials.email && !credentials.password) return alert('Informe ao menos e-mail ou senha.')
+    if (!credentials.email && !credentials.password) return toast('Informe ao menos e-mail ou senha.', 'info')
     setSavingCreds(true)
 
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
@@ -226,12 +227,12 @@ export default function Tenants() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) return alert(data.error ?? 'Erro ao atualizar credenciais')
+      if (!res.ok) return toast(data.error ?? 'Erro ao atualizar credenciais', 'error')
       setCredentialsTenant(null)
       setCredentials({ email: '', password: '' })
-      alert('Credenciais atualizadas com sucesso!')
+      toast('Credenciais atualizadas com sucesso!', 'success')
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     } finally {
       setSavingCreds(false)
     }
@@ -255,14 +256,14 @@ export default function Tenants() {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        alert('Erro ao atualizar empresa: ' + (err.error ?? resp.statusText))
+        toast('Erro ao atualizar empresa: ' + (err.error ?? resp.statusText), 'error')
       } else {
-        alert('Empresa atualizada com sucesso!')
+        toast('Empresa atualizada com sucesso!', 'success')
         setEditingBusiness(null)
         loadAll()
       }
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     } finally {
       setSaving(false)
     }
@@ -276,11 +277,12 @@ export default function Tenants() {
     const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, { method: 'DELETE' })
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      alert('Falha ao deletar: ' + (err.error ?? resp.statusText))
+      toast('Não foi possível excluir: ' + (err.error ?? resp.statusText), 'error')
     } else {
       setTenants(prev => prev.filter(x => x.id !== t.id))
       setBusinesses(prev => { const n = {...prev}; delete n[t.id]; return n; })
       window.dispatchEvent(new Event('refresh_data'))
+      toast(`Assinante "${t.name}" removido com sucesso.`, 'success')
     }
   }
 

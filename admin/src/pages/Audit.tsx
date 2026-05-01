@@ -18,6 +18,8 @@ export default function Audit() {
   const [quietFailures, setQuietFailures] = useState<QuietFailure[]>([])
   const [auditLogs, setAuditLogs] = useState<any[]>([])
   const [tab, setTab] = useState<'robots' | 'users'>('robots')
+  const [filters, setFilters] = useState({ from: '', to: '', usuario: '', operacao: '', status: '' })
+  const [loadingLogs, setLoadingLogs] = useState(false)
 
   useEffect(() => {
     loadAuditData()
@@ -32,18 +34,26 @@ export default function Audit() {
 
   async function loadUserLogs() {
     try {
+      setLoadingLogs(true)
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
-      const resp = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/relatorios/auditoria`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
-      })
-      if (resp.ok) {
-        const data = await resp.json()
-        setAuditLogs(data)
-      }
+      const params = new URLSearchParams()
+      if (filters.from)     params.set('from', filters.from)
+      if (filters.to)       params.set('to', filters.to)
+      if (filters.usuario)  params.set('usuario', filters.usuario)
+      if (filters.operacao) params.set('operacao', filters.operacao)
+      if (filters.status)   params.set('status', filters.status)
+
+      const resp = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/relatorios/auditoria?${params}`,
+        { headers: { 'Authorization': `Bearer ${session.access_token}` } }
+      )
+      if (resp.ok) setAuditLogs(await resp.json())
     } catch (e) {
       console.error('Erro ao carregar logs de auditoria:', e)
+    } finally {
+      setLoadingLogs(false)
     }
   }
 
@@ -191,9 +201,55 @@ export default function Audit() {
         </>
       ) : (
         <section>
-          <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <History size={20} color="var(--accent)" /> Log de Auditoria — Ações Administrativas
-          </h3>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>De</label>
+              <input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value }))}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Até</label>
+              <input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value }))}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Usuário (e-mail)</label>
+              <input type="text" placeholder="Filtrar por e-mail..." value={filters.usuario}
+                onChange={e => setFilters(f => ({ ...f, usuario: e.target.value }))}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13, minWidth: 200 }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Operação</label>
+              <select value={filters.operacao} onChange={e => setFilters(f => ({ ...f, operacao: e.target.value }))}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }}>
+                <option value="">Todas</option>
+                <option value="LOGIN">LOGIN</option>
+                <option value="LOGIN_FALHA">LOGIN_FALHA</option>
+                <option value="EXCLUIR_ASSINANTE">EXCLUIR_ASSINANTE</option>
+                <option value="ALTERAR_ASSINANTE">ALTERAR_ASSINANTE</option>
+                <option value="ATIVAR_ASSINANTE">ATIVAR_ASSINANTE</option>
+                <option value="DESATIVAR_ASSINANTE">DESATIVAR_ASSINANTE</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Status</label>
+              <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }}>
+                <option value="">Todos</option>
+                <option value="success">Sucesso</option>
+                <option value="error">Erro</option>
+              </select>
+            </div>
+            <button onClick={loadUserLogs} disabled={loadingLogs}
+              style={{ background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#fff', fontSize: 13, cursor: 'pointer', alignSelf: 'flex-end' }}>
+              {loadingLogs ? 'Buscando...' : 'Filtrar'}
+            </button>
+            <button onClick={() => { setFilters({ from: '', to: '', usuario: '', operacao: '', status: '' }); loadUserLogs() }}
+              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', alignSelf: 'flex-end' }}>
+              Limpar
+            </button>
+          </div>
+
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -206,7 +262,9 @@ export default function Audit() {
                 </tr>
               </thead>
               <tbody>
-                {auditLogs.length === 0 ? (
+                {loadingLogs ? (
+                  <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Carregando...</td></tr>
+                ) : auditLogs.length === 0 ? (
                   <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum log encontrado.</td></tr>
                 ) : (
                   auditLogs.map(log => (
@@ -214,10 +272,14 @@ export default function Audit() {
                       <td style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>{formatDate(log.data_hora)}</td>
                       <td style={{ padding: 12 }}>
                         <div style={{ fontWeight: 500 }}>{log.usuario_nome}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{log.usuario_perfil}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{log.usuario_email}</div>
                       </td>
                       <td style={{ padding: 12 }}>
-                        <span className="badge" style={{ background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', fontSize: 10 }}>{log.operacao}</span>
+                        <span className="badge" style={{
+                          background: log.status === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(99,102,241,0.1)',
+                          color: log.status === 'error' ? '#fca5a5' : '#a5b4fc',
+                          fontSize: 10, padding: '3px 8px', borderRadius: 4
+                        }}>{log.operacao}</span>
                       </td>
                       <td style={{ padding: 12, fontSize: 12 }}>{log.descricao}</td>
                       <td style={{ padding: 12, color: 'var(--text-muted)', fontSize: 11 }}>{log.ip_origem || '-'}</td>
