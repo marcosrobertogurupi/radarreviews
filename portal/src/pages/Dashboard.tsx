@@ -189,13 +189,9 @@ export default function Dashboard({ tenantId }: Props) {
       {/* KPIs */}
       <div className="kpi-grid">
         <div className="card kpi-card" style={{ '--kpi-color': '#6366f1', '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as React.CSSProperties}>
-          <div className="kpi-label">Reviews Coletados</div>
-          <div className="kpi-value">{kpi?.total_all ?? 0}</div>
-          <div className="kpi-sub" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <MessageSquare size={12} /> últimos 30 dias: <strong style={{ color: 'var(--text-primary)' }}>{kpi?.total ?? 0}</strong>
-            </span>
-          </div>
+          <div className="kpi-label">Reviews nos últimos 30 dias</div>
+          <div className="kpi-value">{kpi?.total ?? 0}</div>
+          <div className="kpi-sub"><MessageSquare size={12} /> {kpi?.total_all ?? 0} coletados no histórico</div>
           <div className="kpi-icon"><MessageSquare size={18} color="#a5b4fc" /></div>
         </div>
 
