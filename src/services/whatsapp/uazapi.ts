@@ -19,11 +19,8 @@ export async function sendWhatsAppMessage(params: {
     const url = `${baseUrl}/send/text`
     
     const body = {
-      number: formattedNumber,
-      text: text,
-      linkPreview: true,
-      readchat: true,
-      delay: 0
+      phone: formattedNumber,
+      message: text,
     }
 
     const response = await axios.post(url, body, {
