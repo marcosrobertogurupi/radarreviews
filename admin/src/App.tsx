@@ -55,10 +55,12 @@ export default function App() {
         .single()
 
       if (error || !data) {
+        console.error('Erro de validação de perfil:', error)
         await supabase.auth.signOut()
-        setAuthError('Erro ao validar perfil de acesso.')
+        setAuthError(`Erro ao validar perfil: ${error?.message || 'Perfil não encontrado'}`)
         return false
       }
+
 
       if (!data.ativo) {
         await supabase.auth.signOut()
