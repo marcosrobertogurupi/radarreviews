@@ -71,7 +71,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
 
   // ── Helpers ──────────────────────────────────────────────────
 
-  const planConfig = plans.find(p => p.slug === selectedPlan) || plans[0]
+  const planConfig = plans.find(p => p.slug === selectedPlan) || plans[0] || { color: '#6b7280', name: 'Carregando...', max_channels: 3 }
+
 
   useEffect(() => {
     async function loadPlans() {
@@ -414,17 +415,18 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
               )}
               <div className="channel-grid">
                 {ALL_CHANNELS.map(ch => {
-                  const selected = channels.includes(ch)
-                  const atLimit = !selected && channels.length >= planConfig.max_channels
-                  return (
-                    <button
-                      key={ch}
-                      type="button"
-                      className={`channel-card ${selected ? 'selected' : ''}`}
-                      onClick={() => toggleChannel(ch)}
-                      style={{ opacity: atLimit ? 0.4 : 1, cursor: atLimit ? 'not-allowed' : 'pointer' }}
-                      title={atLimit ? `Limite de ${planConfig.max_channels} canais do plano ${planConfig.label}` : undefined}
-                    >
+                    const selected = channels.includes(ch)
+                    const atLimit = !selected && channels.length >= (planConfig?.max_channels || 0)
+                    return (
+                      <button
+                        key={ch}
+                        type="button"
+                        className={`channel-card ${selected ? 'selected' : ''}`}
+                        onClick={() => toggleChannel(ch)}
+                        style={{ opacity: atLimit ? 0.4 : 1, cursor: atLimit ? 'not-allowed' : 'pointer' }}
+                        title={atLimit ? `Limite de ${planConfig?.max_channels} canais do plano ${planConfig?.name}` : undefined}
+                      >
+
                       <span className="channel-card-icon">{CHANNEL_ICONS[ch]}</span>
                       <span className="channel-card-label">{CHANNEL_LABELS[ch]}</span>
                       {selected && (
@@ -437,7 +439,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 })}
               </div>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                {channels.length} de {planConfig.max_channels} {planConfig.max_channels !== 1 ? 'canais' : 'canal'} selecionado{channels.length !== 1 ? 's' : ''}
+                {channels.length} de {planConfig?.max_channels} {planConfig?.max_channels !== 1 ? 'canais' : 'canal'} selecionado{channels.length !== 1 ? 's' : ''}
+
               </p>
 
               {/* Configuração Condicional do Instagram */}
