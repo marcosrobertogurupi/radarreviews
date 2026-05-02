@@ -47,35 +47,50 @@ export default function App() {
 
 
   useEffect(() => {
-    async function validateProfile(session: Session) {
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('perfil, ativo')
-        .eq('id', session.user.id)
-        .single()
+    async function validateProfile(session: Session, retry = true): Promise<boolean> {
+      try {
+        const { data, error } = await supabase
+          .from('usuarios')
+          .select('perfil, ativo')
+          .eq('id', session.user.id)
+          .single()
 
-      if (error || !data) {
-        console.error('Erro de validação de perfil:', error)
-        // Não deslogar automaticamente aqui para evitar loop infinito de redirects se for erro temporário
-        setAuthError(`Erro ao validar perfil: ${error?.message || 'Perfil não encontrado'}`)
+        if (error) {
+          // Se for erro de RLS (não achou nada) e for a primeira tentativa, espera 1s e tenta de novo
+          if (retry && (error.code === 'PGRST116' || error.message?.includes('JSON object'))) {
+            console.warn('Tentando validar perfil novamente em 1.5s...')
+            await new Promise(r => setTimeout(r, 1500))
+            return validateProfile(session, false)
+          }
+          console.error('Erro de validação de perfil:', error)
+          setAuthError(`Erro ao validar perfil: ${error.message}`)
+          return false
+        }
+
+        if (!data) {
+          setAuthError('Perfil não encontrado no sistema.')
+          return false
+        }
+
+        if (!data.ativo) {
+          await supabase.auth.signOut()
+          setAuthError('Esta conta está desativada.')
+          return false
+        }
+
+        if (!['admin', 'operador'].includes(data.perfil)) {
+          await supabase.auth.signOut()
+          setAuthError('Você não tem permissão de acesso.')
+          return false
+        }
+
+        setAuthError(null)
+        return true
+      } catch (err) {
+        console.error('Exceção ao validar perfil:', err)
+        setAuthError('Falha técnica ao validar seu acesso.')
         return false
       }
-
-
-      if (!data.ativo) {
-        await supabase.auth.signOut()
-        setAuthError('Esta conta está desativada.')
-        return false
-      }
-
-      if (!['admin', 'operador'].includes(data.perfil)) {
-        await supabase.auth.signOut()
-        setAuthError('Você não tem permissão de acesso.')
-        return false
-      }
-
-      setAuthError(null)
-      return true
     }
 
     // Timeout de segurança para evitar tela preta infinita
@@ -106,16 +121,24 @@ export default function App() {
     })
 
     const authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session) {
-        const isValid = await validateProfile(session)
-        if (isValid) {
-          setSession(session)
-          loadTenants()
+      console.log('Auth Event:', _event)
+      try {
+        if (session) {
+          const isValid = await validateProfile(session)
+          if (isValid) {
+            setSession(session)
+            loadTenants()
+          } else {
+            setSession(null)
+          }
         } else {
           setSession(null)
+          if (_event === 'SIGNED_OUT') setAuthError(null)
         }
-      } else {
+      } catch (err) {
+        console.error('Erro no processamento do evento de auth:', err)
         setSession(null)
+        setAuthError('Erro ao processar login.')
       }
     })
 

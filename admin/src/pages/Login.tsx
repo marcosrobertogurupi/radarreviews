@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 interface LoginProps {
@@ -10,8 +10,14 @@ export default function Login({ externalError }: LoginProps) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
-
   const error = externalError || localError
+
+  // Se recebermos um erro externo (vido do App.tsx), paramos o loading
+  useEffect(() => {
+    if (externalError) {
+      setLoading(false)
+    }
+  }, [externalError])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
