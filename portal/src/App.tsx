@@ -101,7 +101,7 @@ export default function App() {
           // Fluxo normal (assinante)
           const { data: tu } = await supabase
             .from('tenant_users')
-            .select('tenant_id, managed_tenant_ids')
+            .select('tenant_id')
             .eq('user_id', session.user.id)
             .single()
 
@@ -110,7 +110,7 @@ export default function App() {
             setTenantId(mainTenantId)
             setHasTenant(true)
 
-            const allowedIds = [mainTenantId, ...(tu.managed_tenant_ids || [])]
+            const allowedIds = [mainTenantId]
             const { data: tList } = await supabase
               .from('tenants')
               .select('id, name')
