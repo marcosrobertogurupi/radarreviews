@@ -80,7 +80,7 @@ export default function App() {
       .single()
       .then(async ({ data: userProfile }) => {
         if (!userProfile) return
-        setUserName(userProfile.nome || '')
+        setUserName(userProfile.nome || session.user.email?.split('@')[0] || '')
 
         if (userProfile.perfil === 'parceiro') {
           // Buscar assinantes vinculados a este parceiro

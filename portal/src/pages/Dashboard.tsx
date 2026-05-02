@@ -44,96 +44,107 @@ export default function Dashboard({ tenantId }: Props) {
       return
     }
 
-    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
+    try {
+      const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
 
-    // Obter business_ids do tenant para filtrar alert_events (que não tem tenant_id direto)
-    const { data: bizData } = await supabase
-      .from('monitored_businesses')
-      .select('id')
-      .eq('tenant_id', tenantId)
-    const bizIds = (bizData ?? []).map(b => b.id)
+      // Obter business_ids do tenant para filtrar alert_events (que não tem tenant_id direto)
+      const { data: bizData } = await supabase
+        .from('monitored_businesses')
+        .select('id')
+        .eq('tenant_id', tenantId)
+      const bizIds = (bizData ?? []).map(b => b.id)
 
-    const [rvRes, alRes, recentRes, alertRes, compRes] = await Promise.all([
-      supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at')
-        .eq('tenant_id', tenantId).gte('published_at', since30),
-      bizIds.length
-        ? supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false).in('business_id', bizIds)
-        : Promise.resolve({ count: 0, data: null, error: null }),
-      supabase.from('reviews').select('*, monitored_businesses(name)')
-        .eq('tenant_id', tenantId).order('published_at', { ascending: false }).limit(5),
-      bizIds.length
-        ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).in('business_id', bizIds).order('triggered_at', { ascending: false }).limit(3)
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
-    ])
+      const [rvRes, alRes, recentRes, alertRes, compRes] = await Promise.all([
+        supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at')
+          .eq('tenant_id', tenantId).gte('published_at', since30),
+        bizIds.length
+          ? supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false).in('business_id', bizIds)
+          : Promise.resolve({ count: 0, data: null, error: null }),
+        supabase.from('reviews').select('*, monitored_businesses(name)')
+          .eq('tenant_id', tenantId).order('published_at', { ascending: false }).limit(5),
+        bizIds.length
+          ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).in('business_id', bizIds).order('triggered_at', { ascending: false }).limit(3)
+          : Promise.resolve({ data: [], error: null }),
+        bizIds.length
+          ? supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
+      ])
 
-    const reviews = rvRes.data ?? []
+      const reviews = rvRes.data ?? []
 
-    // KPIs com contagem nativa para evitar limites de fetch
-    const [totalRes, negCritRes, critRes, totalAllRes] = await Promise.all([
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30),
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).eq('sentiment', 'critical'),
-      supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
-    ])
+      // KPIs com contagem nativa para evitar limites de fetch
+      const [totalRes, negCritRes, critRes, totalAllRes] = await Promise.all([
+        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30),
+        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
+        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).eq('sentiment', 'critical'),
+        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+      ])
 
-    const total    = totalRes.count    ?? 0
-    const totalAll = totalAllRes.count ?? 0
-    const negCritCount = negCritRes.count ?? 0
-    const critCount    = critRes.count    ?? 0
+      const total    = totalRes.count    ?? 0
+      const totalAll = totalAllRes.count ?? 0
+      const negCritCount = negCritRes.count ?? 0
+      const critCount    = critRes.count    ?? 0
 
-    // Para média e score, ainda buscamos uma amostra
-    const { data: metricsData } = await supabase
-      .from('reviews')
-      .select('rating, dissatisfaction_score')
-      .eq('tenant_id', tenantId)
-      .gte('published_at', since30)
-      .limit(1000)
+      // Para média e score, ainda buscamos uma amostra
+      const { data: metricsData } = await supabase
+        .from('reviews')
+        .select('rating, dissatisfaction_score')
+        .eq('tenant_id', tenantId)
+        .gte('published_at', since30)
+        .limit(1000)
 
-    const rated = (metricsData || []).filter(r => r.rating != null)
-    const avgRating = rated.length ? rated.reduce((s, r) => s + (r.rating as number), 0) / rated.length : 0
-    const scored = (metricsData || []).filter(r => r.dissatisfaction_score != null)
-    const avgScore = scored.length ? scored.reduce((s, r) => s + (r.dissatisfaction_score as number), 0) / scored.length : 0
+      const rated = (metricsData || []).filter(r => r.rating != null)
+      const avgRating = rated.length ? rated.reduce((s, r) => s + (r.rating as number), 0) / rated.length : 0
+      const scored = (metricsData || []).filter(r => r.dissatisfaction_score != null)
+      const avgScore = scored.length ? scored.reduce((s, r) => s + (r.dissatisfaction_score as number), 0) / scored.length : 0
 
-    setKpi({
-      total,
-      total_all: totalAll,
-      negative_rate: total ? Math.round((negCritCount / total) * 100) : 0,
-      critical_count: critCount,
-      avg_rating: avgRating,
-      pending_alerts: alRes.count ?? 0,
-      avg_score: Math.round(avgScore),
-    })
-
-    // Distribuição de sentimento (pizza)
-    const sentCounts: Record<string, number> = {}
-    for (const r of reviews) { sentCounts[r.sentiment] = (sentCounts[r.sentiment] ?? 0) + 1 }
-    setDist(
-      Object.entries(sentCounts)
-        .filter(([, v]) => v > 0)
-        .map(([k, v]) => ({ name: SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k, value: v, color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280' }))
-    )
-
-    // Tendência 7 dias
-    const days: Array<{ date: string; pos: number; neg: number; crit: number }> = []
-    for (let i = 6; i >= 0; i--) {
-      const d  = new Date(); d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split('T')[0]!
-      const dayRevs = reviews.filter(r => r.published_at.startsWith(ds))
-      days.push({
-        date: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-        pos:  dayRevs.filter(r => r.sentiment === 'positive').length,
-        neg:  dayRevs.filter(r => r.sentiment === 'negative').length,
-        crit: dayRevs.filter(r => r.sentiment === 'critical').length,
+      setKpi({
+        total,
+        total_all: totalAll,
+        negative_rate: total ? Math.round((negCritCount / total) * 100) : 0,
+        critical_count: critCount,
+        avg_rating: avgRating,
+        pending_alerts: alRes.count ?? 0,
+        avg_score: Math.round(avgScore),
       })
-    }
-    setTrend(days)
 
-    setRecent(recentRes.data ?? [])
-    setAlerts(alertRes.data ?? [])
-    setCompetitors(compRes.data ?? [])
-    setLoading(false)
-    setRefreshing(false)
+      // Distribuição de sentimento (pizza)
+      const sentCounts: Record<string, number> = {}
+      for (const r of reviews) { sentCounts[r.sentiment] = (sentCounts[r.sentiment] ?? 0) + 1 }
+      setDist(
+        Object.entries(sentCounts)
+          .filter(([, v]) => v > 0)
+          .map(([k, v]) => ({ name: SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k, value: v, color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280' }))
+      )
+
+      // Tendência 7 dias
+      const days: Array<{ date: string; pos: number; neg: number; crit: number }> = []
+      for (let i = 6; i >= 0; i--) {
+        const d  = new Date(); d.setDate(d.getDate() - i)
+        const ds = d.toISOString().split('T')[0]!
+        const dayRevs = reviews.filter(r => r.published_at.startsWith(ds))
+        days.push({
+          date: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+          pos:  dayRevs.filter(r => r.sentiment === 'positive').length,
+          neg:  dayRevs.filter(r => r.sentiment === 'negative').length,
+          crit: dayRevs.filter(r => r.sentiment === 'critical').length,
+        })
+      }
+      setTrend(days)
+
+      setRecent(recentRes.data ?? [])
+      setAlerts(alertRes.data ?? [])
+      setCompetitors(compRes.data ?? [])
+    } catch (err) {
+      console.error('[Dashboard] Erro ao carregar dados:', err)
+      // Garante que o KPI seja inicializado mesmo com erro
+      if (!kpi) {
+        setKpi({ total: 0, total_all: 0, negative_rate: 0, critical_count: 0, avg_rating: 0, pending_alerts: 0, avg_score: 0 })
+      }
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
   }
 
   useEffect(() => {

@@ -399,7 +399,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                 </div>
               ) : (
                 <div style={{ position: 'relative' }}>
-                  <div style={{ overflow: 'hidden', margin: '0 -4px' }}>
+                  <div style={{ overflow: 'hidden', margin: '0 -4px', padding: '12px 0' }}>
                     <div style={{ 
                       display: 'flex', 
                       transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
