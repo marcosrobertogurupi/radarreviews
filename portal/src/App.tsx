@@ -41,6 +41,7 @@ export default function App() {
   const [hasTenant, setHasTenant]    = useState<boolean | null>(null)
   const [tenantId, setTenantId]      = useState<string>('')
   const [businessName, setBusinessName] = useState<string>('')
+  const [userName, setUserName] = useState<string>('')
   const [tenantTrial, setTenantTrial] = useState<{
     plan: string; plan_status: string; trial_ends_at: string | null
   } | null>(null)
@@ -79,6 +80,7 @@ export default function App() {
       .single()
       .then(async ({ data: userProfile }) => {
         if (!userProfile) return
+        setUserName(userProfile.nome || '')
 
         if (userProfile.perfil === 'parceiro') {
           // Buscar assinantes vinculados a este parceiro
@@ -194,6 +196,11 @@ export default function App() {
           }}>
             Portal do Assinante
           </div>
+          {userName && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4, marginBottom: 4 }}>
+              👤 {userName}
+            </div>
+          )}
           {trialDaysLeft !== null && (
             <div style={{
               marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,

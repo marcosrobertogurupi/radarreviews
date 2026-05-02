@@ -35,7 +35,7 @@ export async function notifyAdminChannels(data: {
   if (data.plan)  message += `💼 Plano: ${data.plan}\n`
   message += `\n⚠️ *${data.channels.length} canal(is) para verificar:*\n${channelList}\n\nAcesse o painel admin → Conectores.`
 
-  const baseUrl = process.env['UAZAPI_BASE_URL'] ?? 'https://api.uazapi.com'
+  const baseUrl = process.env['UAZAPI_BASE_URL'] ?? 'https://netservice.uazapi.com'
   const result = await sendWhatsAppMessage({ baseUrl, token: uazapiToken, number: adminPhone, text: message })
   if (result.success) {
     console.log(`[admin-notify] Notificação enviada para ${adminPhone}`)

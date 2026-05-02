@@ -186,6 +186,50 @@ export default function Dashboard({ tenantId }: Props) {
         </button>
       </div>
 
+      {/* Mensagem de Boas-vindas para novos usuários */}
+      {kpi?.total_all === 0 && (
+        <div className="card" style={{ 
+          padding: '24px 32px', 
+          marginBottom: 24, 
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(6,182,212,0.1))',
+          border: '1px solid rgba(99,102,241,0.3)',
+          borderRadius: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 24,
+        }}>
+          <div style={{ 
+            fontSize: 48, 
+            background: 'rgba(255,255,255,0.1)', 
+            width: 80, height: 80, 
+            borderRadius: '50%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+          }}>
+            🚀
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontFamily: 'Outfit', fontSize: 22, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+              Seja bem-vindo ao Reputei!
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.6, maxWidth: 600 }}>
+              Estamos configurando seus canais de monitoramento. Nos próximos minutos, nossa inteligência artificial começará a coletar e analisar os reviews do seu negócio.
+              <br />
+              <strong>Fique tranquilo, logo mais seus dados aparecerão aqui automaticamente.</strong>
+            </p>
+          </div>
+          <div className="no-print" style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Status do Sistema</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#10b981', fontSize: 13, fontWeight: 600 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
+              Configurando Conectores
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPIs */}
       <div className="kpi-grid">
         <div className="card kpi-card" style={{ '--kpi-color': '#6366f1', '--kpi-icon-bg': 'rgba(99,102,241,0.15)' } as React.CSSProperties}>

@@ -420,7 +420,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                               style={{
                                 width: '100%',
                                 border: `2px solid ${active ? plan.color : 'var(--border)'}`,
-                                borderRadius: 16, padding: '20px 18px', 
+                                borderRadius: 16, padding: '24px 20px 32px', 
                                 background: active ? `rgba(99,102,241,0.06)` : 'var(--bg-darker)',
                                 cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', position: 'relative',
                                 height: '100%', display: 'flex', flexDirection: 'column',
@@ -535,8 +535,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
 
               </p>
               {channels.length >= planConfig.max_channels && (
-                <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '6px 10px' }}>
-                  Limite do plano atingido. Remova um canal para trocar.
+                <p style={{ fontSize: 12, color: '#f59e0b', marginBottom: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  ⚠️ Você atingiu o limite de {planConfig.max_channels} canais deste plano.
                 </p>
               )}
               <div className="channel-grid">
