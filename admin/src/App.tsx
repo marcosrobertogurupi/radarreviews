@@ -45,53 +45,71 @@ export default function App() {
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState('')
 
+  // Função de validação movida para fora para maior clareza e robustez
+  async function validateProfile(session: Session, retry = true): Promise<boolean> {
+    console.log('[Auth] Iniciando validação para:', session.user.id)
+    try {
+      // Usando um Promise.race para garantir que a consulta não trave o app se o Supabase estiver lento
+      const queryPromise = supabase
+        .from('usuarios')
+        .select('perfil, ativo')
+        .eq('id', session.user.id)
+        .maybeSingle()
 
-  useEffect(() => {
-    async function validateProfile(session: Session, retry = true): Promise<boolean> {
-      try {
-        const { data, error } = await supabase
-          .from('usuarios')
-          .select('perfil, ativo')
-          .eq('id', session.user.id)
-          .single()
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT')), 6000)
+      )
 
-        if (error) {
-          // Se for erro de RLS (não achou nada) e for a primeira tentativa, espera 1s e tenta de novo
-          if (retry && (error.code === 'PGRST116' || error.message?.includes('JSON object'))) {
-            console.warn('Tentando validar perfil novamente em 1.5s...')
-            await new Promise(r => setTimeout(r, 1500))
-            return validateProfile(session, false)
-          }
-          console.error('Erro de validação de perfil:', error)
-          setAuthError(`Erro ao validar perfil: ${error.message}`)
-          return false
+      const result = await Promise.race([queryPromise, timeoutPromise]) as any
+      const { data, error } = result
+
+      if (error) {
+        console.error('[Auth] Erro na consulta de perfil:', error)
+        // Se for erro de RLS/Permissão no início, tenta uma vez mais
+        if (retry && error.code === 'PGRST116') {
+          console.warn('[Auth] RLS não propagado, tentando novamente...')
+          await new Promise(r => setTimeout(r, 1500))
+          return validateProfile(session, false)
         }
-
-        if (!data) {
-          setAuthError('Perfil não encontrado no sistema.')
-          return false
-        }
-
-        if (!data.ativo) {
-          await supabase.auth.signOut()
-          setAuthError('Esta conta está desativada.')
-          return false
-        }
-
-        if (!['admin', 'operador'].includes(data.perfil)) {
-          await supabase.auth.signOut()
-          setAuthError('Você não tem permissão de acesso.')
-          return false
-        }
-
-        setAuthError(null)
-        return true
-      } catch (err) {
-        console.error('Exceção ao validar perfil:', err)
-        setAuthError('Falha técnica ao validar seu acesso.')
+        setAuthError(`Erro no banco: ${error.message}`)
         return false
       }
+
+      if (!data) {
+        console.warn('[Auth] Perfil não encontrado para ID:', session.user.id)
+        setAuthError('Usuário não encontrado na tabela de perfis.')
+        return false
+      }
+
+      console.log('[Auth] Perfil carregado:', data.perfil, '| Ativo:', data.ativo)
+
+      if (!data.ativo) {
+        await supabase.auth.signOut()
+        setAuthError('Esta conta está desativada.')
+        return false
+      }
+
+      if (!['admin', 'operador'].includes(data.perfil)) {
+        await supabase.auth.signOut()
+        setAuthError('Acesso restrito a administradores.')
+        return false
+      }
+
+      setAuthError(null)
+      return true
+    } catch (err: any) {
+      if (err.message === 'TIMEOUT') {
+        console.error('[Auth] Timeout na validação de perfil')
+        setAuthError('O banco de dados demorou muito para responder. Tente recarregar a página.')
+      } else {
+        console.error('[Auth] Exceção crítica:', err)
+        setAuthError('Falha de conexão ao validar perfil.')
+      }
+      return false
     }
+  }
+
+  useEffect(() => {
 
     // Timeout de segurança para evitar tela preta infinita
     const timeout = setTimeout(() => {
