@@ -25,9 +25,12 @@ export async function handleMetaAuthConnect(req: http.IncomingMessage, res: http
     res.writeHead(500); res.end(JSON.stringify({ error: 'META_APP_ID e META_APP_SECRET não estão configurados no servidor (Railway). Adicione-os nas variáveis de ambiente do backend para habilitar a conexão.' })); return
   }
 
+  const return_url = url.searchParams.get('return_url')
+  
   const state = Buffer.from(JSON.stringify({
     tenant_id,
     business_id,
+    return_url,
     nonce: Math.random().toString(36).substring(7)
   })).toString('base64')
 
@@ -70,7 +73,22 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
 
   try {
     const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
-    const { tenant_id, business_id } = stateData
+    const { tenant_id, business_id, return_url } = stateData
+
+    const getRedirectUrl = (status: 'success' | 'error', message: string) => {
+      const base = return_url || `${adminUrl}/settings/connectors`
+      try {
+        const u = new URL(base)
+        if (status === 'success') {
+          u.searchParams.set('success', message)
+        } else {
+          u.searchParams.set('error', message)
+        }
+        return u.toString()
+      } catch (e) {
+        return `${base}?${status}=${message}`
+      }
+    }
 
     // PASSO 1: Trocar code por short-lived token
     const shortToken = await exchangeCodeForToken(code)
@@ -151,12 +169,24 @@ export async function handleMetaAuthCallback(req: http.IncomingMessage, res: htt
       title: '🔗 *Assinante conectou conta Meta (OAuth)!*',
     }).catch((e: unknown) => console.error('[meta-notify] Falha ao notificar admin:', e))
 
-    res.writeHead(302, { 'Location': `${adminUrl}/settings/connectors?success=meta_connected` })
+    res.writeHead(302, { 'Location': getRedirectUrl('success', 'meta_connected') })
     res.end()
 
   } catch (err) {
     console.error('[MetaAuth] Erro no callback:', err)
-    res.writeHead(302, { 'Location': `${adminUrl}/settings/connectors?error=meta_failed` })
+    
+    // Fallback error redirect parsing state just in case
+    let errorRedirect = `${adminUrl}/settings/connectors?error=meta_failed`
+    try {
+      const stateData = JSON.parse(Buffer.from(state, 'base64').toString())
+      if (stateData.return_url) {
+        const u = new URL(stateData.return_url)
+        u.searchParams.set('error', 'meta_failed')
+        errorRedirect = u.toString()
+      }
+    } catch(e) {}
+    
+    res.writeHead(302, { 'Location': errorRedirect })
     res.end()
   }
 }

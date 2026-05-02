@@ -77,11 +77,14 @@ export default function Settings() {
       return
     }
     const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+    const returnUrl = encodeURIComponent(window.location.href)
+    const connectUrl = `${apiUrl}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}&return_url=${returnUrl}`
+    
     // Usamos window.top para garantir que, se o portal estiver num iframe, o Facebook carregue na janela inteira.
     if (window.top) {
-      window.top.location.href = `${apiUrl}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}`
+      window.top.location.href = connectUrl
     } else {
-      window.location.href = `${apiUrl}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}`
+      window.location.href = connectUrl
     }
   }
 
