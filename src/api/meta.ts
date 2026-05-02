@@ -21,6 +21,10 @@ export async function handleMetaAuthConnect(req: http.IncomingMessage, res: http
     res.writeHead(400); res.end(JSON.stringify({ error: 'tenant_id e business_id obrigatórios' })); return
   }
 
+  if (!process.env['META_APP_ID']) {
+    res.writeHead(500); res.end(JSON.stringify({ error: 'META_APP_ID e META_APP_SECRET não estão configurados no servidor (Railway). Adicione-os nas variáveis de ambiente do backend para habilitar a conexão.' })); return
+  }
+
   const state = Buffer.from(JSON.stringify({
     tenant_id,
     business_id,
