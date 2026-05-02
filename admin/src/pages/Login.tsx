@@ -104,6 +104,9 @@ export default function Login({ externalError }: LoginProps) {
             {loading ? 'Autenticando...' : 'Entrar no painel'}
           </button>
         </form>
+          <div className="text-center mt-6">
+            <p className="text-xs text-gray-500">v1.0.1 - {new Date().toLocaleDateString()}</p>
+          </div>
         </div>
       </div>
     </div>
