@@ -396,21 +396,29 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                     <div style={{ 
                       display: 'flex', 
                       transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: `translateX(-${carouselIdx * 50}%)`,
+                      transform: `translateX(-${carouselIdx * (plans.length > 2 ? (100 / (window.innerWidth > 768 ? 2 : 1)) : 0)}%)`,
                     }}>
                       {plans.map((plan, idx) => {
                         const active = selectedPlan === plan.slug
                         return (
-                          <div key={plan.id} style={{ minWidth: '50%', padding: '0 4px', boxSizing: 'border-box' }}>
+                          <div key={plan.id} style={{ 
+                            minWidth: window.innerWidth > 768 ? '50%' : '100%', 
+                            padding: '0 8px', 
+                            boxSizing: 'border-box',
+                            transition: 'all 0.3s'
+                          }}>
                             <button
                               type="button"
                               onClick={() => { setSelectedPlan(plan.slug); setChannels([]) }}
                               style={{
                                 width: '100%',
                                 border: `2px solid ${active ? plan.color : 'var(--border)'}`,
-                                borderRadius: 12, padding: '16px 14px', background: active ? `rgba(100,100,255,0.08)` : 'var(--bg-darker)',
-                                cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s', position: 'relative',
-                                height: '100%', display: 'flex', flexDirection: 'column'
+                                borderRadius: 16, padding: '20px 18px', 
+                                background: active ? `rgba(99,102,241,0.06)` : 'var(--bg-darker)',
+                                cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', position: 'relative',
+                                height: '100%', display: 'flex', flexDirection: 'column',
+                                boxShadow: active ? `0 8px 24px -8px ${plan.color}44` : 'none',
+                                transform: active ? 'scale(1.02)' : 'scale(1)',
                               }}
                             >
                               {plan.is_popular && (
@@ -456,19 +464,48 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                   </div>
 
                   {/* Controles do Carrossel */}
-                  {plans.length > 2 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+                  {plans.length > (window.innerWidth > 768 ? 2 : 1) && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 24 }}>
                       <button 
                         type="button" onClick={prevCarousel} disabled={carouselIdx === 0}
-                        style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: carouselIdx === 0 ? 0.3 : 1 }}
+                        style={{ 
+                          background: 'var(--bg-darker)', border: '1px solid var(--border)', 
+                          borderRadius: '50%', width: 36, height: 36, 
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                          cursor: 'pointer', opacity: carouselIdx === 0 ? 0.3 : 1,
+                          transition: 'all 0.2s',
+                          color: 'white'
+                        }}
+                        onMouseEnter={e => { if (carouselIdx > 0) e.currentTarget.style.borderColor = 'var(--accent)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
                       >
-                        <ChevronLeft size={16} />
+                        <ChevronLeft size={20} />
                       </button>
+                      
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {Array.from({ length: plans.length - (window.innerWidth > 768 ? 1 : 0) }).map((_, i) => (
+                          <div key={i} style={{ 
+                            width: 6, height: 6, borderRadius: '50%', 
+                            background: carouselIdx === i ? 'var(--accent)' : 'var(--border)',
+                            transition: 'all 0.2s'
+                          }} />
+                        ))}
+                      </div>
+
                       <button 
-                        type="button" onClick={nextCarousel} disabled={carouselIdx >= plans.length - 2}
-                        style={{ background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: carouselIdx >= plans.length - 2 ? 0.3 : 1 }}
+                        type="button" onClick={nextCarousel} disabled={carouselIdx >= plans.length - (window.innerWidth > 768 ? 2 : 1)}
+                        style={{ 
+                          background: 'var(--bg-darker)', border: '1px solid var(--border)', 
+                          borderRadius: '50%', width: 36, height: 36, 
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                          cursor: 'pointer', opacity: carouselIdx >= plans.length - (window.innerWidth > 768 ? 2 : 1) ? 0.3 : 1,
+                          transition: 'all 0.2s',
+                          color: 'white'
+                        }}
+                        onMouseEnter={e => { if (carouselIdx < plans.length - 2) e.currentTarget.style.borderColor = 'var(--accent)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
                       >
-                        <ChevronRight size={16} />
+                        <ChevronRight size={20} />
                       </button>
                     </div>
                   )}

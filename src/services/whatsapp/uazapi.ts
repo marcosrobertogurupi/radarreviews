@@ -10,13 +10,13 @@ export async function sendWhatsAppMessage(params: {
   number: string
   text: string
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { baseUrl = 'https://api.uazapi.com', token, number, text } = params
+  const { baseUrl = 'https://netservice.uazapi.com', token, number, text } = params
 
   try {
     // Formatar número para o padrão internacional (apenas números)
     const formattedNumber = number.replace(/\D/g, '')
 
-    const url = `${baseUrl}/message/text`
+    const url = `${baseUrl.replace(/\/+$/, '')}/send/text`
     
     const body = {
       number: formattedNumber,
@@ -27,6 +27,7 @@ export async function sendWhatsAppMessage(params: {
 
     const response = await axios.post(url, body, {
       headers: {
+        'Accept': 'application/json',
         'Content-Type': 'application/json',
         'token': token
       },
