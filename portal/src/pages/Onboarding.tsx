@@ -64,9 +64,15 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   const [plansLoading, setPlansLoading] = useState(true)
   const [channels,  setChannels] = useState<SourceChannel[]>([])
   
-  // Carousel e Custom Plan
   const [carouselIdx, setCarouselIdx] = useState(0)
   const [customCh, setCustomCh] = useState(3)
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
 
   
@@ -173,7 +179,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
   }
 
   function nextCarousel() {
-    if (carouselIdx < plans.length - 2) setCarouselIdx(v => v + 1)
+    const maxVisible = isMobile ? 1 : 2
+    if (carouselIdx < plans.length - maxVisible) setCarouselIdx(v => v + 1)
   }
 
   function prevCarousel() {
@@ -396,13 +403,13 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                     <div style={{ 
                       display: 'flex', 
                       transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: `translateX(-${carouselIdx * (plans.length > 2 ? (100 / (window.innerWidth > 768 ? 2 : 1)) : 0)}%)`,
+                      transform: `translateX(-${carouselIdx * (100 / (isMobile ? 1 : 2))}%)`,
                     }}>
                       {plans.map((plan, idx) => {
                         const active = selectedPlan === plan.slug
                         return (
                           <div key={plan.id} style={{ 
-                            minWidth: window.innerWidth > 768 ? '50%' : '100%', 
+                            minWidth: isMobile ? '100%' : '50%', 
                             padding: '0 8px', 
                             boxSizing: 'border-box',
                             transition: 'all 0.3s'
@@ -464,7 +471,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                   </div>
 
                   {/* Controles do Carrossel */}
-                  {plans.length > (window.innerWidth > 768 ? 2 : 1) && (
+                  {plans.length > (isMobile ? 1 : 2) && (
                     <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 24 }}>
                       <button 
                         type="button" onClick={prevCarousel} disabled={carouselIdx === 0}
@@ -483,7 +490,7 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                       </button>
                       
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        {Array.from({ length: plans.length - (window.innerWidth > 768 ? 1 : 0) }).map((_, i) => (
+                        {Array.from({ length: plans.length - (isMobile ? 0 : 1) }).map((_, i) => (
                           <div key={i} style={{ 
                             width: 6, height: 6, borderRadius: '50%', 
                             background: carouselIdx === i ? 'var(--accent)' : 'var(--border)',
@@ -493,16 +500,16 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
                       </div>
 
                       <button 
-                        type="button" onClick={nextCarousel} disabled={carouselIdx >= plans.length - (window.innerWidth > 768 ? 2 : 1)}
+                        type="button" onClick={nextCarousel} disabled={carouselIdx >= plans.length - (isMobile ? 1 : 2)}
                         style={{ 
                           background: 'var(--bg-darker)', border: '1px solid var(--border)', 
                           borderRadius: '50%', width: 36, height: 36, 
                           display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                          cursor: 'pointer', opacity: carouselIdx >= plans.length - (window.innerWidth > 768 ? 2 : 1) ? 0.3 : 1,
+                          cursor: 'pointer', opacity: carouselIdx >= plans.length - (isMobile ? 1 : 2) ? 0.3 : 1,
                           transition: 'all 0.2s',
                           color: 'white'
                         }}
-                        onMouseEnter={e => { if (carouselIdx < plans.length - 2) e.currentTarget.style.borderColor = 'var(--accent)' }}
+                        onMouseEnter={e => { if (carouselIdx < plans.length - (isMobile ? 1 : 2)) e.currentTarget.style.borderColor = 'var(--accent)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
                       >
                         <ChevronRight size={20} />
