@@ -61,7 +61,7 @@ export default function Settings() {
           .select('id, config')
           .eq('business_id', biz.id)
           .in('channel', ['facebook', 'instagram'])
-          .not('config->access_token', 'is', null)
+          .not('config->page_token_enc', 'is', null)
           .maybeSingle()
         
         if (metaConn) setHasMeta(true)
@@ -77,7 +77,14 @@ export default function Settings() {
       return
     }
     const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    const returnUrl = encodeURIComponent(window.location.href)
+    
+    const isIframe = window !== window.top
+    const fallbackParent = 'https://reputei.com.br/portalcliente'
+    const returnUrlStr = isIframe && !window.location.hostname.includes('localhost') 
+      ? fallbackParent 
+      : window.location.href
+    
+    const returnUrl = encodeURIComponent(returnUrlStr)
     const connectUrl = `${apiUrl}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}&return_url=${returnUrl}`
     
     // Usamos window.top para garantir que, se o portal estiver num iframe, o Facebook carregue na janela inteira.
