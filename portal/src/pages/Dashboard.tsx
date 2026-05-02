@@ -67,7 +67,7 @@ export default function Dashboard({ tenantId }: Props) {
           : Promise.resolve({ data: [], error: null }),
         bizIds.length
           ? supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
-          : Promise.resolve({ data: [], error: null }),
+          : Promise.resolve({ data: [], error: null })
       ])
 
       const reviews = rvRes.data ?? []
@@ -136,11 +136,7 @@ export default function Dashboard({ tenantId }: Props) {
       setAlerts(alertRes.data ?? [])
       setCompetitors(compRes.data ?? [])
     } catch (err) {
-      console.error('[Dashboard] Erro ao carregar dados:', err)
-      // Garante que o KPI seja inicializado mesmo com erro
-      if (!kpi) {
-        setKpi({ total: 0, total_all: 0, negative_rate: 0, critical_count: 0, avg_rating: 0, pending_alerts: 0, avg_score: 0 })
-      }
+      console.error('Erro ao carregar dashboard do portal:', err)
     } finally {
       setLoading(false)
       setRefreshing(false)

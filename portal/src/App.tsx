@@ -80,7 +80,7 @@ export default function App() {
       .single()
       .then(async ({ data: userProfile }) => {
         if (!userProfile) return
-        setUserName(userProfile.nome || session.user.email?.split('@')[0] || '')
+        setUserName(userProfile.nome || '')
 
         if (userProfile.perfil === 'parceiro') {
           // Buscar assinantes vinculados a este parceiro
@@ -196,11 +196,11 @@ export default function App() {
           }}>
             Portal do Assinante
           </div>
-          {userName && (
+          {userName || session?.user?.email ? (
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4, marginBottom: 4 }}>
-              👤 {userName}
+              👤 {userName || session?.user?.email}
             </div>
-          )}
+          ) : null}
           {trialDaysLeft !== null && (
             <div style={{
               marginTop: 8, padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
