@@ -13,6 +13,7 @@ export default function Settings() {
   const [profile, setProfile] = useState<string>('')
   const [tenantId, setTenantId] = useState('')
   const [hasMeta, setHasMeta] = useState(false)
+  const [businessId, setBusinessId] = useState('')
 
   useEffect(() => {
     loadProfile()
@@ -42,25 +43,41 @@ export default function Settings() {
 
     if (tu?.tenant_id) {
       setTenantId(tu.tenant_id)
+
+      // Fetch the business ID for this tenant
+      const { data: biz } = await supabase
+        .from('monitored_businesses')
+        .select('id')
+        .eq('tenant_id', tu.tenant_id)
+        .limit(1)
+        .single()
       
-      // Verificar se já tem conector Meta configurado
-      const { data: metaConn } = await supabase
-        .from('channel_connectors')
-        .select('id, config')
-        .eq('business_id', tu.tenant_id) // simplificado para este exemplo
-        .in('channel', ['facebook', 'instagram'])
-        .not('config->access_token', 'is', null)
-        .maybeSingle()
-      
-      if (metaConn) setHasMeta(true)
+      if (biz?.id) {
+        setBusinessId(biz.id)
+        
+        // Verificar se já tem conector Meta configurado
+        const { data: metaConn } = await supabase
+          .from('channel_connectors')
+          .select('id, config')
+          .eq('business_id', biz.id)
+          .in('channel', ['facebook', 'instagram'])
+          .not('config->access_token', 'is', null)
+          .maybeSingle()
+        
+        if (metaConn) setHasMeta(true)
+      }
     }
 
     setLoading(false)
   }
 
   function handleMetaConnect() {
+    if (!tenantId || !businessId) {
+      setMessage({ type: 'error', text: 'Erro interno: ID da empresa não encontrado.' })
+      return
+    }
     const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-    window.location.href = `${apiUrl}/api/auth/meta/connect?tenantId=${tenantId}`
+    window.location.href = `${apiUrl}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}`
   }
 
   async function handleUpdateProfile(e: React.FormEvent) {
