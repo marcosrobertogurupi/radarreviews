@@ -56,15 +56,14 @@ export default function Settings() {
         setBusinessId(biz.id)
         
         // Verificar se já tem conector Meta configurado
-        const { data: metaConn } = await supabase
+        const { data: metaConns } = await supabase
           .from('channel_connectors')
-          .select('id, config')
+          .select('id')
           .eq('business_id', biz.id)
           .in('channel', ['facebook', 'instagram'])
-          .not('config->page_token_enc', 'is', null)
-          .maybeSingle()
+          .limit(1)
         
-        if (metaConn) setHasMeta(true)
+        if (metaConns && metaConns.length > 0) setHasMeta(true)
       }
     }
 
