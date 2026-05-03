@@ -44,10 +44,13 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState('')
+  const [isValidated, setIsValidated] = useState(false)
 
-  // Função de validação movida para fora para maior clareza e robustez
   async function validateProfile(session: Session, retry = true): Promise<boolean> {
-    console.log('[Auth] Iniciando validação para:', session.user.id)
+    // Se já validamos este usuário nesta carga de página, não precisamos validar de novo
+    if (isValidated) return true
+
+    console.log('[Auth] Validando perfil...')
     try {
       const queryPromise = supabase
         .from('usuarios')
@@ -55,7 +58,6 @@ export default function App() {
         .eq('id', session.user.id)
         .maybeSingle()
 
-      // Aumentado para 15s para maior estabilidade em conexões lentas
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('TIMEOUT')), 15000)
       )
@@ -64,102 +66,70 @@ export default function App() {
       const { data, error } = result
 
       if (error) {
-        console.error('[Auth] Erro na consulta de perfil:', error)
+        console.error('[Auth] Erro na consulta:', error)
         if (retry) {
-          console.warn('[Auth] Tentando novamente em 2s...')
           await new Promise(r => setTimeout(r, 2000))
           return validateProfile(session, false)
         }
-        setAuthError(`Erro de conexão: ${error.message}`)
-        return false
+        // Em caso de erro de conexão, se já tínhamos uma sessão, vamos mantê-la temporariamente
+        return !!session 
       }
 
       if (!data) {
-        // Se não encontrar o perfil de primeira, pode ser delay de replicação do Supabase
         if (retry) {
-          console.warn('[Auth] Perfil não encontrado, tentando última vez...')
-          await new Promise(r => setTimeout(r, 3000))
+          await new Promise(r => setTimeout(r, 2000))
           return validateProfile(session, false)
         }
-        setAuthError('Perfil de usuário não localizado.')
+        setAuthError('Perfil não localizado.')
         return false
       }
 
-      if (!data.ativo) {
+      if (!data.ativo || !['admin', 'operador'].includes(data.perfil)) {
         await supabase.auth.signOut()
-        setAuthError('Esta conta está desativada.')
-        return false
-      }
-
-      if (!['admin', 'operador'].includes(data.perfil)) {
-        await supabase.auth.signOut()
-        setAuthError('Acesso restrito a administradores.')
+        setAuthError(data.ativo ? 'Acesso restrito.' : 'Conta desativada.')
         return false
       }
 
       setAuthError(null)
+      setIsValidated(true)
       return true
     } catch (err: any) {
+      // Se for timeout, mantemos a sessão para não interromper o trabalho do user
       if (err.message === 'TIMEOUT') {
-        setAuthError('O servidor demorou a responder. Verifique sua conexão e recarregue.')
-      } else {
-        setAuthError('Falha crítica de comunicação com o banco.')
+        console.warn('[Auth] Timeout na validação, mantendo sessão atual.')
+        return !!session
       }
       return false
     }
   }
 
   useEffect(() => {
-
-    // Timeout de segurança para evitar tela preta infinita
-    const timeout = setTimeout(() => {
-      setLoadingSession(false)
-    }, 8000)
-
+    // Carregar sessão inicial
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      try {
-        if (session) {
-          const isValid = await validateProfile(session)
-          if (isValid) {
-            setSession(session)
-            await loadTenants()
-          }
+      if (session) {
+        const ok = await validateProfile(session)
+        if (ok) {
+          setSession(session)
+          loadTenants()
         }
-      } catch (err) {
-        console.error('Erro fatal no getSession:', err)
-        setAuthError('Erro ao iniciar sessão. Tente recarregar a página.')
-      } finally {
-        clearTimeout(timeout)
-        setLoadingSession(false)
       }
-    }).catch(err => {
-      console.error('Falha na promessa getSession:', err)
-      clearTimeout(timeout)
       setLoadingSession(false)
     })
 
-    const authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log('Auth Event:', _event)
-      try {
+    const authSub = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth Event:', event)
+      
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session) {
-          const isValid = await validateProfile(session)
-          if (isValid) {
-            setSession(session)
-            loadTenants()
-          } else {
-            setSession(null)
-          }
-        } else {
-          setSession(null)
-          if (_event === 'SIGNED_OUT') setAuthError(null)
+          const ok = await validateProfile(session)
+          if (ok) setSession(session)
         }
-      } catch (err) {
-        console.error('Erro no processamento do evento de auth:', err)
+      } else if (event === 'SIGNED_OUT') {
         setSession(null)
-        setAuthError('Erro ao processar login.')
+        setIsValidated(false)
+        setAuthError(null)
       }
     })
-
 
     async function loadTenants() {
       try {
