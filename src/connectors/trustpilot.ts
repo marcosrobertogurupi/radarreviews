@@ -100,16 +100,36 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             reviews_new: ingest.reviews_new,
             reviews_updated: ingest.reviews_updated
           }
+        } else {
+          // Se o Apify retornou 0 mas o token existe, o problema é no scraping ou no ID
+          logger.warn(`[${CHANNEL}] Apify retornou 0 reviews para ${externalId}. Verifique se o domínio está correto no Trustpilot.`)
+          return {
+            reviews_fetched: 0,
+            reviews_new: 0,
+            reviews_updated: 0,
+            error: `Nenhum review encontrado no Trustpilot para o domínio "${externalId}". Verifique se o ID está correto.`
+          }
         }
-      } catch (apifyError) {
-        logger.warn(`[${CHANNEL}] Falha na Apify: ${apifyError instanceof Error ? apifyError.message : String(apifyError)}`)
+      } catch (apifyError: any) {
+        logger.warn(`[${CHANNEL}] Falha na Apify: ${apifyError?.message}`)
+        // Se a falha for especificamente falta de token (o que não deve ocorrer aqui devido ao if), ou erro de quota
+        if (apifyError?.message?.includes('APIFY_TOKEN')) {
+          // continua para o fallback
+        } else {
+          return {
+            reviews_fetched: 0,
+            reviews_new: 0,
+            reviews_updated: 0,
+            error: `Erro no robô Apify: ${apifyError?.message}`
+          }
+        }
       }
     }
 
     // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): API OFICIAL ---
     const trustpilotKey = process.env['TRUSTPILOT_API_KEY']
     if (!trustpilotKey) {
-      throw new Error('Coleta indisponível: APIFY_TOKEN ou TRUSTPILOT_API_KEY necessários no .env')
+      throw new Error('Configuração incompleta: APIFY_TOKEN não encontrado nas variáveis de ambiente do servidor.')
     }
 
     logger.info(`[${CHANNEL}] Iniciando busca via API Oficial (Fallback)`, {

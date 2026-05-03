@@ -17,6 +17,7 @@ import Pricing from './pages/Pricing'
 import TrialExpired from './pages/TrialExpired'
 import GenerateReviews from './pages/GenerateReviews'
 import Settings from './pages/Settings'
+import { ToastProvider } from './components/Toast'
 
 type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing' | 'settings'
 type AuthView = 'login' | 'signup'
@@ -180,7 +181,8 @@ export default function App() {
   }
 
   return (
-    <div className="app-layout">
+    <ToastProvider>
+      <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon">📡</div>
@@ -285,6 +287,7 @@ export default function App() {
       <main className="main-content">
         {pages[page]}
       </main>
-    </div>
+      </div>
+    </ToastProvider>
   )
 }

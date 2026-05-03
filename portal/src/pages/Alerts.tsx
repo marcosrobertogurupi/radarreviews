@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { AlertEvent } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, timeAgo } from '../lib/utils'
 import { CheckCircle, ExternalLink } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 const CONDITION_LABELS: Record<string, string> = {
   rating_drop:      '⭐ Nota baixa',
@@ -17,6 +18,7 @@ const CONDITION_LABELS: Record<string, string> = {
 interface Props { tenantId: string }
 
 export default function Alerts({ tenantId }: Props) {
+  const { toast } = useToast()
   const [alerts, setAlerts]   = useState<AlertEvent[]>([])
   const [tab, setTab]         = useState<'pending' | 'resolved'>('pending')
   const [loading, setLoading] = useState(true)
@@ -55,8 +57,13 @@ export default function Alerts({ tenantId }: Props) {
 
   async function resolve(id: string) {
     setResolving(id)
-    await supabase.from('alert_events').update({ notified: true }).eq('id', id)
-    setAlerts(prev => prev.filter(a => a.id !== id))
+    try {
+      await supabase.from('alert_events').update({ notified: true }).eq('id', id)
+      setAlerts(prev => prev.filter(a => a.id !== id))
+      toast('Alerta marcado como resolvido!', 'success')
+    } catch {
+      toast('Erro ao resolver alerta.', 'error')
+    }
     setResolving(null)
   }
 

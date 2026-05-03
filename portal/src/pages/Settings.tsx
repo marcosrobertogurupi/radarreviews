@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { User, Mail, Lock, ShieldCheck, Save, Loader2, Phone } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const { toast } = useToast()
   
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -91,7 +92,7 @@ export default function Settings() {
 
   function handleMetaConnect() {
     if (!tenantId || !businessId) {
-      setMessage({ type: 'error', text: 'Erro interno: ID da empresa não encontrado.' })
+      toast('Erro interno: ID da empresa não encontrado.', 'error')
       return
     }
     const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
@@ -116,7 +117,6 @@ export default function Settings() {
   async function handleUpdateProfile(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    setMessage(null)
 
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
@@ -146,9 +146,9 @@ export default function Settings() {
         if (tErr) throw tErr
       }
 
-      setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' })
+      toast('Perfil atualizado com sucesso!', 'success')
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Erro ao atualizar perfil' })
+      toast(err.message || 'Erro ao atualizar perfil', 'error')
     } finally {
       setSaving(false)
     }
@@ -259,16 +259,6 @@ export default function Settings() {
             </div>
           </div>
 
-          {message && (
-            <div style={{ 
-              padding: '12px 16px', borderRadius: 8, fontSize: 14,
-              background: message.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-              color: message.type === 'success' ? '#10b981' : '#f87171',
-              border: `1px solid ${message.type === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`
-            }}>
-              {message.text}
-            </div>
-          )}
 
           <button 
             type="submit" 

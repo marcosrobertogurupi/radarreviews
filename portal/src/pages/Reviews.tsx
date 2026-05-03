@@ -7,10 +7,12 @@ import {
   downloadCSV,
 } from '../lib/utils'
 import { X, ExternalLink, Lightbulb, Loader, MessageCircle, FileDown } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 interface Props { tenantId: string; onNavigateCopilot: () => void }
 
 export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
+  const { toast } = useToast()
   const [reviews, setReviews]       = useState<Review[]>([])
   const [filtered, setFiltered]     = useState<Review[]>([])
   const [selected, setSelected]     = useState<Review | null>(null)
@@ -131,14 +133,14 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
       })
       const json = await res.json() as { ok?: boolean; error?: string }
       if (json.ok) {
-        alert('Resposta enviada com sucesso!')
+        toast('Resposta enviada com sucesso!', 'success')
         load(true)
         closeDetail()
       } else {
-        alert(`Erro ao enviar: ${json.error}`)
+        toast(`Erro ao enviar: ${json.error}`, 'error')
       }
     } catch {
-      alert('Erro de conexão ao enviar resposta.')
+      toast('Erro de conexão ao enviar resposta.', 'error')
     }
     setResponding(false)
   }

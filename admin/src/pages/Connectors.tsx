@@ -130,7 +130,7 @@ export default function Connectors() {
         parsedConfig = JSON.parse(editingConfigJson)
       }
     } catch {
-      alert('Formato JSON inválido na Configuração Avançada.')
+      toast('Formato JSON inválido na Configuração Avançada.', 'error')
       return
     }
     const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
@@ -143,15 +143,15 @@ export default function Connectors() {
       })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+        toast('Erro ao salvar: ' + (err.error ?? resp.statusText), 'error')
         return
       }
-      alert('Configuração salva com sucesso!')
+      toast('Configuração salva com sucesso!', 'success')
       setSelected({ ...selected, config: newConfig, external_id: editingExternalId, status: 'active' })
       setEditingConfig(false)
       loadAll()
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     }
   }
 
@@ -161,11 +161,11 @@ export default function Connectors() {
     try {
       await fetch(`${baseUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
       const now = new Date().toISOString()
-      alert('Busca forçada iniciada!')
+      toast('Busca forçada iniciada!', 'success')
       setSelected({ ...selected, next_sync_at: now, status: 'active' })
       loadAll()
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     }
   }
 
@@ -186,12 +186,12 @@ export default function Connectors() {
         throw new Error(err.error ?? resp.statusText)
       }
 
-      alert('Conector e todos os dados associados (reviews, notificações, logs) foram excluídos com sucesso.')
+      toast('Conector e todos os dados associados foram excluídos com sucesso.', 'success')
       setSelected(null)
       loadAll()
     } catch (err: unknown) {
       console.error('Falha na exclusão:', err)
-      alert(err instanceof Error ? err.message : String(err))
+      toast(err instanceof Error ? err.message : String(err), 'error')
       setLoading(false)
     }
   }
@@ -224,7 +224,7 @@ export default function Connectors() {
       setNewConn({ ...newConn, external_id: '', instagram_username: '', hashtags: '', fb_url: '' })
       loadAll()
     } catch {
-      alert('Não foi possível conectar à API.')
+      toast('Não foi possível conectar à API.', 'error')
     }
   }
 

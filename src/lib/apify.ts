@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { logApiUsage } from './usage.js'
 
-const APIFY_TOKEN = process.env['APIFY_TOKEN']
+const getApifyToken = () => process.env['APIFY_TOKEN']
 
 export interface ApifyContext {
   tenant_id: string
@@ -21,7 +21,8 @@ export interface ApifyInstagramComment {
  * Chama a Apify para coletar comentários recentes de um perfil do Instagram
  */
 export async function fetchInstagramComments(username: string, limit = 50, ctx?: ApifyContext): Promise<ApifyInstagramComment[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
 
   console.log(`[Apify] Passo 1: Buscando posts recentes de @${username}...`)
 
@@ -29,7 +30,7 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
     // 1. Pegar os últimos posts usando a URL direta do perfil
     const profileUrl = `https://www.instagram.com/${username.replace('@', '')}/`
     const postsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}`,
       {
         directUrls: [profileUrl],
         resultsType: 'posts',
@@ -51,7 +52,7 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 
     // 2. Pegar comentários desses posts usando o robô ESPECIALIZADO em comentários
     const commentsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${token}`,
       {
         directUrls: postUrls,
         resultsLimit: limit
@@ -74,7 +75,7 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
     }
 
     console.log(`[Apify] Coletados ${items.length} comentários válidos para @${username}`)
-    // ... restante da normalização
+    
     return items.map(item => {
       const id = item.id || item.commentId || item.pk || `ig_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
       return {
@@ -97,11 +98,12 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
  * Coleta reclamações do Reclame Aqui via Apify
  */
 export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
 
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${token}`,
       { companySlug, maxItems: limit, scrapeDetailedComplaints: true },
       { timeout: 300000 }
     )
@@ -137,13 +139,20 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
  * Coleta reviews do Trustpilot via Apify
  */
 export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado nas variáveis de ambiente')
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').split('/')[0]
   const startUrl = `https://www.trustpilot.com/review/${sanitizedDomain}`
 
+  const actorId = 'casper11515/trustpilot-reviews-scraper'
+  const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`
+  
+  console.log(`[Apify] Chamando scraper para ${domain}...`)
+  console.log(`[Apify] URL: https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=...`)
+
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~trustpilot-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      apiUrl,
       { startUrls: [{ url: startUrl }], maxReviews: limit },
       { timeout: 300000 }
     )
@@ -176,10 +185,11 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
  * Coleta reviews de páginas do Facebook via Apify
  */
 export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${token}`,
       { startUrls: [{ url: pageUrl }], maxResults: limit },
       { timeout: 300000 }
     )
@@ -211,11 +221,12 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: Ap
  * Coleta menções de um perfil no Instagram (@)
  */
 export async function fetchInstagramMentions(username: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
   const cleanUsername = username.replace('@', '')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${token}`,
       { usernames: [cleanUsername], limit },
       { timeout: 300000 }
     )
@@ -246,11 +257,12 @@ export async function fetchInstagramMentions(username: string, limit = 20, ctx?:
  * Coleta posts/comentários de uma Hashtag no Instagram (#)
  */
 export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
-  if (!APIFY_TOKEN) throw new Error('APIFY_TOKEN não configurado')
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
   const tag = hashtag.replace('#', '')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${token}`,
       { hashtags: [tag], resultsLimit: limit },
       { timeout: 300000 }
     )
@@ -276,4 +288,3 @@ export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: 
     return []
   }
 }
-

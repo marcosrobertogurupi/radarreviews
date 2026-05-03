@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Send, MessageSquare, Users, CheckCircle2, AlertCircle, Clock, Share2, Info } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 interface Props {
   tenantId: string
@@ -14,8 +15,8 @@ export default function GenerateReviews({ tenantId }: Props) {
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
   const [template, setTemplate] = useState('padrao')
-  const [selectedChannel, setSelectedChannel] = useState<'google' | 'tripadvisor' | 'reclameaqui'>('google')
-  const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
+  const [selectedChannel, setSelectedChannel] = useState<'google' | 'tripadvisor' | 'reclameaqui' | 'trustpilot'>('google')
+  const { toast } = useToast()
 
   useEffect(() => {
     loadTenantData()
@@ -65,13 +66,17 @@ export default function GenerateReviews({ tenantId }: Props) {
       // O ID do Reclame Aqui costuma ser o slug da empresa
       return id ? `https://www.reclameaqui.com.br/reclamar/${id}/` : null
     }
+    if (channel === 'trustpilot') {
+      return id ? `https://www.trustpilot.com/evaluate/${id}` : null
+    }
     return null
   }
 
   const channelNames: Record<string, string> = {
     google: 'Google Maps',
     tripadvisor: 'TripAdvisor',
-    reclameaqui: 'Reclame Aqui'
+    reclameaqui: 'Reclame Aqui',
+    trustpilot: 'Trustpilot'
   }
 
   const templates = {
@@ -88,20 +93,19 @@ export default function GenerateReviews({ tenantId }: Props) {
 
   async function handleSend() {
     if (!number) {
-      setStatus({ type: 'error', msg: 'Informe o número do WhatsApp.' })
+      toast('Informe o número do WhatsApp.', 'warning')
       return
     }
     if (!reviewLink) {
-      setStatus({ type: 'error', msg: `O canal ${channelNames[selectedChannel]} não possui link configurado.` })
+      toast(`O canal ${channelNames[selectedChannel]} não possui link configurado.`, 'error')
       return
     }
     if (!tenant?.whatsapp_token_enc) {
-      setStatus({ type: 'error', msg: 'WhatsApp não configurado. Entre em contato com o suporte.' })
+      toast('WhatsApp não configurado. Entre em contato com o suporte.', 'error')
       return
     }
 
     setSending(true)
-    setStatus(null)
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -122,15 +126,15 @@ export default function GenerateReviews({ tenantId }: Props) {
       const result = await res.json()
 
       if (res.ok) {
-        setStatus({ type: 'success', msg: 'Convite enviado com sucesso!' })
+        toast('Convite enviado com sucesso!', 'success')
         setNumber('')
         setName('')
         loadTenantData()
       } else {
-        setStatus({ type: 'error', msg: result.error || 'Falha ao enviar.' })
+        toast(result.error || 'Falha ao enviar.', 'error')
       }
     } catch (err) {
-      setStatus({ type: 'error', msg: 'Erro de conexão com o servidor.' })
+      toast('Erro de conexão com o servidor.', 'error')
     } finally {
       setSending(false)
     }
@@ -174,7 +178,7 @@ export default function GenerateReviews({ tenantId }: Props) {
 
           <div style={{ marginBottom: 20 }}>
             <label className="filter-label">Onde quer receber o review?</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
               {Object.keys(channelNames).map(c => (
                 <button 
                   key={c}
@@ -211,17 +215,6 @@ export default function GenerateReviews({ tenantId }: Props) {
             </div>
           </div>
 
-          {status && (
-            <div style={{ 
-              padding: 12, borderRadius: 8, marginBottom: 20, 
-              background: status.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-              color: status.type === 'success' ? '#10b981' : '#ef4444',
-              display: 'flex', alignItems: 'center', gap: 8, fontSize: 13
-            }}>
-              {status.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-              {status.msg}
-            </div>
-          )}
 
           <button 
             className="btn-primary" 
