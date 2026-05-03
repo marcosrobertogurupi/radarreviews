@@ -10,9 +10,11 @@ export default function GenerateReviews({ tenantId }: Props) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [tenant, setTenant] = useState<any>(null)
+  const [business, setBusiness] = useState<any>(null)
   const [number, setNumber] = useState('')
   const [name, setName] = useState('')
   const [template, setTemplate] = useState('padrao')
+  const [selectedChannel, setSelectedChannel] = useState<'google' | 'tripadvisor' | 'reclameaqui'>('google')
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
 
   useEffect(() => {
@@ -21,26 +23,76 @@ export default function GenerateReviews({ tenantId }: Props) {
 
   async function loadTenantData() {
     setLoading(true)
-    const { data } = await supabase
+    const { data: tenantData } = await supabase
       .from('tenants')
       .select('whatsapp_limit_monthly, whatsapp_sent_this_month, whatsapp_token_enc')
       .eq('id', tenantId)
       .single()
-    setTenant(data)
+    setTenant(tenantData)
+
+    const { data: biz } = await supabase
+      .from('monitored_businesses')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .limit(1)
+      .single()
+
+    if (biz) {
+      const { data: connectors } = await supabase
+        .from('channel_connectors')
+        .select('channel, external_id')
+        .eq('business_id', biz.id)
+      
+      setBusiness({
+        ...biz,
+        connectors: connectors || []
+      })
+    }
     setLoading(false)
   }
 
-  const templates = {
-    padrao: `Olá {nome}! 😊 Obrigado por nos visitar. Sua opinião é muito importante para nós. Poderia nos avaliar no Google? Leva apenas 30 segundos: https://search.google.com/local/writereview?placeid=SEU_PLACE_ID`,
-    agradecimento: `Oi {nome}! Tudo bem? Gostamos muito de ter você aqui hoje. Se puder, conte como foi sua experiência: https://search.google.com/local/writereview?placeid=SEU_PLACE_ID`,
-    resolucao: `Olá {nome}, vimos que resolvemos seu chamado! Ficamos felizes. Poderia registrar sua satisfação no nosso perfil? https://search.google.com/local/writereview?placeid=SEU_PLACE_ID`
+  const getReviewLink = (channel: string) => {
+    const conn = business?.connectors?.find((c: any) => (c.channel === channel || (channel === 'google' && c.channel === 'google_maps')))
+    const id = conn?.external_id
+
+    if (channel === 'google') {
+      return id ? `https://search.google.com/local/writereview?placeid=${id}` : null
+    }
+    if (channel === 'tripadvisor') {
+      return id ? `https://www.tripadvisor.com.br/UserReview-${id}` : null
+    }
+    if (channel === 'reclameaqui') {
+      // O ID do Reclame Aqui costuma ser o slug da empresa
+      return id ? `https://www.reclameaqui.com.br/reclamar/${id}/` : null
+    }
+    return null
   }
 
-  const currentMessage = templates[template as keyof typeof templates].replace('{nome}', name || 'cliente')
+  const channelNames: Record<string, string> = {
+    google: 'Google Maps',
+    tripadvisor: 'TripAdvisor',
+    reclameaqui: 'Reclame Aqui'
+  }
+
+  const templates = {
+    padrao: `Olá {nome}! 😊 Obrigado por nos visitar. Sua opinião é muito importante para nós. Poderia nos avaliar no {canal}? Leva apenas 30 segundos: {link}`,
+    agradecimento: `Oi {nome}! Tudo bem? Gostamos muito de ter você aqui hoje. Se puder, conte como foi sua experiência no {canal}: {link}`,
+    resolucao: `Olá {nome}, ficamos felizes em te atender! Poderia registrar sua satisfação no nosso perfil do {canal}? {link}`
+  }
+
+  const reviewLink = getReviewLink(selectedChannel)
+  const currentMessage = templates[template as keyof typeof templates]
+    .replace('{nome}', name || 'cliente')
+    .replace('{canal}', channelNames[selectedChannel])
+    .replace('{link}', reviewLink || '(Link não configurado)')
 
   async function handleSend() {
     if (!number) {
       setStatus({ type: 'error', msg: 'Informe o número do WhatsApp.' })
+      return
+    }
+    if (!reviewLink) {
+      setStatus({ type: 'error', msg: `O canal ${channelNames[selectedChannel]} não possui link configurado.` })
       return
     }
     if (!tenant?.whatsapp_token_enc) {
@@ -73,7 +125,7 @@ export default function GenerateReviews({ tenantId }: Props) {
         setStatus({ type: 'success', msg: 'Convite enviado com sucesso!' })
         setNumber('')
         setName('')
-        loadTenantData() // Atualiza contador
+        loadTenantData()
       } else {
         setStatus({ type: 'error', msg: result.error || 'Falha ao enviar.' })
       }
@@ -121,6 +173,20 @@ export default function GenerateReviews({ tenantId }: Props) {
           </div>
 
           <div style={{ marginBottom: 20 }}>
+            <label className="filter-label">Onde quer receber o review?</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+              {Object.keys(channelNames).map(c => (
+                <button 
+                  key={c}
+                  className={`btn ${selectedChannel === c ? 'active' : ''}`}
+                  onClick={() => setSelectedChannel(c as any)}
+                  style={{ fontSize: 11 }}
+                >
+                  {channelNames[c]}
+                </button>
+              ))}
+            </div>
+
             <label className="filter-label">Escolher Template</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {Object.keys(templates).map(t => (
