@@ -1411,12 +1411,20 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  if (url === '/api/whatsapp/send' && req.method === 'POST') {
-    handleSendWhatsApp(req, res).catch(err => {
-      console.error('[whatsapp-send] Erro:', err)
-      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno no servidor de WhatsApp' })) }
-    })
-    return
+  if (url === '/api/whatsapp/send') {
+    if (req.method === 'OPTIONS') {
+      setCors(req, res)
+      res.writeHead(204)
+      res.end()
+      return
+    }
+    if (req.method === 'POST') {
+      handleSendWhatsApp(req, res).catch(err => {
+        console.error('[whatsapp-send] Erro:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno no servidor de WhatsApp' })) }
+      })
+      return
+    }
   }
 
   if (url === '/api/admin/relatorios/auditoria' && req.method === 'GET') {
