@@ -165,7 +165,7 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
         companyWebsite: sanitizedDomain, 
         maxItems: limit,
         sort: 'newest',
-        timeout: 120 // Abortar no Apify se passar de 2 minutos
+        timeout: 300 // Aumentado para 5 minutos
       }
     )
 
@@ -173,10 +173,10 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
     const datasetId = runResponse.data.data.defaultDatasetId
     console.log(`[Apify] Robô iniciado (RunID: ${runId}). Aguardando conclusão...`)
 
-    // Polling simples (máximo 2 minutos)
+    // Polling simples (máximo 5 minutos)
     let finished = false
     let attempts = 0
-    while (!finished && attempts < 24) {
+    while (!finished && attempts < 60) {
       await new Promise(r => setTimeout(r, 5000))
       const statusCheck = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`)
       const status = statusCheck.data.data.status
