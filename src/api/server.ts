@@ -49,7 +49,7 @@ const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
 
 // ── CORS helper ──────────────────────────────────────────────────
 
-function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeaders = 'Content-Type') {
+function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeaders = 'Content-Type, Authorization') {
   const originHeader = req.headers.origin
   const origin = Array.isArray(originHeader) ? originHeader[0] : (originHeader || '')
   // Whitelist de produção
