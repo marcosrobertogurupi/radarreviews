@@ -49,15 +49,15 @@ export default function App() {
   async function validateProfile(session: Session, retry = true): Promise<boolean> {
     console.log('[Auth] Iniciando validação para:', session.user.id)
     try {
-      // Usando um Promise.race para garantir que a consulta não trave o app se o Supabase estiver lento
       const queryPromise = supabase
         .from('usuarios')
         .select('perfil, ativo')
         .eq('id', session.user.id)
         .maybeSingle()
 
+      // Aumentado para 15s para maior estabilidade em conexões lentas
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 6000)
+        setTimeout(() => reject(new Error('TIMEOUT')), 15000)
       )
 
       const result = await Promise.race([queryPromise, timeoutPromise]) as any
@@ -65,23 +65,25 @@ export default function App() {
 
       if (error) {
         console.error('[Auth] Erro na consulta de perfil:', error)
-        // Se for erro de RLS/Permissão no início, tenta uma vez mais
-        if (retry && error.code === 'PGRST116') {
-          console.warn('[Auth] RLS não propagado, tentando novamente...')
-          await new Promise(r => setTimeout(r, 1500))
+        if (retry) {
+          console.warn('[Auth] Tentando novamente em 2s...')
+          await new Promise(r => setTimeout(r, 2000))
           return validateProfile(session, false)
         }
-        setAuthError(`Erro no banco: ${error.message}`)
+        setAuthError(`Erro de conexão: ${error.message}`)
         return false
       }
 
       if (!data) {
-        console.warn('[Auth] Perfil não encontrado para ID:', session.user.id)
-        setAuthError('Usuário não encontrado na tabela de perfis.')
+        // Se não encontrar o perfil de primeira, pode ser delay de replicação do Supabase
+        if (retry) {
+          console.warn('[Auth] Perfil não encontrado, tentando última vez...')
+          await new Promise(r => setTimeout(r, 3000))
+          return validateProfile(session, false)
+        }
+        setAuthError('Perfil de usuário não localizado.')
         return false
       }
-
-      console.log('[Auth] Perfil carregado:', data.perfil, '| Ativo:', data.ativo)
 
       if (!data.ativo) {
         await supabase.auth.signOut()
@@ -99,11 +101,9 @@ export default function App() {
       return true
     } catch (err: any) {
       if (err.message === 'TIMEOUT') {
-        console.error('[Auth] Timeout na validação de perfil')
-        setAuthError('O banco de dados demorou muito para responder. Tente recarregar a página.')
+        setAuthError('O servidor demorou a responder. Verifique sua conexão e recarregue.')
       } else {
-        console.error('[Auth] Exceção crítica:', err)
-        setAuthError('Falha de conexão ao validar perfil.')
+        setAuthError('Falha crítica de comunicação com o banco.')
       }
       return false
     }
