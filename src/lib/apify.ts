@@ -156,19 +156,41 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
   console.log(`[Apify] Chamando scraper para ${domain}...`)
   console.log(`[Apify] URL: https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=...`)
 
-  try {
-    const response = await axios.post(
-      apiUrl,
+    // Usaremos a estratégia de execução assíncrona para evitar os limites de 300s do run-sync
+    console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
+    const runResponse = await axios.post(
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`,
       { 
         companyWebsite: sanitizedDomain, 
         maxItems: limit,
-        maxReviews: limit,
-        limit: limit,
         sort: 'newest'
-      },
-      { timeout: 600000 } // Aumentado para 10 minutos
+      }
     )
-    const items = response.data as any[]
+
+    const runId = runResponse.data.data.id
+    const datasetId = runResponse.data.data.defaultDatasetId
+    console.log(`[Apify] Robô iniciado (RunID: ${runId}). Aguardando conclusão...`)
+
+    // Polling simples (máximo 2 minutos)
+    let finished = false
+    let attempts = 0
+    while (!finished && attempts < 24) {
+      await new Promise(r => setTimeout(r, 5000))
+      const statusCheck = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`)
+      const status = statusCheck.data.data.status
+      if (status === 'SUCCEEDED') finished = true
+      else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+        throw new Error(`O robô falhou com status: ${status}`)
+      }
+      attempts++
+    }
+
+    if (!finished) throw new Error('O robô demorou muito para responder (Timeout interno).')
+
+    console.log(`[Apify] Robô finalizado! Buscando dados do dataset ${datasetId}...`)
+    const itemsResponse = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`)
+    const items = itemsResponse.data as any[]
+
     if (ctx?.tenant_id) {
       await logApiUsage({
         tenant_id: ctx.tenant_id,
@@ -179,15 +201,31 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
         estimated_cost_brl: 0.10
       })
     }
-    return items.map(item => ({
-      id: item.id || item.reviewId,
-      stars: item.rating || item.stars,
-      title: item.title,
-      text: item.text || item.content,
-      createdAt: item.createdAt || item.date || item.publishedDate,
-      consumer: { id: item.userId || item.consumerId, displayName: item.userName || item.authorName || item.author },
-      links: [{ rel: 'self', href: item.url || startUrl }]
-    }))
+
+    return items.map(item => {
+      // Normalização robusta de data
+      let dateStr = item.createdAt || item.date || item.publishedDate || new Date().toISOString()
+      try {
+        const d = new Date(dateStr)
+        if (isNaN(d.getTime())) dateStr = new Date().toISOString()
+        else dateStr = d.toISOString()
+      } catch {
+        dateStr = new Date().toISOString()
+      }
+
+      return {
+        id: item.id || item.reviewId || `tp_${Math.random().toString(36).slice(2, 9)}`,
+        stars: item.rating || item.stars || 5,
+        title: item.title || '',
+        text: item.text || item.content || item.body || '',
+        createdAt: dateStr,
+        consumer: { 
+          id: item.userId || item.consumerId || 'anon', 
+          displayName: item.userName || item.authorName || item.author || 'Cliente Trustpilot' 
+        },
+        links: [{ rel: 'self', href: item.url || startUrl }]
+      }
+    })
   } catch (err: any) {
     if (err.response?.data) {
       console.error(`[Apify] Detalhes do erro Trustpilot:`, JSON.stringify(err.response.data))
