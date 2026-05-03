@@ -87,7 +87,10 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
         url: item.url || (item.shortCode ? `https://www.instagram.com/reels/${item.shortCode}/` : undefined)
       }
     })
-  } catch (err) {
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro Instagram:`, JSON.stringify(err.response.data))
+    }
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[Apify] Erro ao coletar @${username}:`, msg)
     throw err
@@ -130,7 +133,10 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
       date: item.datetime || item.date || item.createdAt,
       url: item.url
     }))
-  } catch (err) {
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro ReclameAqui:`, JSON.stringify(err.response.data))
+    }
     throw err
   }
 }
@@ -176,7 +182,10 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
       consumer: { id: item.userId || item.consumerId, displayName: item.userName || item.authorName || item.author },
       links: [{ rel: 'self', href: item.url || startUrl }]
     }))
-  } catch (err) {
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro Trustpilot:`, JSON.stringify(err.response.data))
+    }
     throw err
   }
 }
@@ -212,7 +221,10 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: Ap
       author: item.authorName || item.user?.name || 'Usuário do Facebook',
       url: item.url || pageUrl
     }))
-  } catch (err) {
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro Facebook:`, JSON.stringify(err.response.data))
+    }
     throw err
   }
 }
