@@ -300,6 +300,26 @@ async function handleOnboarding(
     const { data: biz, error: bizErr } = await supabaseAdmin
       .from('monitored_businesses').insert(bizInsert).select('id').single()
     if (bizErr || !biz) throw new Error(bizErr?.message ?? 'Erro ao criar empresa')
+    const bizId = biz.id
+
+    // 4.5 Criar regras de alerta padrão
+    await supabaseAdmin.from('alert_rules').insert([
+      {
+        tenant_id: tenant.id,
+        business_id: bizId,
+        name: 'Rating Baixo (Automático)',
+        condition_type: 'rating_drop',
+        threshold: 2,
+        notify_email: true
+      },
+      {
+        tenant_id: tenant.id,
+        business_id: bizId,
+        name: 'Sentimento Crítico (IA)',
+        condition_type: 'negative_surge',
+        notify_email: true
+      }
+    ])
 
     // 5. Criar conectores para os canais selecionados
     if (channels.length > 0) {
@@ -1508,9 +1528,9 @@ const server = http.createServer((req, res) => {
 // ── Escalada de alertas críticos → n8n ───────────────────────────
 
 async function sendEscalationWebhook(payload: Record<string, unknown>): Promise<void> {
-  const webhookUrl = process.env['N8N_WEBHOOK_URL']
+  const webhookUrl = process.env['N8N_SYSTEM_ALERTS_WEBHOOK'] || process.env['N8N_WEBHOOK_URL']
   if (!webhookUrl) {
-    console.warn('[escalation] N8N_WEBHOOK_URL não configurada — pulando envio')
+    console.warn('[escalation] N8N_SYSTEM_ALERTS_WEBHOOK não configurada — pulando envio')
     return
   }
   const resp = await fetch(webhookUrl, {

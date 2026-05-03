@@ -127,7 +127,10 @@ export async function checkAlerts(
 
   for (const event of events) {
     const rule = rulesById.get(event.rule_id)
-    if (rule?.notify_webhook) {
+    // Se a regra diz para notificar, usamos o webhook da regra ou o padrão de assinantes
+    const webhookUrl = rule?.notify_webhook || process.env['N8N_SUBSCRIBER_ALERTS_WEBHOOK']
+    
+    if (webhookUrl && rule?.notify_email) {
       // Verificar Horário de Silêncio
       if (isQuietTime(rule) && (event.detail.urgency_level as string) !== 'urgente') {
         logger.info('[alerts] Alerta silenciado por Horário de Silêncio', {
@@ -141,10 +144,10 @@ export async function checkAlerts(
         subscriber_whatsapp: tenant?.admin_whatsapp || '',
         subscriber_email: tenant?.admin_email || '',
       }
-      await fireWebhook(rule.notify_webhook, event, rule, extraData).catch(err => {
+      await fireWebhook(webhookUrl, event, rule, extraData).catch(err => {
         logger.warn('[alerts] Falha ao disparar webhook', {
           rule_id: rule.id,
-          webhook_url: rule.notify_webhook,
+          webhook_url: webhookUrl,
           error: err instanceof Error ? err.message : String(err),
         })
       })
