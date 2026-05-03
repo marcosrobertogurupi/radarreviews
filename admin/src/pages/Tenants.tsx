@@ -132,9 +132,13 @@ export default function Tenants() {
 
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const resp = await fetch(`${baseUrl}/api/admin/tenant/${editingTenant.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
         body: JSON.stringify({
           name: editingTenant.name,
           slug: editingTenant.slug,
@@ -175,9 +179,13 @@ export default function Tenants() {
         setConfirmDialog(null)
         const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
         try {
+          const { data: { session } } = await supabase.auth.getSession()
           const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
             body: JSON.stringify({ is_active: newVal }),
           })
           if (!resp.ok) {
@@ -204,9 +212,13 @@ export default function Tenants() {
         setConfirmDialog(null)
         const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
         try {
+          const { data: { session } } = await supabase.auth.getSession()
           const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
             body: JSON.stringify({ trial_ends_at: newEnd.toISOString() }),
           })
           if (!resp.ok) {
@@ -230,9 +242,13 @@ export default function Tenants() {
 
     const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`${baseUrl}/api/admin/credentials`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
         body: JSON.stringify({
           tenantId: credentialsTenant.id,
           ...(credentials.email    ? { email: credentials.email }       : {}),

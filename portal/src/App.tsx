@@ -175,7 +175,7 @@ export default function App() {
     copilot:   <Copilot session={session} />,
     generate:  <GenerateReviews tenantId={tenantId} />,
     reports:   <Reports tenantId={tenantId} />,
-    pricing:   <Pricing />,
+    pricing:   <Pricing tenantTrial={tenantTrial} />,
     settings:  <Settings />,
   }
 

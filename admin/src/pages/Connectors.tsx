@@ -4,6 +4,7 @@ import type { Connector, SourceChannel } from '../lib/supabase'
 import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
 import { Trash2, AlertTriangle, Activity, Settings } from 'lucide-react'
 import { MetaConnectButton } from '../components/MetaConnectButton'
+import { useToast } from '../components/Toast'
 
 // ──────────────────────────────────────────────────────────────
 // Página Conectores
@@ -15,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = {
   error:          'Erro',
   pending:        'Aguardando',
   pending_config: 'Config. Pendente',
+  running:        'Sincronizando',
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -23,6 +25,7 @@ const STATUS_DOT: Record<string, string> = {
   error:          '🔴',
   pending:        '🟡',
   pending_config: '🟠',
+  running:        '🔵',
 }
 
 // Todos os 8 canais suportados pelo sistema
@@ -40,6 +43,7 @@ interface ConnectorStats {
 }
 
 export default function Connectors() {
+  const { toast } = useToast()
   const [connectors, setConnectors] = useState<Connector[]>([])
   const [stats, setStats] = useState<Record<string, ConnectorStats>>({})
   const [businesses, setBusinesses] = useState<Record<string, string>>({})
@@ -213,9 +217,9 @@ export default function Connectors() {
       })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        return alert('Erro ao salvar: ' + (err.error ?? resp.statusText))
+        return toast('Erro ao salvar: ' + (err.error ?? resp.statusText), 'error')
       }
-      alert('Conector criado com sucesso!')
+      toast('Conector criado com sucesso!', 'success')
       setShowCreateModal(false)
       setNewConn({ ...newConn, external_id: '', instagram_username: '', hashtags: '', fb_url: '' })
       loadAll()

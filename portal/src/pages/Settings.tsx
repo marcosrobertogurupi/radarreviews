@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { User, Mail, Lock, ShieldCheck, Save, Loader2 } from 'lucide-react'
+import { User, Mail, Lock, ShieldCheck, Save, Loader2, Phone } from 'lucide-react'
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
@@ -13,7 +13,10 @@ export default function Settings() {
   const [profile, setProfile] = useState<string>('')
   const [tenantId, setTenantId] = useState('')
   const [hasMeta, setHasMeta] = useState(false)
+  const [metaAccountName, setMetaAccountName] = useState('')
   const [businessId, setBusinessId] = useState('')
+  const [adminWhatsapp, setAdminWhatsapp] = useState('')
+  const [adminEmail, setAdminEmail] = useState('')
 
   useEffect(() => {
     loadProfile()
@@ -44,6 +47,17 @@ export default function Settings() {
     if (tu?.tenant_id) {
       setTenantId(tu.tenant_id)
 
+      const { data: tenantData } = await supabase
+        .from('tenants')
+        .select('admin_whatsapp, admin_email')
+        .eq('id', tu.tenant_id)
+        .single()
+      
+      if (tenantData) {
+        setAdminWhatsapp(tenantData.admin_whatsapp || '')
+        setAdminEmail(tenantData.admin_email || '')
+      }
+
       // Fetch the business ID for this tenant
       const { data: biz } = await supabase
         .from('monitored_businesses')
@@ -58,12 +72,17 @@ export default function Settings() {
         // Verificar se já tem conector Meta configurado
         const { data: metaConns } = await supabase
           .from('channel_connectors')
-          .select('id')
+          .select('id, config')
           .eq('business_id', biz.id)
           .in('channel', ['facebook', 'instagram'])
           .limit(1)
         
-        if (metaConns && metaConns.length > 0) setHasMeta(true)
+        if (metaConns && metaConns.length > 0) {
+          setHasMeta(true)
+          const cfg = metaConns[0].config as any
+          if (cfg?.page_name) setMetaAccountName(cfg.page_name)
+          else if (cfg?.username) setMetaAccountName(cfg.username)
+        }
       }
     }
 
@@ -116,6 +135,15 @@ export default function Settings() {
         const { error: passErr } = await supabase.auth.updateUser({ password: newPassword })
         if (passErr) throw passErr
         setNewPassword('')
+      }
+
+      // 3. Atualizar contatos do admin
+      if (tenantId) {
+        const { error: tErr } = await supabase
+          .from('tenants')
+          .update({ admin_whatsapp: adminWhatsapp || null, admin_email: adminEmail || null })
+          .eq('id', tenantId)
+        if (tErr) throw tErr
       }
 
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' })
@@ -197,6 +225,40 @@ export default function Settings() {
             </div>
           </div>
 
+          <hr style={{ border: '0', borderTop: '1px solid var(--border)', margin: '10px 0' }} />
+          <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 700 }}>Notificações de Alertas Críticos</h3>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            Defina quem será avisado caso ocorra algum review crítico não respondido.
+          </p>
+
+          <div className="form-group">
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>WhatsApp do Admin</label>
+            <div className="input-with-icon">
+              <Phone size={16} className="icon" />
+              <input 
+                type="tel" 
+                value={adminWhatsapp} 
+                onChange={e => setAdminWhatsapp(e.target.value)} 
+                placeholder="+5511999999999"
+                className="input"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>E-mail do Admin</label>
+            <div className="input-with-icon">
+              <Mail size={16} className="icon" />
+              <input 
+                type="email" 
+                value={adminEmail} 
+                onChange={e => setAdminEmail(e.target.value)} 
+                placeholder="adm@empresa.com"
+                className="input"
+              />
+            </div>
+          </div>
+
           {message && (
             <div style={{ 
               padding: '12px 16px', borderRadius: 8, fontSize: 14,
@@ -236,7 +298,7 @@ export default function Settings() {
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>Meta (Facebook & Instagram)</div>
                 <div style={{ fontSize: 12, color: hasMeta ? '#10b981' : 'var(--text-muted)' }}>
-                  {hasMeta ? '● Conectado oficialmente' : '○ Não conectado'}
+                  {hasMeta ? `● Conectado oficialmente ${metaAccountName ? `(${metaAccountName})` : ''}` : '○ Não conectado'}
                 </div>
               </div>
             </div>

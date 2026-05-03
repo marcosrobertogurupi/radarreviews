@@ -41,7 +41,7 @@ function fmt(n: number) {
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function Pricing() {
+export default function Pricing({ tenantTrial }: { tenantTrial?: { plan: string; plan_status: string; trial_ends_at: string | null } | null }) {
   const [period,   setPeriod]   = useState<Period>('anual')
   const [pix,      setPix]      = useState(false)
   const [customCh, setCustomCh] = useState(3)
@@ -78,6 +78,9 @@ export default function Pricing() {
   const customBase = 149 + (customCh - 3) * 49
   const custom   = calcPrice(customBase, period, pix)
 
+  const inTrial = tenantTrial?.plan_status === 'trial'
+  const currentPlan = tenantTrial?.plan
+
 
   return (
     <div>
@@ -87,6 +90,19 @@ export default function Pricing() {
           Escolha o plano ideal · 7 dias grátis em todos os planos · sem cartão de crédito
         </p>
       </div>
+
+      {inTrial && (
+        <div style={{
+          padding: '16px 20px', background: 'rgba(245,158,11,0.1)',
+          border: '1px solid rgba(245,158,11,0.3)', borderRadius: 12,
+          color: '#fbbf24', fontSize: 14, fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: 10,
+          marginBottom: 24, justifyContent: 'center'
+        }}>
+          <Info size={18} />
+          Você está no período de avaliação gratuita. Escolha um plano para continuar após o trial.
+        </div>
+      )}
 
       {/* ── Banner PIX ─────────────────────────────────────────── */}
       <div className="pricing-pix-banner">
@@ -172,8 +188,13 @@ export default function Pricing() {
             <li className="feat-no"><X size={12} /><span>IA Copilot</span></li>
             <li className="feat-no"><X size={12} /><span>Alertas avançados</span></li>
           </ul>
-          <button className="btn plan-cta btn-ghost" onClick={() => setModal('Básico')}>
-            Começar trial gratuito <ChevronRight size={13} />
+          <button 
+            className={`btn plan-cta ${inTrial && currentPlan === 'basico' ? 'btn-primary' : 'btn-ghost'}`} 
+            onClick={() => setModal('Básico')}
+          >
+            {inTrial 
+              ? (currentPlan === 'basico' ? 'Plano atual — Assinar' : 'Assinar este plano') 
+              : 'Começar trial gratuito'} <ChevronRight size={13} />
           </button>
         </div>
 
@@ -208,8 +229,13 @@ export default function Pricing() {
             <li className="feat-yes"><Check size={12} /><span>Suporte prioritário</span></li>
             <li className="feat-yes"><Check size={12} /><span>Acesso à API</span></li>
           </ul>
-          <button className="btn plan-cta btn-primary" onClick={() => setModal('Completo')}>
-            Começar trial gratuito <ChevronRight size={13} />
+          <button 
+            className={`btn plan-cta ${inTrial && currentPlan === 'completo' ? 'btn-primary' : (inTrial ? 'btn-ghost' : 'btn-primary')}`} 
+            onClick={() => setModal('Completo')}
+          >
+            {inTrial 
+              ? (currentPlan === 'completo' ? 'Plano atual — Assinar' : 'Assinar este plano') 
+              : 'Começar trial gratuito'} <ChevronRight size={13} />
           </button>
         </div>
 
@@ -265,8 +291,13 @@ export default function Pricing() {
             <li className="feat-yes"><Check size={12} /><span>Multi-unidades</span></li>
             <li className="feat-yes"><Check size={12} /><span>Gerente de conta dedicado</span></li>
           </ul>
-          <button className="btn plan-cta" onClick={() => setModal('Custom')}>
-            Começar trial gratuito <ChevronRight size={13} />
+          <button 
+            className={`btn plan-cta ${inTrial && currentPlan === 'custom' ? 'btn-primary' : 'btn-ghost'}`} 
+            onClick={() => setModal('Custom')}
+          >
+            {inTrial 
+              ? (currentPlan === 'custom' ? 'Plano atual — Assinar' : 'Assinar este plano') 
+              : 'Começar trial gratuito'} <ChevronRight size={13} />
           </button>
         </div>
 
