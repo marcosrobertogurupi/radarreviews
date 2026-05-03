@@ -204,7 +204,7 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
 
     return items.map(item => {
       // Normalização robusta de data
-      let dateStr = item.createdAt || item.date || item.publishedDate || new Date().toISOString()
+      let dateStr = item.reviewDate || item.createdAt || item.date || item.publishedDate || new Date().toISOString()
       try {
         const d = new Date(dateStr)
         if (isNaN(d.getTime())) dateStr = new Date().toISOString()
@@ -214,16 +214,16 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
       }
 
       return {
-        id: item.id || item.reviewId || `tp_${Math.random().toString(36).slice(2, 9)}`,
-        stars: item.rating || item.stars || 5,
-        title: item.title || '',
-        text: item.text || item.content || item.body || '',
+        id: item.reviewId || item.id || `tp_${Math.random().toString(36).slice(2, 9)}`,
+        stars: item.reviewRatingScore || item.rating || item.stars || 5,
+        title: item.reviewTitle || item.title || '',
+        text: item.reviewDescription || item.text || item.content || item.body || '',
         createdAt: dateStr,
         consumer: { 
-          id: item.userId || item.consumerId || 'anon', 
-          displayName: item.userName || item.authorName || item.author || 'Cliente Trustpilot' 
+          id: item.reviewerId || item.userId || item.consumerId || 'anon', 
+          displayName: item.reviewer || item.userName || item.authorName || item.author || 'Cliente Trustpilot' 
         },
-        links: [{ rel: 'self', href: item.url || startUrl }]
+        links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${sanitizedDomain}` }]
       }
     })
   } catch (err: any) {
