@@ -144,7 +144,7 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').split('/')[0]
   const startUrl = `https://www.trustpilot.com/review/${sanitizedDomain}`
 
-  const actorId = 'casper11515/trustpilot-reviews-scraper'
+  const actorId = 'casper11515~trustpilot-reviews-scraper'
   const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`
   
   console.log(`[Apify] Chamando scraper para ${domain}...`)
