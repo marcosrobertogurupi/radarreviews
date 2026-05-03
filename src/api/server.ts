@@ -1505,12 +1505,16 @@ const server = http.createServer((req, res) => {
       const token = decrypt(tenant.whatsapp_token_enc)
       const baseUrl = tenant.whatsapp_base_url || 'https://api.uazapi.com'
 
-      await sendWhatsAppMessage({
+      const result = await sendWhatsAppMessage({
         baseUrl,
         token,
         number,
         text
       })
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro desconhecido na UAZAPI')
+      }
 
       // Incrementar contador
       await supabaseAdmin.rpc('increment_whatsapp_sent', { t_id: tenantId })
