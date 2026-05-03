@@ -79,11 +79,14 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   try {
-    const externalId = connector.external_id || ''
+    let externalId = connector.external_id || ''
+    // Sanitização para o Trustpilot (remover www. e https:// para garantir compatibilidade)
+    externalId = externalId.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
     
     // --- ESTRATÉGIA PRINCIPAL: APIFY (Mais estável e não exige API Key oficial) ---
-    try {
-      if (process.env['APIFY_TOKEN']) {
+    const apifyToken = process.env['APIFY_TOKEN']
+    if (apifyToken) {
+      try {
         logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, external_id: externalId })
         const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
         const apifyItems = await fetchTrustpilotReviews(externalId, 20, ctx)
@@ -98,14 +101,17 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             reviews_updated: ingest.reviews_updated
           }
         }
+      } catch (apifyError) {
+        logger.warn(`[${CHANNEL}] Falha na Apify: ${apifyError instanceof Error ? apifyError.message : String(apifyError)}`)
       }
-    } catch (apifyError) {
-      logger.warn(`[${CHANNEL}] Falha na Apify, tentando fallback para API Oficial...`, { 
-        error: apifyError instanceof Error ? apifyError.message : String(apifyError) 
-      })
     }
 
     // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): API OFICIAL ---
+    const trustpilotKey = process.env['TRUSTPILOT_API_KEY']
+    if (!trustpilotKey) {
+      throw new Error('Coleta indisponível: APIFY_TOKEN ou TRUSTPILOT_API_KEY necessários no .env')
+    }
+
     logger.info(`[${CHANNEL}] Iniciando busca via API Oficial (Fallback)`, {
       connector_id: connector.id,
       business_unit_id: externalId,
