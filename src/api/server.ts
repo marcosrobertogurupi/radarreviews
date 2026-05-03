@@ -1541,80 +1541,66 @@ async function sendEscalationWebhook(payload: Record<string, unknown>): Promise<
   if (!resp.ok) throw new Error(`n8n respondeu ${resp.status}: ${await resp.text()}`)
 }
 
-async function checkEscalations(): Promise<void> {
+async function checkConnectorsHealth(): Promise<void> {
   try {
-    // Busca tenants com configuração de escalada
-    const { data: tenants } = await supabaseAdmin
-      .from('tenants')
-      .select('id, name, admin_whatsapp, admin_email, critical_alert_hours')
-      .not('critical_alert_hours', 'is', null)
-      .eq('is_active', true)
+    const FOUR_HOURS_MS = 4 * 3600_000
+    const cutoff = new Date(Date.now() - FOUR_HOURS_MS).toISOString()
 
-    if (!tenants?.length) return
+    // Busca conectores em erro há mais de 4 horas
+    const { data: connectors, error } = await supabaseAdmin
+      .from('channel_connectors')
+      .select('id, channel, business_id, error_message, first_error_at')
+      .eq('status', 'error')
+      .lte('first_error_at', cutoff)
 
-    for (const tenant of tenants) {
-      const hours = (tenant as { critical_alert_hours: number }).critical_alert_hours
-      const cutoff = new Date(Date.now() - hours * 3600_000).toISOString()
+    if (!connectors?.length) return
 
-      // Busca regras do tenant
-      const { data: ruleRows } = await supabaseAdmin
-        .from('alert_rules')
+    console.log(`[health-check] ${connectors.length} conectores com falha persistente encontrados`)
+
+    for (const conn of connectors) {
+      // Evitar notificar repetidamente o mesmo erro se já existe uma notificação pendente
+      const { data: existing } = await supabaseAdmin
+        .from('system_notifications')
         .select('id')
-        .eq('tenant_id', tenant.id)
+        .eq('connector_id', conn.id)
+        .eq('status', 'pendente')
+        .single()
 
-      const ruleIds = (ruleRows ?? []).map((r: Record<string, unknown>) => r['id'] as string)
-      if (!ruleIds.length) continue
+      if (existing) continue
 
-      // Busca eventos críticos não escalados mais antigos que o threshold
-      const { data: events } = await supabaseAdmin
-        .from('alert_events')
-        .select('id, rule_id, triggered_at, detail')
-        .in('rule_id', ruleIds)
-        .is('escalated_at', null)
-        .lte('triggered_at', cutoff)
-        .order('triggered_at', { ascending: true })
-        .limit(10)
+      // Notificar usando o serviço de notificações do sistema
+      const { data: biz } = await supabaseAdmin
+        .from('monitored_businesses')
+        .select('name, tenant_id')
+        .eq('id', conn.business_id)
+        .single()
 
-      if (!events?.length) continue
-
-      console.log(`[escalation] Tenant ${tenant.name}: ${events.length} evento(s) para escalar`)
-
-      for (const event of events) {
-        const detail = (event.detail ?? {}) as Record<string, unknown>
-        try {
-          await sendEscalationWebhook({
-            tenant_id:             tenant.id,
-            tenant_name:           tenant.name,
-            admin_whatsapp:        (tenant as { admin_whatsapp?: string }).admin_whatsapp ?? null,
-            admin_email:           (tenant as { admin_email?: string }).admin_email ?? null,
-            event_id:              event.id,
-            triggered_at:          event.triggered_at,
-            review_author:         detail['review_author'] ?? null,
-            review_body_preview:   detail['review_body_preview'] ?? null,
-            review_published_at:   detail['review_published_at'] ?? null,
-            review_channel:        detail['review_channel'] ?? null,
-            review_rating:         detail['review_rating'] ?? null,
-            review_url:            detail['review_url'] ?? null,
-            alert_reason:          detail['alert_reason'] ?? null,
-            sentiment_summary:     detail['sentiment_summary'] ?? null,
-            condition_type:        detail['condition_type'] ?? null,
-            hours_without_action:  hours,
-          })
-
-          // Marcar como escalado
-          await supabaseAdmin
-            .from('alert_events')
-            .update({ escalated_at: new Date().toISOString() })
-            .eq('id', event.id)
-
-          console.log(`[escalation] Evento ${event.id} escalado com sucesso`)
-        } catch (err) {
-          console.error(`[escalation] Falha ao escalar evento ${event.id}:`, err instanceof Error ? err.message : err)
-        }
+      const payload = {
+        event: 'system_health_alert',
+        status: 'FALHA',
+        channel: conn.channel,
+        business_name: biz?.name || 'Desconhecido',
+        message: conn.error_message || 'Erro desconhecido na sincronização',
+        timestamp: new Date().toISOString(),
+        admin_url: `https://reputei-admin.vercel.app/connectors`,
+        formatted_message: `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Persistente:* O canal *${conn.channel.toUpperCase()}* da empresa *${biz?.name || 'N/A'}* está fora do ar há mais de 4 horas.\n\n*Erro:* ${conn.error_message || 'Sem detalhes'}\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`
       }
+
+      await sendEscalationWebhook(payload)
+      
+      // Registrar no banco para controle do dashboard admin
+      await supabaseAdmin.from('system_notifications').insert({
+        tenant_id: biz?.tenant_id,
+        business_id: conn.business_id,
+        connector_id: conn.id,
+        channel: conn.channel,
+        type: 'sync_error',
+        message: conn.error_message,
+        status: 'pendente'
+      })
     }
   } catch (err) {
-    console.error('[escalation] Erro geral:', err instanceof Error ? err.message : err)
+    console.error('[health-check] Erro:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -1634,8 +1620,8 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // Primeira verificação após 1 min de warm-up, depois a cada 15 min
   setTimeout(() => {
-    checkEscalations()
-    setInterval(checkEscalations, ESCALATION_INTERVAL_MS)
+    checkConnectorsHealth()
+    setInterval(checkConnectorsHealth, ESCALATION_INTERVAL_MS)
   }, 60_000)
 })
 

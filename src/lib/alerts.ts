@@ -78,8 +78,12 @@ export async function checkAlerts(
     detail: Record<string, unknown>
   }> = []
 
+  const triggeredReviews = new Set<string>()
+
   for (const review of reviews) {
     for (const rule of rules as AlertRule[]) {
+      if (triggeredReviews.has(review.external_id)) continue
+
       if (shouldTrigger(review, rule)) {
         const urgency = calculateUrgency(review, rule);
         events.push({
@@ -92,6 +96,7 @@ export async function checkAlerts(
             is_legal_risk: urgency === 'urgente' && containsRiskKeywords(review, rule)
           },
         })
+        triggeredReviews.add(review.external_id)
 
         logger.info('[alerts] Alerta disparado', {
           rule_id: rule.id,
