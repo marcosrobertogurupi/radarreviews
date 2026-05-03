@@ -1557,6 +1557,13 @@ async function checkConnectorsHealth(): Promise<void> {
 
     console.log(`[health-check] ${connectors.length} conectores com falha persistente encontrados`)
 
+    // Buscar contatos globais do admin do sistema
+    const { data: sysSettings } = await supabaseAdmin
+      .from('system_settings')
+      .select('admin_whatsapp, admin_email')
+      .eq('id', 'global')
+      .single()
+
     for (const conn of connectors) {
       // Evitar notificar repetidamente o mesmo erro se já existe uma notificação pendente
       const { data: existing } = await supabaseAdmin
@@ -1583,6 +1590,9 @@ async function checkConnectorsHealth(): Promise<void> {
         message: conn.error_message || 'Erro desconhecido na sincronização',
         timestamp: new Date().toISOString(),
         admin_url: `https://reputei-admin.vercel.app/connectors`,
+        // Contatos para o n8n saber para onde enviar
+        admin_whatsapp: sysSettings?.admin_whatsapp || '',
+        admin_email: sysSettings?.admin_email || '',
         formatted_message: `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Persistente:* O canal *${conn.channel.toUpperCase()}* da empresa *${biz?.name || 'N/A'}* está fora do ar há mais de 4 horas.\n\n*Erro:* ${conn.error_message || 'Sem detalhes'}\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`
       }
 

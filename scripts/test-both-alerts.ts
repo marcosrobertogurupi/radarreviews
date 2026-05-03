@@ -36,6 +36,13 @@ async function testBoth() {
   if (!systemWebhook) {
     console.error('❌ N8N_SYSTEM_ALERTS_WEBHOOK não configurado no .env')
   } else {
+    // Buscar contatos reais do admin para o teste ser fiel
+    const { data: sysSettings } = await supabaseAdmin
+      .from('system_settings')
+      .select('admin_whatsapp, admin_email')
+      .eq('id', 'global')
+      .single()
+
     const payload = {
       event: 'system_health_alert',
       status: 'FALHA',
@@ -44,6 +51,8 @@ async function testBoth() {
       message: 'Falha na autenticação: Token expirado ou inválido.',
       timestamp: new Date().toISOString(),
       admin_url: 'https://reputei-admin.vercel.app/connectors',
+      admin_whatsapp: sysSettings?.admin_whatsapp || '',
+      admin_email: sysSettings?.admin_email || '',
       formatted_message: `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Persistente:* O canal *GOOGLE MAPS* da empresa *Confort Suites Hotel Goiania* está fora do ar há mais de 4 horas.\n\n*Erro:* Falha na autenticação: Token expirado ou inválido.\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`
     }
     
