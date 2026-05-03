@@ -563,7 +563,7 @@ async function handleUpdateCredentials(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
-  setCors(req, res)
+  setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   if (req.method !== 'POST')   { res.writeHead(405); res.end('Method not allowed'); return }
 
@@ -965,7 +965,7 @@ async function handleForceSync(req: http.IncomingMessage, res: http.ServerRespon
 }
 
 async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res)
+  setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   try {
     const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('?')[0]
@@ -1071,7 +1071,7 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
 }
 
 async function handleToggleTenantActive(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res)
+  setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   try {
     const tenantId = req.url?.split('/api/admin/tenant/')[1]?.split('/active')[0]
