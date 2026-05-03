@@ -305,6 +305,50 @@ async function fireWebhook(
 ): Promise<void> {
   const detail = event['detail'] as Record<string, unknown>
 
+  const review = {
+    external_id: detail['review_external_id'],
+    channel: detail['review_channel'],
+    rating: detail['review_rating'],
+    author: detail['review_author'],
+    url: detail['review_url'],
+    published_at: detail['review_published_at'],
+    body_preview: detail['review_body_preview'],
+  }
+
+  const sentiment = {
+    sentiment: detail['review_sentiment'],
+    dissatisfaction_score: detail['sentiment_score'],
+    topics: detail['sentiment_topics'] as string[],
+    summary: detail['sentiment_summary'],
+    alert_reason: detail['alert_reason'],
+    method: detail['analysis_method'],
+  }
+
+  // Montar mensagem formatada para WhatsApp (padrão excelente)
+  const channelLabel = (review.channel as string || 'Canal Desconhecido').toUpperCase().replace('_', ' ')
+  const ratingStars = review.rating ? '⭐'.repeat(Math.round(Number(review.rating))) : 'N/A'
+  
+  const formattedMessage = [
+    `🔔 *Radar de Reviews - Reputei*`,
+    ``,
+    `🚨 *Nova avaliação crítica detectada!*`,
+    ``,
+    `*📺 Canal:* ${channelLabel}`,
+    `*⭐ Nota:* ${review.rating ? `${review.rating} / 5 ${ratingStars}` : 'Sem nota'}`,
+    ``,
+    `*👤 Cliente:* ${review.author || 'Anônimo'}`,
+    `*💬 Review:* "${review.body_preview || '(sem texto)'}"`,
+    ``,
+    `*🧠 Análise de IA:*`,
+    `*📉 Sentimento:* ${(sentiment.sentiment as string || '').toUpperCase()}`,
+    `*🔥 Nível de Crise:* ${sentiment.dissatisfaction_score || 0}%`,
+    `*🏷️ Tópicos:* ${(sentiment.topics || []).join(', ') || 'nenhum'}`,
+    `*💡 Resumo:* ${sentiment.summary || 'Não disponível'}`,
+    ``,
+    review.url ? `🔗 *Ver no Canal:* ${review.url}` : null,
+    `_Reputei Intelligence_`
+  ].filter(Boolean).join('\n')
+
   const payload = {
     event_type: 'alert_triggered',
     rule_name: rule.name,
@@ -312,28 +356,11 @@ async function fireWebhook(
     business_id: rule.business_id,
     channel: event['channel'],
     triggered_at: new Date().toISOString(),
-    // Dados para o n8n saber para quem disparar (Contato do Assinante)
     subscriber_whatsapp: extraData?.subscriber_whatsapp || '',
     subscriber_email: extraData?.subscriber_email || '',
-    // Contexto do review
-    review: {
-      external_id: detail['review_external_id'],
-      channel: detail['review_channel'],
-      rating: detail['review_rating'],
-      author: detail['review_author'],
-      url: detail['review_url'],
-      published_at: detail['review_published_at'],
-      body_preview: detail['review_body_preview'],
-    },
-    // Análise de IA
-    sentiment_analysis: {
-      sentiment: detail['review_sentiment'],
-      dissatisfaction_score: detail['sentiment_score'],
-      topics: detail['sentiment_topics'],
-      summary: detail['sentiment_summary'],
-      alert_reason: detail['alert_reason'],
-      method: detail['analysis_method'],
-    },
+    formatted_message: formattedMessage,
+    review,
+    sentiment_analysis: sentiment
   }
 
   await axios.post(webhookUrl, payload, {
