@@ -53,7 +53,8 @@ export default function GenerateReviews({ tenantId }: Props) {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('https://reputei-api.railway.app/api/whatsapp/send', {
+      const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+      const res = await fetch(`${apiUrl}/api/whatsapp/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

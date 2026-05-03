@@ -1411,6 +1411,14 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  if (url === '/api/whatsapp/send' && req.method === 'POST') {
+    handleSendWhatsApp(req, res).catch(err => {
+      console.error('[whatsapp-send] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno no servidor de WhatsApp' })) }
+    })
+    return
+  }
+
   if (url === '/api/admin/relatorios/auditoria' && req.method === 'GET') {
     handleGetAuditLogs(req, res).catch(err => {
       console.error('[audit-logs] Erro:', err)
@@ -1457,6 +1465,61 @@ const server = http.createServer((req, res) => {
       user: userData,
       session: data.session
     }))
+  }
+
+  async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    setCors(req, res)
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth) {
+      res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+
+    const body = await readBody(req) as { number?: string; text?: string; tenantId?: string }
+    const { number, text, tenantId } = body
+
+    if (!number || !text || !tenantId) {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'Dados insuficientes (number, text, tenantId)' })); return
+    }
+
+    // Buscar dados do tenant (token e base url)
+    const { data: tenant, error: tError } = await supabaseAdmin
+      .from('tenants')
+      .select('whatsapp_token_enc, whatsapp_base_url, whatsapp_limit_monthly, whatsapp_sent_this_month')
+      .eq('id', tenantId)
+      .single()
+
+    if (tError || !tenant) {
+      res.writeHead(404); res.end(JSON.stringify({ error: 'Assinante não encontrado' })); return
+    }
+
+    if (!tenant.whatsapp_token_enc) {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'WhatsApp não configurado para este assinante' })); return
+    }
+
+    // Verificar limite
+    if (tenant.whatsapp_sent_this_month >= tenant.whatsapp_limit_monthly) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Limite mensal de disparos atingido' })); return
+    }
+
+    try {
+      const token = decrypt(tenant.whatsapp_token_enc)
+      const baseUrl = tenant.whatsapp_base_url || 'https://api.uazapi.com'
+
+      await sendWhatsAppMessage({
+        baseUrl,
+        token,
+        number,
+        text
+      })
+
+      // Incrementar contador
+      await supabaseAdmin.rpc('increment_whatsapp_sent', { t_id: tenantId })
+
+      res.writeHead(200); res.end(JSON.stringify({ success: true }))
+    } catch (err: any) {
+      console.error('[whatsapp-send] Falha UAZAPI:', err.message)
+      res.writeHead(500); res.end(JSON.stringify({ error: `Falha no envio: ${err.message}` }))
+    }
   }
 
   async function handleGetAuditLogs(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
