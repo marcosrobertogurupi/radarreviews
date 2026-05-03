@@ -159,8 +159,14 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
   try {
     const response = await axios.post(
       apiUrl,
-      { companyWebsite: sanitizedDomain, maxReviews: limit },
-      { timeout: 300000 }
+      { 
+        companyWebsite: sanitizedDomain, 
+        maxItems: limit,
+        maxReviews: limit,
+        limit: limit,
+        sort: 'newest'
+      },
+      { timeout: 600000 } // Aumentado para 10 minutos
     )
     const items = response.data as any[]
     if (ctx?.tenant_id) {
