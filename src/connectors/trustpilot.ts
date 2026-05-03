@@ -107,7 +107,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             reviews_fetched: 0,
             reviews_new: 0,
             reviews_updated: 0,
-            error: `Nenhum review encontrado no Trustpilot para o domínio "${externalId}". Verifique se o ID está correto.`
+            error: `Empresa não encontrada no Trustpilot. Verifique se o ID "${externalId}" está correto na configuração.`
           }
         }
       } catch (apifyError: any) {
@@ -120,7 +120,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             reviews_fetched: 0,
             reviews_new: 0,
             reviews_updated: 0,
-            error: `Erro no robô Apify: ${apifyError?.message}`
+            error: `Não foi possível conectar ao robô de coleta. Verifique o ID ou tente novamente mais tarde.`
           }
         }
       }

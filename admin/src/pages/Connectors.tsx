@@ -161,7 +161,7 @@ export default function Connectors() {
     try {
       await fetch(`${baseUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
       const now = new Date().toISOString()
-      toast('Busca forçada iniciada!', 'success')
+      toast('Busca forçada enviada! Os dados serão atualizados em alguns instantes.', 'info')
       setSelected({ ...selected, next_sync_at: now, status: 'active' })
       loadAll()
     } catch {
