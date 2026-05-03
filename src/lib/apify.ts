@@ -156,6 +156,7 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
   console.log(`[Apify] Chamando scraper para ${domain}...`)
   console.log(`[Apify] URL: https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=...`)
 
+  try {
     // Usaremos a estratégia de execução assíncrona para evitar os limites de 300s do run-sync
     console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
     const runResponse = await axios.post(
