@@ -163,7 +163,8 @@ export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: A
       { 
         companyWebsite: sanitizedDomain, 
         maxItems: limit,
-        sort: 'newest'
+        sort: 'newest',
+        timeout: 120 // Abortar no Apify se passar de 2 minutos
       }
     )
 

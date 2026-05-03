@@ -70,8 +70,8 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
 
     logger.warn(`[scheduler] Canal desconhecido: ${channel}`)
     return null
-  } catch {
-    logger.warn(`[scheduler] Conector não implementado ainda: ${channel}`)
+  } catch (err: any) {
+    logger.warn(`[scheduler] Erro ao carregar conector ${channel}: ${err.message}`)
     return null
   }
 }
