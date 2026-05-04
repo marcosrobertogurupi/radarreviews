@@ -149,6 +149,19 @@ export default function GenerateReviews({ tenantId }: Props) {
         <p className="page-subtitle">Transforme clientes satisfeitos em promotores da sua marca via WhatsApp</p>
       </div>
 
+      {!loading && !tenant?.whatsapp_token_enc && (
+        <div style={{ 
+          padding: '16px 20px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', 
+          borderRadius: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, color: '#f59e0b' 
+        }}>
+          <AlertCircle size={20} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>WhatsApp não configurado</div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>Para habilitar o envio automático de convites, entre em contato com nosso suporte técnico.</div>
+          </div>
+        </div>
+      )}
+
       <div className="grid-2">
         {/* Formulário de Envio */}
         <div className="card" style={{ padding: 24 }}>
@@ -179,16 +192,25 @@ export default function GenerateReviews({ tenantId }: Props) {
           <div style={{ marginBottom: 20 }}>
             <label className="filter-label">Onde quer receber o review?</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
-              {Object.keys(channelNames).map(c => (
-                <button 
-                  key={c}
-                  className={`btn ${selectedChannel === c ? 'active' : ''}`}
-                  onClick={() => setSelectedChannel(c as any)}
-                  style={{ fontSize: 11 }}
-                >
-                  {channelNames[c]}
-                </button>
-              ))}
+              {Object.keys(channelNames).map(c => {
+                const hasLink = !!getReviewLink(c)
+                return (
+                  <button 
+                    key={c}
+                    className={`btn ${selectedChannel === c ? 'active' : ''}`}
+                    onClick={() => hasLink && setSelectedChannel(c as any)}
+                    style={{ 
+                      fontSize: 11, 
+                      opacity: hasLink ? 1 : 0.4, 
+                      cursor: hasLink ? 'pointer' : 'not-allowed',
+                      border: selectedChannel === c ? '1px solid var(--accent)' : '1px solid var(--border)'
+                    }}
+                    title={hasLink ? '' : 'Canal não configurado no painel admin'}
+                  >
+                    {channelNames[c]}
+                  </button>
+                )
+              })}
             </div>
 
             <label className="filter-label">Escolher Template</label>
