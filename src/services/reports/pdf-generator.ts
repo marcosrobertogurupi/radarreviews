@@ -174,22 +174,26 @@ export async function generateExecutivePDF(data: ReportData): Promise<Buffer> {
   return pdf
 }
 
-export async function processMonthlyReport(tenantId: string, monthYear: string) {
+export async function processMonthlyReport(tenantId: string, monthYear: string, startDate?: string, endDate?: string) {
   try {
     // 1. Coletar dados do tenant
     const { data: tenant } = await supabaseAdmin.from('tenants').select('name').eq('id', tenantId).single()
     if (!tenant) throw new Error('Tenant não encontrado')
 
-    const startOfMonth = new Date(`${monthYear}-01T00:00:00Z`).toISOString()
-    const endOfMonth = new Date(new Date(`${monthYear}-01T00:00:00Z`).setMonth(new Date(`${monthYear}-01T00:00:00Z`).getMonth() + 1)).toISOString()
+    const startAt = startDate ? new Date(startDate).toISOString() : new Date(`${monthYear}-01T00:00:00Z`).toISOString()
+    const endAt = endDate ? new Date(endDate).toISOString() : new Date(new Date(`${monthYear}-01T00:00:00Z`).setMonth(new Date(`${monthYear}-01T00:00:00Z`).getMonth() + 1)).toISOString()
+
+    const label = startDate && endDate 
+      ? `${format(new Date(startDate), 'dd/MM/yy')} a ${format(new Date(endDate), 'dd/MM/yy')}`
+      : format(new Date(`${monthYear}-01T12:00:00Z`), "MMMM 'de' yyyy", { locale: ptBR })
 
     // 2. Coletar reviews e KPIs
     const { data: reviews } = await supabaseAdmin
       .from('reviews')
       .select('*')
       .eq('tenant_id', tenantId)
-      .gte('published_at', startOfMonth)
-      .lt('published_at', endOfMonth)
+      .gte('published_at', startAt)
+      .lt('published_at', endAt)
 
     if (!reviews || reviews.length === 0) {
       logger.info(`[reports] Sem reviews para o tenant ${tenantId} em ${monthYear}`)
@@ -208,7 +212,7 @@ export async function processMonthlyReport(tenantId: string, monthYear: string) 
     // 3. Gerar PDF
     const pdfBuffer = await generateExecutivePDF({
       tenantName: tenant.name,
-      monthYear: format(new Date(`${monthYear}-01T12:00:00Z`), "MMMM 'de' yyyy", { locale: ptBR }),
+      monthYear: label,
       kpis,
       topics: [], // TODO: Buscar da tabela review_topics se houver
       reviews: reviews
@@ -224,7 +228,8 @@ export async function processMonthlyReport(tenantId: string, monthYear: string) 
     })
 
     // 4. Salvar no Storage
-    const fileName = `reports/${tenantId}/${monthYear}_executive_report.pdf`
+    const safeLabel = label.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+    const fileName = `reports/${tenantId}/${safeLabel}_executive_report.pdf`
     const { data: upload, error: upErr } = await supabaseAdmin.storage
       .from('reports')
       .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
@@ -237,7 +242,7 @@ export async function processMonthlyReport(tenantId: string, monthYear: string) 
     // 6. Salvar registro na tabela reports
     await supabaseAdmin.from('reports').insert({
       tenant_id: tenantId,
-      month_year: monthYear,
+      month_year: startDate && endDate ? `${startDate}_${endDate}` : monthYear,
       pdf_url: publicUrl
     })
 

@@ -14,6 +14,10 @@ export default function Reports({ tenantId }: Props) {
   const [generating, setGenerating] = useState(false)
   const [history, setHistory] = useState<any[]>([])
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
+  const [reportType, setReportType] = useState<'monthly' | 'custom'>('monthly')
+  const [startDate, setStartDate] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'))
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
   useEffect(() => {
     loadHistory()
@@ -30,12 +34,23 @@ export default function Reports({ tenantId }: Props) {
     setLoading(false)
   }
 
-  async function handleGenerate(monthOffset = 0) {
+  async function handleGenerate(monthStr?: string) {
     setGenerating(true)
     setStatus(null)
     
-    const targetDate = subMonths(new Date(), monthOffset)
-    const monthYear = format(targetDate, 'yyyy-MM')
+    const isCustom = reportType === 'custom'
+    const payload: any = { tenantId }
+    
+    if (isCustom) {
+      payload.startDate = startDate
+      payload.endDate = endDate
+    } else {
+      payload.monthYear = monthStr || format(new Date(), 'yyyy-MM')
+    }
+
+    const targetLabel = isCustom 
+      ? `período ${format(new Date(startDate), 'dd/MM')} a ${format(new Date(endDate), 'dd/MM')}`
+      : `mês ${format(new Date(`${payload.monthYear}-01T12:00:00Z`), 'MMMM yyyy', { locale: ptBR })}`
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -45,13 +60,13 @@ export default function Reports({ tenantId }: Props) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token}`
         },
-        body: JSON.stringify({ tenantId, monthYear })
+        body: JSON.stringify(payload)
       })
 
       const result = await res.json()
 
       if (res.ok) {
-        setStatus({ type: 'success', msg: `Relatório de ${format(targetDate, 'MMMM', { locale: ptBR })} gerado com sucesso!` })
+        setStatus({ type: 'success', msg: `Relatório do ${targetLabel} gerado com sucesso!` })
         loadHistory()
       } else {
         setStatus({ type: 'error', msg: result.error || 'Falha ao gerar relatório.' })
@@ -73,16 +88,71 @@ export default function Reports({ tenantId }: Props) {
           <h1 className="page-title">Relatórios Executivos</h1>
           <p className="page-subtitle">Acompanhe sua evolução mensal com documentos prontos para apresentação.</p>
         </div>
-        {!hasCurrentMonth && (
-          <button 
-            className="btn-primary" 
-            onClick={() => handleGenerate(0)}
-            disabled={generating}
-          >
-            {generating ? <RefreshCw className="spin" size={16} /> : <FileText size={16} />}
-            {generating ? 'Gerando...' : 'Gerar Relatório Atual'}
-          </button>
+        {reportType === 'monthly' ? (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <select 
+              value={selectedMonth} 
+              onChange={e => setSelectedMonth(e.target.value)}
+              className="input"
+              style={{ padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 8, color: 'white' }}
+            >
+              {Array.from({ length: 12 }).map((_, i) => {
+                const d = subMonths(new Date(), i)
+                const val = format(d, 'yyyy-MM')
+                return <option key={val} value={val}>{format(d, 'MMMM yyyy', { locale: ptBR })}</option>
+              })}
+            </select>
+            <button 
+              className="btn-primary" 
+              onClick={() => handleGenerate(selectedMonth)}
+              disabled={generating}
+            >
+              {generating ? <RefreshCw className="spin" size={16} /> : <FileText size={16} />}
+              {generating ? 'Gerando...' : 'Gerar Relatório'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <input 
+              type="date" value={startDate} onChange={e => setStartDate(e.target.value)} 
+              className="input" style={{ padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 8, color: 'white' }} 
+            />
+            <span style={{ color: 'var(--text-muted)' }}>até</span>
+            <input 
+              type="date" value={endDate} onChange={e => setEndDate(e.target.value)} 
+              className="input" style={{ padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 8, color: 'white' }} 
+            />
+            <button 
+              className="btn-primary" 
+              onClick={() => handleGenerate()}
+              disabled={generating}
+            >
+              {generating ? <RefreshCw className="spin" size={16} /> : <FileText size={16} />}
+              {generating ? 'Gerando...' : 'Gerar Relatório'}
+            </button>
+          </div>
         )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 20, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
+        <button 
+          onClick={() => setReportType('monthly')}
+          style={{ 
+            padding: '12px 16px', border: 'none', background: 'none', color: reportType === 'monthly' ? 'var(--accent)' : 'var(--text-muted)',
+            borderBottom: reportType === 'monthly' ? '2px solid var(--accent)' : 'none', cursor: 'pointer', fontWeight: 600
+          }}
+        >
+          Mensal Individual
+        </button>
+        <button 
+          onClick={() => setReportType('custom')}
+          style={{ 
+            padding: '12px 16px', border: 'none', background: 'none', color: reportType === 'custom' ? 'var(--accent)' : 'var(--text-muted)',
+            borderBottom: reportType === 'custom' ? '2px solid var(--accent)' : 'none', cursor: 'pointer', fontWeight: 600
+          }}
+        >
+          Período Personalizado
+        </button>
       </div>
 
       {status && (
@@ -128,11 +198,10 @@ export default function Reports({ tenantId }: Props) {
 
         {/* Sugestão de meses anteriores se não houver no histórico */}
         {history.length === 0 && !generating && (
-          <div className="card" style={{ borderStyle: 'dashed', textAlign: 'center', padding: 40, background: 'transparent' }}>
+          <div className="card" style={{ borderStyle: 'dashed', textAlign: 'center', padding: 40, background: 'transparent', gridColumn: 'span 3' }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>📊</div>
-            <h3 style={{ margin: '0 0 8px 0' }}>Nenhum histórico</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Gere seu primeiro relatório executivo agora mesmo.</p>
-            <button className="btn" onClick={() => handleGenerate(0)}>Começar Agora</button>
+            <h3 style={{ margin: '0 0 8px 0' }}>Nenhum relatório gerado</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Escolha um mês acima e clique em Gerar Relatório para começar.</p>
           </div>
         )}
       </div>

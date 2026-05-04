@@ -1185,14 +1185,14 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
     if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
 
     const body = await readBody(req)
-    const { tenantId, monthYear } = body as { tenantId: string; monthYear: string }
+    const { tenantId, monthYear, startDate, endDate } = body as { tenantId: string; monthYear: string; startDate?: string; endDate?: string }
 
-    if (!tenantId || !monthYear) {
-      res.writeHead(400).end(JSON.stringify({ error: 'tenantId e monthYear são obrigatórios' }))
+    if (!tenantId || (!monthYear && (!startDate || !endDate))) {
+      res.writeHead(400).end(JSON.stringify({ error: 'tenantId e período (mês ou datas) são obrigatórios' }))
       return
     }
 
-    const url = await processMonthlyReport(tenantId, monthYear)
+    const url = await processMonthlyReport(tenantId, monthYear, startDate, endDate)
     if (url) {
       res.writeHead(200).end(JSON.stringify({ ok: true, pdfUrl: url }))
     } else {
