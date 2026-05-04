@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
-import { CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
+import { API_URL, CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
 import { Trash2, AlertTriangle, Activity, Settings } from 'lucide-react'
 import { MetaConnectButton } from '../components/MetaConnectButton'
 import { useToast } from '../components/Toast'
@@ -134,9 +134,8 @@ export default function Connectors() {
       return
     }
     const newConfig = { ...parsedConfig, interval_minutes: intervalMinutes }
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${baseUrl}/api/admin/connector/${selected.id}/config`, {
+      const resp = await fetch(`${API_URL}/api/admin/connector/${selected.id}/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: newConfig, external_id: editingExternalId, status: 'active' }),
@@ -157,9 +156,8 @@ export default function Connectors() {
 
   async function forceSync() {
     if (!selected) return
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      await fetch(`${baseUrl}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
+      await fetch(`${API_URL}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
       const now = new Date().toISOString()
       toast('Busca forçada enviada! Os dados serão atualizados em alguns instantes.', 'info')
       setSelected({ ...selected, next_sync_at: now, status: 'active' })
@@ -179,8 +177,7 @@ export default function Connectors() {
     try {
       // Usa o backend (service role key) para contornar o RLS que bloqueia
       // o delete em system_notifications via anon key
-      const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-      const resp = await fetch(`${baseUrl}/api/admin/connector/${id}`, { method: 'DELETE' })
+      const resp = await fetch(`${API_URL}/api/admin/connector/${id}`, { method: 'DELETE' })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
         throw new Error(err.error ?? resp.statusText)
@@ -198,9 +195,8 @@ export default function Connectors() {
 
   async function saveNewConnector(e: React.FormEvent) {
     e.preventDefault()
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
     try {
-      const resp = await fetch(`${baseUrl}/api/admin/connector`, {
+      const resp = await fetch(`${API_URL}/api/admin/connector`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

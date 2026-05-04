@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 

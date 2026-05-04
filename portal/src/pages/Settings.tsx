@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { User, Mail, Lock, ShieldCheck, Save, Loader2, Phone } from 'lucide-react'
 import { useToast } from '../components/Toast'
+import { API_URL } from '../lib/utils'
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
@@ -95,7 +96,7 @@ export default function Settings() {
       toast('Erro interno: ID da empresa não encontrado.', 'error')
       return
     }
-    const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
+    const apiUrl = API_URL.replace(/\/+$/, '')
     
     const isIframe = window !== window.top
     const fallbackParent = 'https://reputei.com.br/portalcliente'

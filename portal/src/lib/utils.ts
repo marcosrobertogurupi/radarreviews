@@ -99,7 +99,7 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(r) + '☆'.repeat(5 - r)
 }
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://reputei-api.railway.app'
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api-production-24e1.up.railway.app'
 
 /**
  * Utilitário para baixar dados como CSV (Excel compatível)

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Plus, Save, X, Trash2, Edit, CreditCard, Check, AlertCircle } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 
 interface Plan {
   id: string
@@ -34,7 +35,6 @@ export default function Plans() {
   } | null>(null)
 
   const { toast } = useToast()
-  const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
 
   useEffect(() => {
     loadPlans()
@@ -46,7 +46,7 @@ export default function Plans() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Não autenticado')
 
-      const res = await fetch(`${baseUrl}/api/admin/plans`, {
+      const res = await fetch(`${API_URL}/api/admin/plans`, {
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       })
 

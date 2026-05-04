@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Copy, RefreshCw, Eye, Code, Layout, Palette } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 import type { TenantOption } from '../App'
 
 interface Props {
@@ -39,7 +40,7 @@ export default function WidgetConfig({ tenants, selectedTenantId, onTenantChange
   }
 
   const embedCode = tenant?.widget_token 
-    ? `<script src="https://reputei-api.railway.app/widget.js" data-token="${tenant.widget_token}" data-theme="light" data-limit="5"></script>`
+    ? `<script src="${API_URL}/widget.js" data-token="${tenant.widget_token}" data-theme="light" data-limit="5"></script>`
     : 'Selecione um assinante para gerar o código.'
 
   function copyCode() {

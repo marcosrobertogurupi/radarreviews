@@ -5,7 +5,7 @@
   const token = container.getAttribute('data-token');
   if (!token) return;
 
-  const API_BASE = 'https://reputei-api.railway.app'; // Ajustar para produção se necessário
+  const API_BASE = 'https://api-production-24e1.up.railway.app'; // Ajustar para produção se necessário
 
   async function init() {
     try {

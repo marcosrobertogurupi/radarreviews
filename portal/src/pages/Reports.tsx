@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { FileText, Download, Calendar, RefreshCw, AlertCircle, FileSearch, CheckCircle2 } from 'lucide-react'
 import { format, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { API_URL } from '../lib/utils'
 
 interface Props {
   tenantId: string
@@ -38,7 +39,7 @@ export default function Reports({ tenantId }: Props) {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('https://reputei-api.railway.app/api/reports/generate', {
+      const res = await fetch(`${API_URL}/api/reports/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

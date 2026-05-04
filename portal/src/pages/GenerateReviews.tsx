@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { API_URL } from '../lib/utils'
 import { Send, MessageSquare, Users, CheckCircle2, AlertCircle, Clock, Share2, Info } from 'lucide-react'
 import { useToast } from '../components/Toast'
 
@@ -109,8 +110,7 @@ export default function GenerateReviews({ tenantId }: Props) {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const apiUrl = (import.meta.env.VITE_API_URL ?? 'https://reputei-api.railway.app').replace(/\/+$/, '')
-      const res = await fetch(`${apiUrl}/api/whatsapp/send`, {
+      const res = await fetch(`${API_URL}/api/whatsapp/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
