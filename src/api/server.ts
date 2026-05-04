@@ -76,8 +76,9 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
                    origin.startsWith('http://localhost:')
   
   res.setHeader('Access-Control-Allow-Origin', isAllowed ? origin : allowed[0])
-  res.setHeader('Access-Control-Allow-Headers', extraHeaders)
+  res.setHeader('Access-Control-Allow-Headers', extraHeaders + ', x-client-info, x-supabase-auth')
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, PATCH, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 }
 
@@ -1245,6 +1246,7 @@ async function handleRespondReview(req: http.IncomingMessage, res: http.ServerRe
 
 const server = http.createServer((req, res) => {
   const url = req.url ?? '/'
+  console.log(`[api] ${req.method} ${url} (Origin: ${req.headers.origin || 'N/A'})`)
 
   if (url === '/' || url === '/health') {
     res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2026-04-30-v1' })); return
