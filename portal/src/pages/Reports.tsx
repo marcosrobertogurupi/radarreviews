@@ -231,7 +231,13 @@ export default function Reports({ tenantId }: Props) {
                 {history.map(report => (
                   <tr key={report.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '16px 20px', fontSize: 14, fontWeight: 600, textTransform: 'capitalize' }}>
-                      {format(new Date(`${report.month_year}-01T12:00:00Z`), 'MMMM yyyy', { locale: ptBR })}
+                      {report.month_year.includes('_') 
+                        ? (() => {
+                            const [start, end] = report.month_year.split('_')
+                            return `${format(new Date(start), 'dd/MM/yy')} a ${format(new Date(end), 'dd/MM/yy')}`
+                          })()
+                        : format(new Date(`${report.month_year}-01T12:00:00Z`), 'MMMM yyyy', { locale: ptBR })
+                      }
                     </td>
                     <td style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text-secondary)' }}>
                       {format(new Date(report.created_at), 'dd/MM/yyyy HH:mm')}
