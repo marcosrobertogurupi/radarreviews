@@ -1122,6 +1122,9 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
 }
 
 async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
   try {
     const { data: { user } } = await supabaseAdmin.auth.getUser(req.headers.authorization?.split(' ')[1] || '')
     if (!user) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
@@ -1179,6 +1182,9 @@ async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerRes
 }
 
 async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
   try {
     const auth = await getAuthUser(req.headers.authorization)
     if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
