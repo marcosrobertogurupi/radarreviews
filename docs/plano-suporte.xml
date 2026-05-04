@@ -1,0 +1,780 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PLANO DE IMPLEMENTAÇÃO — SISTEMA DE GERENCIAMENTO DE SUPORTE
+  Projeto: Reputei / Radar de Reviews
+  Stack: Node.js + TypeScript + Supabase (PostgreSQL) + React (admin/portal)
+  Data: 2026-05-04
+  Referências: usepylon.com, devrev.ai, thectoclub.com, adaptistconsulting.com
+-->
+<implementationPlan
+  name="Sistema de Suporte ao Cliente"
+  version="1.0"
+  project="reputei"
+  methodology="iterative-agile"
+  totalPhases="5"
+>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       VISÃO GERAL E PRINCÍPIOS
+  ═══════════════════════════════════════════════════════════════ -->
+  <overview>
+    <description>
+      Sistema completo de gerenciamento de suporte multi-tenant integrado ao Reputei.
+      Cobre desde a abertura do chamado pelo usuário (portal ou WhatsApp) até a resolução,
+      com triagem por IA, funil de status, SLA configurável, escalação automática e
+      auditoria persistente de cada ação.
+    </description>
+
+    <modernPrinciples>
+      <!-- Baseado em pesquisa de melhores práticas 2025-2026 -->
+      <principle id="P1">AI-First Triage — classificação automática de prioridade, categoria e sentimento via Gemini</principle>
+      <principle id="P2">Omnichannel Ingestion — portal web + WhatsApp (UAZAPI existente) + e-mail futuro</principle>
+      <principle id="P3">Agentic Escalation — regras multi-sinal: tempo + sentimento + tier do tenant + SLA</principle>
+      <principle id="P4">Full Audit Trail — log imutável de todas as transições de estado e ações</principle>
+      <principle id="P5">Self-Service Deflection — base de conhecimento reduz 20-40% dos tickets antes de abrir</principle>
+      <principle id="P6">SLA Configurável por Plano — prazos diferentes para planos basic/pro/enterprise</principle>
+      <principle id="P7">KPIs em Tempo Real — CSAT, FCR, MTTR, escalation rate visíveis no admin</principle>
+    </modernPrinciples>
+
+    <ticketLifecycle>
+      <stage order="1" status="open"            label="Aberto"              slaStart="true"  />
+      <stage order="2" status="ai_triaged"      label="Triado por IA"       slaStart="false" />
+      <stage order="3" status="in_progress"     label="Em Atendimento"      slaStart="false" />
+      <stage order="4" status="waiting_tenant"  label="Aguardando Cliente"  slaStart="false" slaStop="true" />
+      <stage order="5" status="escalated"       label="Escalado"            slaStart="false" breach="true" />
+      <stage order="6" status="resolved"        label="Resolvido"           slaStart="false" />
+      <stage order="7" status="closed"          label="Fechado"             final="true"     />
+      <stage order="8" status="reopened"        label="Reaberto"            slaStart="true"  />
+    </ticketLifecycle>
+  </overview>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 1 — BANCO DE DADOS
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="1" name="Banco de Dados" estimatedDays="2">
+
+    <migration id="010" file="migrations/010_support_system.sql">
+
+      <!-- ENUMS -->
+      <sql><![CDATA[
+CREATE TYPE ticket_status AS ENUM (
+  'open', 'ai_triaged', 'in_progress', 'waiting_tenant',
+  'escalated', 'resolved', 'closed', 'reopened'
+);
+
+CREATE TYPE ticket_priority AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE ticket_channel  AS ENUM ('portal', 'whatsapp', 'email', 'admin');
+CREATE TYPE audit_action    AS ENUM (
+  'created', 'status_changed', 'priority_changed', 'assigned',
+  'message_added', 'attachment_added', 'sla_breached',
+  'escalated', 'resolved', 'closed', 'reopened', 'csat_rated'
+);
+      ]]></sql>
+
+      <!-- TABELA PRINCIPAL DE TICKETS -->
+      <table name="support_tickets">
+        <sql><![CDATA[
+CREATE TABLE support_tickets (
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id         UUID        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by        UUID        NOT NULL REFERENCES auth.users(id),
+  assigned_to       UUID        REFERENCES auth.users(id),          -- agente responsável
+
+  -- Identificação
+  ticket_number     SERIAL,                                          -- ex: #00423
+  subject           TEXT        NOT NULL,
+  description       TEXT        NOT NULL,
+  channel           ticket_channel NOT NULL DEFAULT 'portal',
+
+  -- Classificação (preenchida por IA na triagem)
+  category          TEXT,                                            -- ex: "conectores", "relatórios", "cobrança"
+  tags              TEXT[]      DEFAULT '{}',
+  priority          ticket_priority NOT NULL DEFAULT 'medium',
+  ai_sentiment      TEXT,                                            -- positive/neutral/negative/frustrated
+  ai_confidence     NUMERIC(4,3),                                   -- 0.000 a 1.000
+  ai_summary        TEXT,                                            -- resumo em 1 linha gerado por IA
+
+  -- Estado
+  status            ticket_status NOT NULL DEFAULT 'open',
+  is_sla_breached   BOOLEAN     NOT NULL DEFAULT FALSE,
+  escalation_level  SMALLINT    NOT NULL DEFAULT 0,                 -- 0=sem escalação, 1=L1, 2=L2, 3=gerência
+
+  -- Datas
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  first_response_at TIMESTAMPTZ,                                    -- primeira resposta do agente
+  resolved_at       TIMESTAMPTZ,
+  closed_at         TIMESTAMPTZ,
+  sla_deadline      TIMESTAMPTZ,                                    -- calculado na criação com base no plano
+
+  -- CSAT (satisfação pós-resolução)
+  csat_score        SMALLINT    CHECK (csat_score BETWEEN 1 AND 5),
+  csat_comment      TEXT,
+  csat_at           TIMESTAMPTZ,
+
+  -- WhatsApp (canal alternativo)
+  whatsapp_thread_id TEXT,
+
+  CONSTRAINT ticket_number_tenant_unique UNIQUE (tenant_id, ticket_number)
+);
+
+CREATE INDEX idx_tickets_tenant_status  ON support_tickets(tenant_id, status);
+CREATE INDEX idx_tickets_assigned       ON support_tickets(assigned_to) WHERE assigned_to IS NOT NULL;
+CREATE INDEX idx_tickets_sla_deadline   ON support_tickets(sla_deadline) WHERE status NOT IN ('resolved','closed');
+CREATE INDEX idx_tickets_created_at     ON support_tickets(created_at DESC);
+        ]]></sql>
+      </table>
+
+      <!-- MENSAGENS / THREAD -->
+      <table name="ticket_messages">
+        <sql><![CDATA[
+CREATE TABLE ticket_messages (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id   UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  author_id   UUID        NOT NULL REFERENCES auth.users(id),
+  author_role TEXT        NOT NULL CHECK (author_role IN ('tenant_user','agent','ai','system')),
+  body        TEXT        NOT NULL,
+  is_internal BOOLEAN     NOT NULL DEFAULT FALSE,   -- nota interna (não visível ao cliente)
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_ticket ON ticket_messages(ticket_id, created_at);
+        ]]></sql>
+      </table>
+
+      <!-- ANEXOS (imagens, prints, arquivos) -->
+      <table name="ticket_attachments">
+        <sql><![CDATA[
+CREATE TABLE ticket_attachments (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id    UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  message_id   UUID        REFERENCES ticket_messages(id) ON DELETE SET NULL,
+  uploaded_by  UUID        NOT NULL REFERENCES auth.users(id),
+  filename     TEXT        NOT NULL,
+  mime_type    TEXT        NOT NULL,
+  size_bytes   INTEGER     NOT NULL,
+  storage_path TEXT        NOT NULL,   -- caminho no Supabase Storage (bucket: support-attachments)
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+        ]]></sql>
+      </table>
+
+      <!-- AUDITORIA IMUTÁVEL -->
+      <table name="ticket_audit_log">
+        <sql><![CDATA[
+CREATE TABLE ticket_audit_log (
+  id          BIGSERIAL   PRIMARY KEY,
+  ticket_id   UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  actor_id    UUID        REFERENCES auth.users(id),   -- NULL = sistema/scheduler
+  actor_role  TEXT        NOT NULL DEFAULT 'system',
+  action      audit_action NOT NULL,
+  from_value  TEXT,        -- valor anterior (ex: status anterior)
+  to_value    TEXT,        -- valor novo
+  metadata    JSONB        DEFAULT '{}',   -- dados extras (ex: escalation_level, sla_ms)
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Tabela de auditoria é append-only — sem UPDATE/DELETE para usuários
+CREATE INDEX idx_audit_ticket ON ticket_audit_log(ticket_id, created_at);
+        ]]></sql>
+      </table>
+
+      <!-- REGRAS DE SLA POR PLANO -->
+      <table name="ticket_sla_rules">
+        <sql><![CDATA[
+CREATE TABLE ticket_sla_rules (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id             UUID        REFERENCES plans(id) ON DELETE SET NULL,
+  priority            ticket_priority NOT NULL,
+  first_response_mins INTEGER     NOT NULL,   -- prazo p/ 1ª resposta humana
+  resolution_mins     INTEGER     NOT NULL,   -- prazo p/ resolução
+  escalation_mins     INTEGER     NOT NULL,   -- minutos sem ação → escalação automática
+  escalation_level    SMALLINT    NOT NULL DEFAULT 1,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (plan_id, priority)
+);
+
+-- Valores padrão (sem plano específico)
+INSERT INTO ticket_sla_rules (plan_id, priority, first_response_mins, resolution_mins, escalation_mins, escalation_level)
+VALUES
+  (NULL, 'low',      480, 4320, 1440, 1),   -- 8h resposta, 72h resolução, 24h escalação
+  (NULL, 'medium',   240, 2880,  720, 1),   -- 4h, 48h, 12h
+  (NULL, 'high',      60, 1440,  360, 2),   -- 1h, 24h, 6h
+  (NULL, 'critical',  30,  480,  120, 3);   -- 30min, 8h, 2h
+        ]]></sql>
+      </table>
+
+      <!-- CATEGORIAS CONFIGURÁVEIS -->
+      <table name="ticket_categories">
+        <sql><![CDATA[
+CREATE TABLE ticket_categories (
+  id         UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       TEXT  NOT NULL UNIQUE,
+  keywords   TEXT[] DEFAULT '{}',   -- palavras-chave para triagem por IA
+  color_hex  TEXT  DEFAULT '#6366f1',
+  icon       TEXT  DEFAULT 'tag',
+  active     BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+INSERT INTO ticket_categories (name, keywords, color_hex, icon) VALUES
+  ('Conectores',    ARRAY['sincronizar','conector','google','facebook','tripadvisor'], '#3b82f6', 'plug'),
+  ('Relatórios',    ARRAY['relatório','pdf','exportar','gráfico'],                    '#8b5cf6', 'chart'),
+  ('Cobrança',      ARRAY['pagamento','fatura','assinatura','plano','cobrado'],        '#f59e0b', 'credit-card'),
+  ('Acesso',        ARRAY['login','senha','acesso','conta','email'],                   '#ef4444', 'lock'),
+  ('Funcionalidade',ARRAY['bug','erro','não funciona','problema','falha'],             '#10b981', 'bug'),
+  ('Dúvida',        ARRAY['como','dúvida','tutorial','explicar','ajuda'],              '#6b7280', 'help-circle');
+        ]]></sql>
+      </table>
+
+      <!-- BASE DE CONHECIMENTO (self-service deflection) -->
+      <table name="knowledge_base_articles">
+        <sql><![CDATA[
+CREATE TABLE knowledge_base_articles (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id  UUID        REFERENCES ticket_categories(id),
+  title        TEXT        NOT NULL,
+  slug         TEXT        NOT NULL UNIQUE,
+  content_md   TEXT        NOT NULL,
+  tags         TEXT[]      DEFAULT '{}',
+  views        INTEGER     NOT NULL DEFAULT 0,
+  helpful_yes  INTEGER     NOT NULL DEFAULT 0,
+  helpful_no   INTEGER     NOT NULL DEFAULT 0,
+  published    BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_by   UUID        REFERENCES auth.users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+        ]]></sql>
+      </table>
+
+      <!-- RLS -->
+      <sql><![CDATA[
+-- Tickets: tenant só vê os seus próprios
+ALTER TABLE support_tickets       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_messages       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_attachments    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_audit_log      ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_tickets_select ON support_tickets
+  FOR SELECT USING (tenant_id = auth_tenant_id() OR is_admin());
+
+CREATE POLICY tenant_tickets_insert ON support_tickets
+  FOR INSERT WITH CHECK (tenant_id = auth_tenant_id());
+
+CREATE POLICY tenant_messages_select ON ticket_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM support_tickets t
+      WHERE t.id = ticket_id
+        AND (t.tenant_id = auth_tenant_id() OR is_admin())
+    )
+    AND (is_internal = FALSE OR is_admin())
+  );
+
+CREATE POLICY audit_log_select ON ticket_audit_log
+  FOR SELECT USING (is_admin());
+      ]]></sql>
+
+      <!-- TRIGGER updated_at -->
+      <sql><![CDATA[
+CREATE TRIGGER set_ticket_updated_at
+  BEFORE UPDATE ON support_tickets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_kb_updated_at
+  BEFORE UPDATE ON knowledge_base_articles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+      ]]></sql>
+
+    </migration>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 2 — BACKEND (API + SCHEDULER)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="2" name="Backend — API e Scheduler" estimatedDays="4">
+
+    <!-- 2.1 ROTAS DO PORTAL (tenant abre e acompanha tickets) -->
+    <apiModule name="Portal Support API" basePath="/api/support">
+
+      <route method="POST" path="/">
+        <description>Abre novo ticket com upload de anexos</description>
+        <auth>Bearer JWT (tenant user)</auth>
+        <steps>
+          <step>Valida body: subject, description, category_id</step>
+          <step>Faz upload de arquivos para Supabase Storage no bucket support-attachments/{tenant_id}/{ticket_id}/</step>
+          <step>Insere support_ticket com status='open'</step>
+          <step>Insere registros em ticket_attachments</step>
+          <step>Calcula sla_deadline com base no plano do tenant + prioridade inicial (default: medium)</step>
+          <step>Dispara job assíncrono: ai_triage_ticket(ticket_id)</step>
+          <step>Grava audit_log action='created'</step>
+          <step>Envia notificação WhatsApp ao agente via UAZAPI (se configurado)</step>
+        </steps>
+        <request><![CDATA[
+{
+  "subject":     "Google Maps não sincroniza",
+  "description": "Desde ontem o conector do Google Maps parou...",
+  "category_id": "uuid-conectores",
+  "attachments": [File, File]   // multipart/form-data
+}
+        ]]></request>
+        <response><![CDATA[
+{
+  "id":            "uuid",
+  "ticket_number": 42,
+  "status":        "open",
+  "sla_deadline":  "2026-05-05T14:00:00Z"
+}
+        ]]></response>
+      </route>
+
+      <route method="GET" path="/">
+        <description>Lista tickets do tenant autenticado com filtros e paginação</description>
+        <queryParams>status, priority, page, limit, search</queryParams>
+      </route>
+
+      <route method="GET" path="/:id">
+        <description>Detalhe do ticket com mensagens (excluindo notas internas) e anexos</description>
+      </route>
+
+      <route method="POST" path="/:id/messages">
+        <description>Tenant adiciona resposta na thread do ticket</description>
+        <steps>
+          <step>Valida que ticket pertence ao tenant</step>
+          <step>Se status = 'waiting_tenant', volta para 'in_progress' automaticamente</step>
+          <step>Insere ticket_message com author_role='tenant_user'</step>
+          <step>Grava audit_log action='message_added'</step>
+          <step>Notifica agente responsável</step>
+        </steps>
+      </route>
+
+      <route method="POST" path="/:id/attachments">
+        <description>Upload de arquivo adicional em ticket existente</description>
+      </route>
+
+      <route method="POST" path="/:id/csat">
+        <description>Tenant avalia satisfação após resolução (1–5 estrelas + comentário)</description>
+        <condition>Só permitido quando status = 'resolved' ou 'closed'</condition>
+      </route>
+
+      <route method="GET" path="/kb/search">
+        <description>Busca na base de conhecimento (self-service, não requer auth)</description>
+        <queryParams>q (query text), category_id</queryParams>
+        <note>Retorna artigos relevantes ANTES de exibir o formulário de abertura de ticket</note>
+      </route>
+
+    </apiModule>
+
+    <!-- 2.2 ROTAS DO ADMIN (agentes e gestores) -->
+    <apiModule name="Admin Support API" basePath="/api/admin/support">
+
+      <route method="GET" path="/tickets">
+        <description>Lista todos os tickets com filtros avançados</description>
+        <queryParams>status, priority, assigned_to, tenant_id, sla_breached, category, date_from, date_to, search, page, limit</queryParams>
+        <auth>perfil: admin | operador</auth>
+      </route>
+
+      <route method="GET" path="/tickets/:id">
+        <description>Detalhe completo incluindo notas internas, audit_log e histórico SLA</description>
+      </route>
+
+      <route method="PATCH" path="/tickets/:id/status">
+        <description>Muda status do ticket com registro de motivo</description>
+        <body>{ status, reason? }</body>
+        <steps>
+          <step>Valida transição de estado permitida (state machine)</step>
+          <step>Atualiza support_tickets.status</step>
+          <step>Preenche resolved_at / closed_at se aplicável</step>
+          <step>Grava audit_log action='status_changed'</step>
+          <step>Envia notificação ao tenant (WhatsApp/email)</step>
+        </steps>
+      </route>
+
+      <route method="PATCH" path="/tickets/:id/assign">
+        <description>Atribui ticket a um agente</description>
+        <body>{ agent_id }</body>
+      </route>
+
+      <route method="PATCH" path="/tickets/:id/priority">
+        <description>Altera prioridade e recalcula sla_deadline</description>
+        <body>{ priority }</body>
+      </route>
+
+      <route method="POST" path="/tickets/:id/messages">
+        <description>Agente adiciona resposta pública ou nota interna</description>
+        <body>{ body, is_internal: boolean }</body>
+      </route>
+
+      <route method="POST" path="/tickets/:id/escalate">
+        <description>Escalação manual com nível e justificativa</description>
+        <body>{ level: 1|2|3, reason }</body>
+        <steps>
+          <step>Atualiza escalation_level e status='escalated'</step>
+          <step>Notifica agente de nível superior e gestor</step>
+          <step>Grava audit_log action='escalated' com metadata</step>
+        </steps>
+      </route>
+
+      <route method="GET" path="/dashboard">
+        <description>KPIs em tempo real para o painel administrativo</description>
+        <returns><![CDATA[
+{
+  "open_count":              42,
+  "sla_breached_count":       5,
+  "avg_first_response_mins": 87,
+  "avg_resolution_hours":   18,
+  "fcr_rate":              0.67,   // first contact resolution
+  "escalation_rate":       0.12,
+  "csat_avg":              4.3,
+  "volume_by_category":    [...],
+  "volume_by_status":      [...],
+  "tickets_by_day":        [...]
+}
+        ]]></returns>
+      </route>
+
+      <route method="GET" path="/audit-log">
+        <description>Consulta de auditoria com filtros (ticket_id, actor, action, date range)</description>
+      </route>
+
+      <!-- SLA Rules CRUD -->
+      <route method="GET"    path="/sla-rules"       ><description>Lista regras de SLA</description></route>
+      <route method="POST"   path="/sla-rules"       ><description>Cria regra de SLA por plano + prioridade</description></route>
+      <route method="PATCH"  path="/sla-rules/:id"   ><description>Atualiza regra de SLA</description></route>
+
+      <!-- Knowledge Base CRUD -->
+      <route method="GET"    path="/kb"              ><description>Lista artigos (incluindo rascunhos)</description></route>
+      <route method="POST"   path="/kb"              ><description>Cria artigo</description></route>
+      <route method="PATCH"  path="/kb/:id"          ><description>Atualiza artigo</description></route>
+      <route method="DELETE" path="/kb/:id"          ><description>Remove artigo</description></route>
+
+    </apiModule>
+
+    <!-- 2.3 SERVIÇO DE TRIAGEM POR IA -->
+    <service name="AITriageService" file="src/services/supportAITriage.ts">
+      <description>
+        Usa Gemini Flash (já integrado) para classificar tickets automaticamente.
+        Atualiza priority, category, ai_sentiment, ai_confidence, ai_summary.
+      </description>
+      <prompt><![CDATA[
+Você é um agente de triagem de suporte técnico para uma plataforma SaaS de monitoramento de reputação.
+
+Analise o ticket abaixo e retorne um JSON com:
+- priority: "low" | "medium" | "high" | "critical"
+- category: uma das categorias disponíveis
+- sentiment: "positive" | "neutral" | "negative" | "frustrated"
+- confidence: número de 0 a 1
+- summary: resumo em 1 linha (máx. 120 chars) em português
+
+Ticket:
+Assunto: {{subject}}
+Descrição: {{description}}
+Canal: {{channel}}
+Plano do tenant: {{plan_name}}
+
+Categorias disponíveis: {{categories_list}}
+
+Retorne SOMENTE o JSON, sem markdown.
+      ]]></prompt>
+      <steps>
+        <step>Busca ticket + tenant + plano do banco</step>
+        <step>Chama Gemini com prompt acima</step>
+        <step>Valida JSON retornado</step>
+        <step>Atualiza support_tickets com campos de triagem + status='ai_triaged'</step>
+        <step>Recalcula sla_deadline se prioridade mudou</step>
+        <step>Grava audit_log action='status_changed' from='open' to='ai_triaged' + metadata com AI output</step>
+        <step>Sugere artigos da base de conhecimento relacionados (retorna na thread como mensagem 'ai')</step>
+      </steps>
+    </service>
+
+    <!-- 2.4 SCHEDULER DE SLA E ESCALAÇÃO AUTOMÁTICA -->
+    <service name="SLAWatchdogJob" file="src/scheduler/slaWatchdog.ts">
+      <description>
+        Job agendado a cada 5 minutos (usando o scheduler existente do projeto).
+        Detecta violações de SLA e executa escalações automáticas.
+      </description>
+      <cronExpression>*/5 * * * *</cronExpression>
+
+      <job name="checkSlaBreaches">
+        <steps>
+          <step>Query: tickets com sla_deadline &lt; NOW() AND status NOT IN ('resolved','closed','waiting_tenant') AND is_sla_breached = FALSE</step>
+          <step>Para cada ticket: SET is_sla_breached = TRUE, status = 'escalated', escalation_level = sla_rule.escalation_level</step>
+          <step>Grava audit_log action='sla_breached' com metadata (sla_deadline, minutes_overdue)</step>
+          <step>Notifica agente responsável + gestor via WhatsApp (UAZAPI) e/ou webhook n8n</step>
+        </steps>
+      </job>
+
+      <job name="checkInactiveTickets">
+        <description>Escalação por inatividade (sem resposta do agente por X minutos)</description>
+        <steps>
+          <step>Query: tickets status='in_progress' sem mensagem de agente nos últimos escalation_mins</step>
+          <step>Incrementa escalation_level (máx. 3)</step>
+          <step>Grava audit_log action='escalated' com metadata (inactive_minutes)</step>
+          <step>Notifica hierarquia de escalonamento</step>
+        </steps>
+      </job>
+
+      <job name="autoCloseResolved">
+        <description>Fecha automaticamente tickets resolvidos sem resposta do cliente por 7 dias</description>
+        <steps>
+          <step>Query: tickets status='resolved' com resolved_at &lt; NOW() - INTERVAL '7 days'</step>
+          <step>SET status = 'closed', closed_at = NOW()</step>
+          <step>Grava audit_log action='closed' actor_role='system'</step>
+        </steps>
+      </job>
+
+    </service>
+
+    <!-- 2.5 SERVIÇO DE NOTIFICAÇÕES -->
+    <service name="SupportNotificationService" file="src/services/supportNotifications.ts">
+      <channels>
+        <channel type="whatsapp" integration="UAZAPI" configKey="whatsapp_support_number">
+          <useCase>Confirmar abertura de ticket ao cliente</useCase>
+          <useCase>Alertar agente de ticket novo não atribuído</useCase>
+          <useCase>Alertar escalação de SLA ao gestor</useCase>
+          <useCase>Notificar resolução ao cliente com link de CSAT</useCase>
+        </channel>
+        <channel type="webhook" integration="n8n" configKey="n8n_support_webhook">
+          <useCase>Escalação crítica (level 3)</useCase>
+          <useCase>SLA breach para tickets de tenants enterprise</useCase>
+        </channel>
+      </channels>
+    </service>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 3 — FRONTEND PORTAL (tenant abre e acompanha tickets)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="3" name="Frontend — Portal do Cliente" estimatedDays="3">
+
+    <component name="SupportButton" path="portal/src/components/SupportButton.tsx">
+      <description>Botão flutuante fixo no canto inferior direito (presente em todas as páginas)</description>
+      <behavior>Abre modal/drawer de suporte inline sem sair da página</behavior>
+    </component>
+
+    <component name="NewTicketWizard" path="portal/src/components/support/NewTicketWizard.tsx">
+      <description>Formulário de abertura de chamado em 3 passos</description>
+      <step1 name="Busca na Base de Conhecimento">
+        <description>Campo de busca que sugere artigos relevantes em tempo real antes de prosseguir</description>
+        <selfServiceDeflection>Se artigo resolve o problema, usuário fecha sem abrir ticket</selfServiceDeflection>
+      </step1>
+      <step2 name="Detalhes do Chamado">
+        <fields>
+          <field name="subject"     type="text"     required="true"  maxLength="120" />
+          <field name="category_id" type="select"   required="true"  source="GET /api/support/categories" />
+          <field name="description" type="textarea" required="true"  minLength="20" />
+          <field name="attachments" type="file"     required="false"
+                 accept="image/*,.pdf,.png,.jpg,.jpeg,.gif,.webp"
+                 maxFiles="5"
+                 maxSizeMB="10"
+                 preview="true" />
+        </fields>
+      </step2>
+      <step3 name="Confirmação">
+        <description>Exibe resumo + número do ticket + prazo SLA estimado</description>
+      </step3>
+    </component>
+
+    <component name="TicketList" path="portal/src/pages/support/TicketList.tsx">
+      <description>Histórico de tickets do tenant com filtros por status</description>
+      <columns>Nº, Assunto, Categoria, Status (badge colorido), Prioridade, Data abertura, Prazo SLA</columns>
+      <statusBadgeColors>
+        <status name="open"           color="#f59e0b" />
+        <status name="ai_triaged"     color="#8b5cf6" />
+        <status name="in_progress"    color="#3b82f6" />
+        <status name="waiting_tenant" color="#6b7280" />
+        <status name="escalated"      color="#ef4444" />
+        <status name="resolved"       color="#10b981" />
+        <status name="closed"         color="#d1d5db" />
+      </statusBadgeColors>
+      <slaBadge>Exibe countdown quando prazo &lt; 2h. Exibe "SLA violado" em vermelho se breached</slaBadge>
+    </component>
+
+    <component name="TicketDetail" path="portal/src/pages/support/TicketDetail.tsx">
+      <description>Thread de mensagens estilo chat com timeline de eventos</description>
+      <features>
+        <feature>Exibe mensagens públicas (oculta is_internal=true)</feature>
+        <feature>Formulário inline para responder</feature>
+        <feature>Upload de novos anexos na thread</feature>
+        <feature>Preview de imagens em lightbox</feature>
+        <feature>Timeline lateral: criação → triagem IA → atribuição → respostas → resolução</feature>
+        <feature>Bloco de CSAT após resolução (1–5 estrelas + comentário opcional)</feature>
+      </features>
+    </component>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 4 — FRONTEND ADMIN (visibilidade e gestão dos tickets)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="4" name="Frontend — Painel Admin" estimatedDays="4">
+
+    <component name="SupportDashboard" path="admin/src/pages/support/SupportDashboard.tsx">
+      <description>Painel principal de suporte com KPIs e filas</description>
+      <kpiCards>
+        <card label="Abertos"              metric="open_count"              alert="true" />
+        <card label="SLA Violados"         metric="sla_breached_count"      alert="true" color="red" />
+        <card label="Tempo Médio Resposta" metric="avg_first_response_mins" unit="min" />
+        <card label="Resolução Média"      metric="avg_resolution_hours"    unit="h" />
+        <card label="Taxa FCR"             metric="fcr_rate"                format="percent" />
+        <card label="CSAT Médio"           metric="csat_avg"                format="stars" />
+      </kpiCards>
+      <charts>
+        <chart type="bar"     data="volume_by_day"      label="Volume diário de tickets" />
+        <chart type="donut"   data="volume_by_status"   label="Distribuição por status" />
+        <chart type="bar"     data="volume_by_category" label="Tickets por categoria" />
+        <chart type="line"    data="avg_resolution_trend" label="Tendência de resolução (30 dias)" />
+      </charts>
+    </component>
+
+    <component name="TicketQueue" path="admin/src/pages/support/TicketQueue.tsx">
+      <description>Fila de tickets com filtros avançados e ações em lote</description>
+      <columns>Nº, Tenant, Assunto, Categoria, Prioridade, Status, Agente, SLA Deadline, Escalação</columns>
+      <filters>status, priority, assigned_to, tenant_id, sla_breached, category, date_range, search</filters>
+      <bulkActions>
+        <action>Atribuir a agente</action>
+        <action>Mudar prioridade</action>
+        <action>Fechar tickets resolvidos</action>
+      </bulkActions>
+      <sortableColumns>created_at, sla_deadline, priority, escalation_level</sortableColumns>
+      <highlightRules>
+        <rule condition="is_sla_breached = true"    style="row-red-bg" />
+        <rule condition="escalation_level >= 2"     style="row-orange-bg" />
+        <rule condition="sla_deadline &lt; now+2h" style="row-yellow-bg" />
+      </highlightRules>
+    </component>
+
+    <component name="TicketDetailAdmin" path="admin/src/pages/support/TicketDetailAdmin.tsx">
+      <description>Visão completa do ticket para o agente</description>
+      <panels>
+        <panel name="Thread">Mensagens + notas internas (toggle visibilidade)</panel>
+        <panel name="Informações">Dados do tenant, plano, histórico de tickets anteriores</panel>
+        <panel name="SLA">Prazo, tempo decorrido, histórico de violações, regra aplicada</panel>
+        <panel name="Auditoria">Timeline completa de audit_log com actor, ação, timestamp, metadata</panel>
+        <panel name="Anexos">Grid de imagens com preview e download</panel>
+      </panels>
+      <actions>
+        <action>Responder (público ou nota interna)</action>
+        <action>Mudar status (state machine visual)</action>
+        <action>Atribuir / Reatribuir agente</action>
+        <action>Mudar prioridade com justificativa</action>
+        <action>Escalar manualmente (nivel + motivo)</action>
+        <action>Adicionar tags</action>
+      </actions>
+      <aiAssist>
+        <feature>Sugestão de resposta gerada por IA com base no histórico do ticket</feature>
+        <feature>Artigos da KB sugeridos automaticamente para incluir na resposta</feature>
+      </aiAssist>
+    </component>
+
+    <component name="SLAConfigPanel" path="admin/src/pages/support/SLAConfig.tsx">
+      <description>CRUD de regras de SLA por plano e prioridade</description>
+      <table>Exibe matrix plano × prioridade com 1ª resposta / resolução / escalação em minutos</table>
+    </component>
+
+    <component name="KnowledgeBaseAdmin" path="admin/src/pages/support/KnowledgeBase.tsx">
+      <description>Editor de artigos da base de conhecimento com preview Markdown</description>
+      <features>
+        <feature>Editor Markdown com preview em tempo real</feature>
+        <feature>Publicar / despublicar artigos</feature>
+        <feature>Métricas: visualizações, útil/não-útil por artigo</feature>
+        <feature>Associação a categorias e tags</feature>
+      </features>
+    </component>
+
+    <component name="AuditLogViewer" path="admin/src/pages/support/AuditLog.tsx">
+      <description>Consulta de auditoria global com filtros por ticket, ator, ação e período</description>
+      <exportFormats>CSV, JSON</exportFormats>
+    </component>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 5 — INTEGRAÇÕES E HARDENING
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="5" name="Integrações e Hardening" estimatedDays="2">
+
+    <integration name="Supabase Storage">
+      <steps>
+        <step>Criar bucket support-attachments com política de acesso: somente service_role escreve; URLs assinadas para leitura</step>
+        <step>Configurar CORS para o bucket</step>
+        <step>Implementar geração de signed URLs (expiração 1h) para download seguro de anexos</step>
+        <step>Limitar tipos MIME no backend (allowlist: image/*, application/pdf)</step>
+        <step>Limitar tamanho máximo de arquivo: 10 MB por arquivo, 25 MB por ticket</step>
+      </steps>
+    </integration>
+
+    <integration name="WhatsApp UAZAPI">
+      <templates>
+        <template name="ticket_opened">
+          "Olá {{nome}}! Seu chamado #{{numero}} foi aberto com sucesso. Prazo estimado: {{sla_deadline}}. Acompanhe em: {{link}}"
+        </template>
+        <template name="ticket_resolved">
+          "Seu chamado #{{numero}} foi resolvido! Avalie nosso atendimento: {{csat_link}}"
+        </template>
+        <template name="sla_breach_agent">
+          "⚠️ SLA violado! Ticket #{{numero}} ({{tenant_name}}) está sem resolução. Acesse: {{admin_link}}"
+        </template>
+      </templates>
+    </integration>
+
+    <hardening name="Segurança e Validação">
+      <item>Rate limit na rota POST /api/support: máx. 10 tickets/hora por tenant</item>
+      <item>Rate limit no upload de arquivos: 20 uploads/hora por tenant</item>
+      <item>Scan de vírus nos uploads via ClamAV ou serviço externo (fase futura)</item>
+      <item>Sanitização de HTML no body das mensagens (evitar XSS)</item>
+      <item>Audit log é append-only: sem permissão de UPDATE/DELETE para qualquer role exceto service_role</item>
+      <item>Signed URLs para anexos (nunca URLs públicas permanentes)</item>
+      <item>Validar que ticket pertence ao tenant antes de qualquer ação (verificação explícita além do RLS)</item>
+    </hardening>
+
+    <hardening name="Testes">
+      <testFile path="tests/support.test.ts">
+        <testCase>Abertura de ticket cria registro correto com audit_log</testCase>
+        <testCase>Triagem IA atualiza campos e recalcula SLA</testCase>
+        <testCase>SLA watchdog marca breach e escalona após deadline</testCase>
+        <testCase>Tenant não consegue acessar tickets de outro tenant (RLS)</testCase>
+        <testCase>Upload de arquivo fora do allowlist é rejeitado</testCase>
+        <testCase>Auto-close após 7 dias de resolução sem resposta</testCase>
+        <testCase>CSAT só é registrável em tickets resolved/closed</testCase>
+      </testFile>
+    </hardening>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RESUMO DE ESFORÇO
+  ═══════════════════════════════════════════════════════════════ -->
+  <effort>
+    <summary>
+      <totalDays>15</totalDays>
+      <phases>
+        <item phase="1" name="Banco de Dados"              days="2" />
+        <item phase="2" name="Backend API + Scheduler"     days="4" />
+        <item phase="3" name="Frontend Portal"             days="3" />
+        <item phase="4" name="Frontend Admin"              days="4" />
+        <item phase="5" name="Integrações e Hardening"     days="2" />
+      </phases>
+    </summary>
+
+    <deliverables>
+      <deliverable>8 tabelas novas no Supabase com RLS e audit trigger</deliverable>
+      <deliverable>18 endpoints REST novos (portal + admin)</deliverable>
+      <deliverable>Serviço de triagem IA com Gemini (classificação, sentimento, sugestão de KB)</deliverable>
+      <deliverable>3 jobs no scheduler (SLA watchdog, inatividade, auto-close)</deliverable>
+      <deliverable>5 componentes React no portal (botão flutuante, wizard, lista, detalhe, CSAT)</deliverable>
+      <deliverable>6 componentes React no admin (dashboard, fila, detalhe, SLA config, KB, auditoria)</deliverable>
+      <deliverable>Notificações WhatsApp para abertura, resolução e violação de SLA</deliverable>
+      <deliverable>Base de conhecimento para deflexão de tickets (estimativa: -20 a -40% de volume)</deliverable>
+      <deliverable>Suite de testes com 7+ casos críticos</deliverable>
+    </deliverables>
+  </effort>
+
+</implementationPlan>

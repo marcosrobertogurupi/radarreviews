@@ -1,0 +1,1428 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PROMPT DE IMPLEMENTAÇÃO — SISTEMA DE SUPORTE COM IA AUTÔNOMA
+  Projeto  : Reputei / Radar de Reviews
+  Gerado em: 2026-05-04
+  Uso      : Entregar este arquivo integralmente a uma IA coder (Claude Code, Gemini Code, etc.)
+             como prompt de implementação. O agente deverá seguir as fases em ordem,
+             confirmando cada entregável antes de avançar.
+-->
+<implementationPrompt
+  name="Sistema de Suporte ao Cliente com IA Autônoma e Base de Conhecimento Auto-Aprendiz"
+  version="1.0"
+  project="reputei"
+  totalPhases="8"
+  estimatedDays="25"
+>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SEÇÃO 1 — CONTEXTO DO PROJETO
+  ═══════════════════════════════════════════════════════════════ -->
+  <projectContext>
+
+    <stack>
+      <backend>Node.js 20 + TypeScript — servidor HTTP nativo na porta 3001</backend>
+      <database>Supabase (PostgreSQL 15) com Row-Level Security (RLS)</database>
+      <auth>Supabase Auth — JWTs via Bearer token; service role key para operações admin</auth>
+      <ai>Google Gemini Flash (geração de texto) + Gemini text-embedding-004 (embeddings 768 dims)</ai>
+      <scheduler>Scheduler in-process customizado já existente em src/scheduler/</scheduler>
+      <storage>Supabase Storage — buckets existentes para outros assets</storage>
+      <whatsapp>UAZAPI já integrado em src/services/ — variável de ambiente UAZAPI_URL</whatsapp>
+      <frontendAdmin>React 19 + Vite + React Router — em admin/src/</frontendAdmin>
+      <frontendPortal>React 19 + Vite + Recharts — em portal/src/</frontendPortal>
+      <tests>Vitest — em tests/</tests>
+    </stack>
+
+    <existingPatterns>
+      <pattern name="API route handler">
+        Rotas registradas em src/api/server.ts com padrão:
+        if (method === 'POST' &amp;&amp; pathname === '/api/rota') { handler(req, res); return; }
+        Autenticação via função auxiliar existente: verifyJWT(req) → { userId, tenantId, role }
+        Admin: verificar perfil via checkAdminRole(req) → lança 403 se não for admin/operador
+      </pattern>
+      <pattern name="Supabase client">
+        import { supabase } from '../lib/supabase';           // client público (respeita RLS)
+        import { supabaseAdmin } from '../lib/supabase';      // service role (ignora RLS)
+        Usar supabaseAdmin apenas em operações do scheduler e admin endpoints
+      </pattern>
+      <pattern name="Gemini client">
+        import { gemini } from '../lib/gemini';
+        await gemini.generateContent({ contents: [...] })
+        Embedding: await gemini.embedContent({ content: { parts: [{ text }] } })
+      </pattern>
+      <pattern name="Scheduler job">
+        Registrar em src/scheduler/index.ts com:
+        scheduler.register({ name: 'jobName', cron: '*/5 * * * *', fn: async () => { ... } })
+      </pattern>
+      <pattern name="Migrations">
+        Arquivos SQL sequenciais em migrations/0XX_nome.sql
+        Executar via: npm run migrate
+        Supabase migrations em supabase/migrations/ para RLS e functions
+      </pattern>
+      <pattern name="UAZAPI notification">
+        POST ${UAZAPI_URL}/message/sendText
+        Body: { phone: '55119...', message: 'texto' }
+        Headers: { apikey: UAZAPI_KEY }
+      </pattern>
+      <pattern name="Error handling">
+        try { ... } catch (err) {
+          logger.error('contexto', err);
+          res.writeHead(500); res.end(JSON.stringify({ error: 'mensagem segura' }));
+        }
+      </pattern>
+      <pattern name="Audit log existente">
+        Tabela auditoria já existe no banco com campos: acao, usuario_id, tenant_id, dados_anteriores, dados_novos, ip
+        O novo ticket_audit_log é separado e específico para suporte
+      </pattern>
+    </existingPatterns>
+
+    <existingEnvVars>
+      <var name="SUPABASE_URL" />
+      <var name="SUPABASE_ANON_KEY" />
+      <var name="SUPABASE_SERVICE_ROLE_KEY" />
+      <var name="GEMINI_API_KEY" />
+      <var name="UAZAPI_URL" />
+      <var name="UAZAPI_KEY" />
+    </existingEnvVars>
+
+    <codeConventions>
+      <convention>TypeScript strict mode — sem any implícito</convention>
+      <convention>Nomes de funções e variáveis em camelCase; tabelas SQL em snake_case</convention>
+      <convention>Sem comentários óbvios — apenas comentários para WHY não-óbvio</convention>
+      <convention>Sem console.log — usar logger existente: import { logger } from '../lib/logger'</convention>
+      <convention>Sem tratamento de erros para cenários impossíveis — confiar nas garantias do framework</convention>
+      <convention>React: componentes funcionais com hooks; sem class components</convention>
+      <convention>React: Tailwind CSS para estilos; seguir padrão visual dos componentes existentes em admin/src/components/</convention>
+      <convention>SQL: sempre usar parâmetros preparados ($1, $2) — nunca interpolação de strings</convention>
+    </codeConventions>
+
+  </projectContext>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SEÇÃO 2 — INSTRUÇÕES PARA O AGENTE IMPLEMENTADOR
+  ═══════════════════════════════════════════════════════════════ -->
+  <agentInstructions>
+
+    <instruction id="I1">
+      Implemente as 8 fases em ordem sequencial.
+      NUNCA avance para a próxima fase sem concluir todos os entregáveis da atual.
+    </instruction>
+
+    <instruction id="I2">
+      Antes de criar qualquer arquivo, leia os arquivos existentes na mesma pasta
+      para entender o padrão de nomenclatura, imports e estrutura.
+    </instruction>
+
+    <instruction id="I3">
+      Toda mudança de status de ticket DEVE registrar um entry em ticket_audit_log.
+      Essa regra não tem exceção. Inclua actor_id (NULL se for scheduler/IA), actor_role, from_value, to_value.
+    </instruction>
+
+    <instruction id="I4">
+      Toda operação de banco que envolva dados de tenant DEVE verificar isolamento:
+      ou via RLS (supabase client com JWT), ou com cláusula WHERE tenant_id = ? explícita (supabaseAdmin).
+      Nunca confie apenas no RLS quando usar service role key.
+    </instruction>
+
+    <instruction id="I5">
+      Ao usar Gemini para geração de texto, sempre valide o JSON retornado com um schema simples
+      antes de persistir. Se o JSON for inválido, registre o erro e faça fallback gracioso
+      (ex.: manter status anterior, não quebrar o fluxo do usuário).
+    </instruction>
+
+    <instruction id="I6">
+      Uploads de arquivo: valide MIME type no backend (não confie no Content-Type do cliente).
+      Use a lista de allowlist definida na Fase 1 (image/*, application/pdf).
+      Rejeite com HTTP 415 se o tipo não for permitido.
+    </instruction>
+
+    <instruction id="I7">
+      O ticket_audit_log é append-only. NÃO crie nenhum endpoint ou função que faça
+      UPDATE ou DELETE nessa tabela. A política RLS também deve bloquear isso.
+    </instruction>
+
+    <instruction id="I8">
+      Para o SupportAIAgent: não revele ao assinante que é uma IA na primeira mensagem.
+      Use linguagem natural em primeira pessoa. Se perguntado diretamente se é uma IA,
+      responda honestamente: "Sou o assistente virtual da Reputei."
+    </instruction>
+
+    <instruction id="I9">
+      Ao final de cada fase, liste os arquivos criados/modificados e execute os testes
+      relevantes com: npm test -- --testPathPattern=support
+    </instruction>
+
+    <instruction id="I10">
+      Não crie documentação Markdown (*.md) além do que já existe.
+      Não crie arquivos de configuração desnecessários.
+      Não refatore código existente que não seja parte do escopo deste prompt.
+    </instruction>
+
+  </agentInstructions>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 1 — BANCO DE DADOS: NÚCLEO DO SUPORTE
+       Arquivo: migrations/010_support_system.sql
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="1" name="Banco de Dados — Núcleo" estimatedDays="1">
+    <goal>Criar todas as tabelas, enums, índices, RLS e triggers do sistema de suporte base.</goal>
+
+    <task id="1.1" name="Criar migration 010">
+      <file>migrations/010_support_system.sql</file>
+      <sql><![CDATA[
+-- ============================================================
+-- ENUMS
+-- ============================================================
+CREATE TYPE ticket_status AS ENUM (
+  'open', 'ai_triaged', 'in_progress', 'waiting_tenant',
+  'escalated', 'resolved', 'closed', 'reopened',
+  'ai_responding', 'ai_resolved', 'needs_human', 'learning'
+);
+CREATE TYPE ticket_priority AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE ticket_channel  AS ENUM ('portal', 'whatsapp', 'email', 'admin');
+CREATE TYPE audit_action    AS ENUM (
+  'created', 'status_changed', 'priority_changed', 'assigned',
+  'message_added', 'attachment_added', 'sla_breached',
+  'escalated', 'resolved', 'closed', 'reopened', 'csat_rated'
+);
+
+-- ============================================================
+-- CATEGORIAS DE TICKET
+-- ============================================================
+CREATE TABLE ticket_categories (
+  id        UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  name      TEXT    NOT NULL UNIQUE,
+  keywords  TEXT[]  DEFAULT '{}',
+  color_hex TEXT    DEFAULT '#6366f1',
+  icon      TEXT    DEFAULT 'tag',
+  active    BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+INSERT INTO ticket_categories (name, keywords, color_hex, icon) VALUES
+  ('Conectores',     ARRAY['sincronizar','conector','google','facebook','tripadvisor'], '#3b82f6', 'plug'),
+  ('Relatórios',     ARRAY['relatório','pdf','exportar','gráfico'],                    '#8b5cf6', 'chart'),
+  ('Cobrança',       ARRAY['pagamento','fatura','assinatura','plano','cobrado'],        '#f59e0b', 'credit-card'),
+  ('Acesso',         ARRAY['login','senha','acesso','conta','email'],                   '#ef4444', 'lock'),
+  ('Funcionalidade', ARRAY['bug','erro','não funciona','problema','falha'],             '#10b981', 'bug'),
+  ('Dúvida',         ARRAY['como','dúvida','tutorial','explicar','ajuda'],              '#6b7280', 'help-circle');
+
+-- ============================================================
+-- REGRAS DE SLA POR PLANO
+-- ============================================================
+CREATE TABLE ticket_sla_rules (
+  id                  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id             UUID            REFERENCES plans(id) ON DELETE SET NULL,
+  priority            ticket_priority NOT NULL,
+  first_response_mins INTEGER         NOT NULL,
+  resolution_mins     INTEGER         NOT NULL,
+  escalation_mins     INTEGER         NOT NULL,
+  escalation_level    SMALLINT        NOT NULL DEFAULT 1,
+  created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  UNIQUE (plan_id, priority)
+);
+
+INSERT INTO ticket_sla_rules (plan_id, priority, first_response_mins, resolution_mins, escalation_mins, escalation_level)
+VALUES
+  (NULL, 'low',      480, 4320, 1440, 1),
+  (NULL, 'medium',   240, 2880,  720, 1),
+  (NULL, 'high',      60, 1440,  360, 2),
+  (NULL, 'critical',  30,  480,  120, 3);
+
+-- ============================================================
+-- TABELA PRINCIPAL DE TICKETS
+-- ============================================================
+CREATE TABLE support_tickets (
+  id                UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id         UUID            NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by        UUID            NOT NULL REFERENCES auth.users(id),
+  assigned_to       UUID            REFERENCES auth.users(id),
+  ticket_number     SERIAL,
+  subject           TEXT            NOT NULL,
+  description       TEXT            NOT NULL,
+  channel           ticket_channel  NOT NULL DEFAULT 'portal',
+  category_id       UUID            REFERENCES ticket_categories(id),
+  tags              TEXT[]          DEFAULT '{}',
+  priority          ticket_priority NOT NULL DEFAULT 'medium',
+
+  -- Campos preenchidos pela IA na triagem
+  ai_sentiment      TEXT            CHECK (ai_sentiment IN ('positive','neutral','negative','frustrated')),
+  ai_summary        TEXT,
+
+  -- Campos do Agente de IA Autônomo
+  ai_confidence     NUMERIC(4,3),
+  ai_attempt_count  SMALLINT        NOT NULL DEFAULT 0,
+  ai_doc_used_id    UUID,           -- FK adicionada na migration 011
+  ai_handled        BOOLEAN         NOT NULL DEFAULT FALSE,
+  ai_draft_response TEXT,
+
+  -- Estado
+  status            ticket_status   NOT NULL DEFAULT 'open',
+  is_sla_breached   BOOLEAN         NOT NULL DEFAULT FALSE,
+  escalation_level  SMALLINT        NOT NULL DEFAULT 0,
+
+  -- Timestamps
+  created_at        TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  first_response_at TIMESTAMPTZ,
+  resolved_at       TIMESTAMPTZ,
+  closed_at         TIMESTAMPTZ,
+  sla_deadline      TIMESTAMPTZ,
+
+  -- CSAT
+  csat_score        SMALLINT        CHECK (csat_score BETWEEN 1 AND 5),
+  csat_comment      TEXT,
+  csat_at           TIMESTAMPTZ,
+
+  -- WhatsApp
+  whatsapp_thread_id TEXT,
+
+  CONSTRAINT ticket_number_tenant_unique UNIQUE (tenant_id, ticket_number)
+);
+
+CREATE INDEX idx_tickets_tenant_status ON support_tickets(tenant_id, status);
+CREATE INDEX idx_tickets_assigned      ON support_tickets(assigned_to) WHERE assigned_to IS NOT NULL;
+CREATE INDEX idx_tickets_sla_deadline  ON support_tickets(sla_deadline) WHERE status NOT IN ('resolved','closed','ai_resolved');
+CREATE INDEX idx_tickets_created_at    ON support_tickets(created_at DESC);
+
+-- ============================================================
+-- MENSAGENS / THREAD
+-- ============================================================
+CREATE TABLE ticket_messages (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id   UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  author_id   UUID        REFERENCES auth.users(id),
+  author_role TEXT        NOT NULL CHECK (author_role IN ('tenant_user','agent','ai','system')),
+  body        TEXT        NOT NULL,
+  is_internal BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_ticket ON ticket_messages(ticket_id, created_at);
+
+-- ============================================================
+-- ANEXOS
+-- ============================================================
+CREATE TABLE ticket_attachments (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id    UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  message_id   UUID        REFERENCES ticket_messages(id) ON DELETE SET NULL,
+  uploaded_by  UUID        NOT NULL REFERENCES auth.users(id),
+  filename     TEXT        NOT NULL,
+  mime_type    TEXT        NOT NULL,
+  size_bytes   INTEGER     NOT NULL,
+  storage_path TEXT        NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
+-- AUDITORIA IMUTÁVEL
+-- ============================================================
+CREATE TABLE ticket_audit_log (
+  id          BIGSERIAL    PRIMARY KEY,
+  ticket_id   UUID         NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  actor_id    UUID         REFERENCES auth.users(id),
+  actor_role  TEXT         NOT NULL DEFAULT 'system',
+  action      audit_action NOT NULL,
+  from_value  TEXT,
+  to_value    TEXT,
+  metadata    JSONB        DEFAULT '{}',
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_ticket ON ticket_audit_log(ticket_id, created_at);
+
+-- ============================================================
+-- RLS
+-- ============================================================
+ALTER TABLE support_tickets    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_messages    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_audit_log   ENABLE ROW LEVEL SECURITY;
+
+-- Tenants veem apenas seus tickets; admins veem tudo
+CREATE POLICY tickets_select ON support_tickets
+  FOR SELECT USING (tenant_id = auth_tenant_id() OR is_admin());
+
+CREATE POLICY tickets_insert ON support_tickets
+  FOR INSERT WITH CHECK (tenant_id = auth_tenant_id());
+
+-- Mensagens: tenant vê apenas mensagens públicas dos seus tickets
+CREATE POLICY messages_select ON ticket_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM support_tickets t
+      WHERE t.id = ticket_id
+        AND (t.tenant_id = auth_tenant_id() OR is_admin())
+    )
+    AND (is_internal = FALSE OR is_admin())
+  );
+
+-- Audit log: somente admins leem; nenhum role faz update/delete
+CREATE POLICY audit_select ON ticket_audit_log
+  FOR SELECT USING (is_admin());
+
+-- ============================================================
+-- TRIGGERS updated_at
+-- ============================================================
+CREATE TRIGGER set_ticket_updated_at
+  BEFORE UPDATE ON support_tickets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+      ]]></sql>
+    </task>
+
+    <deliverables>
+      <deliverable>Tabelas: ticket_categories, ticket_sla_rules, support_tickets, ticket_messages, ticket_attachments, ticket_audit_log</deliverable>
+      <deliverable>Enums: ticket_status (já inclui estados de IA), ticket_priority, ticket_channel, audit_action</deliverable>
+      <deliverable>RLS ativo em todas as tabelas de suporte</deliverable>
+      <deliverable>Trigger updated_at em support_tickets</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 2 — BANCO DE DADOS: CAMADA DE IA (pgvector + KB)
+       Arquivo: migrations/011_ai_knowledge_layer.sql
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="2" name="Banco de Dados — Camada de IA" estimatedDays="1">
+    <goal>Criar infraestrutura de vetores (pgvector), base de conhecimento e fila de aprendizado.</goal>
+
+    <task id="2.1" name="Criar migration 011">
+      <file>migrations/011_ai_knowledge_layer.sql</file>
+      <sql><![CDATA[
+-- pgvector já disponível no Supabase
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- ============================================================
+-- DOCUMENTOS DE CONHECIMENTO (gerados automaticamente pela IA)
+-- ============================================================
+CREATE TABLE support_knowledge_docs (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id         UUID        REFERENCES ticket_categories(id),
+  title               TEXT        NOT NULL,
+  problem_description TEXT        NOT NULL,
+  problem_variants    TEXT[]      DEFAULT '{}',
+  solution_steps      JSONB       NOT NULL DEFAULT '[]',
+  solution_summary    TEXT        NOT NULL,
+  tags                TEXT[]      DEFAULT '{}',
+  keywords            TEXT[]      DEFAULT '{}',
+  source_ticket_ids   UUID[]      DEFAULT '{}',
+  resolution_count    INTEGER     NOT NULL DEFAULT 1,
+  avg_csat            NUMERIC(3,2),
+  confidence_score    NUMERIC(4,3) NOT NULL DEFAULT 0.700,
+  status              TEXT        NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft','active','archived','needs_review')),
+  auto_published      BOOLEAN     NOT NULL DEFAULT FALSE,
+  reviewed_by         UUID        REFERENCES auth.users(id),
+  reviewed_at         TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_kb_docs_category ON support_knowledge_docs(category_id) WHERE status = 'active';
+CREATE INDEX idx_kb_docs_status   ON support_knowledge_docs(status);
+
+-- FK da tabela de tickets para o doc usado pela IA
+ALTER TABLE support_tickets
+  ADD CONSTRAINT fk_ticket_ai_doc
+  FOREIGN KEY (ai_doc_used_id) REFERENCES support_knowledge_docs(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- EMBEDDINGS VETORIAIS (768 dims — Gemini text-embedding-004)
+-- ============================================================
+CREATE TABLE support_knowledge_embeddings (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_id     UUID        NOT NULL REFERENCES support_knowledge_docs(id) ON DELETE CASCADE,
+  content    TEXT        NOT NULL,
+  embedding  vector(768) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- HNSW index — busca de similaridade cosine em <10ms para KB de até 100k docs
+CREATE INDEX idx_kb_embeddings_hnsw
+  ON support_knowledge_embeddings
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+
+-- ============================================================
+-- FUNÇÃO DE BUSCA SEMÂNTICA
+-- ============================================================
+CREATE OR REPLACE FUNCTION search_knowledge(
+  query_embedding vector(768),
+  match_threshold FLOAT   DEFAULT 0.65,
+  match_count     INT     DEFAULT 5,
+  filter_category UUID    DEFAULT NULL
+)
+RETURNS TABLE (
+  doc_id           UUID,
+  title            TEXT,
+  solution_summary TEXT,
+  solution_steps   JSONB,
+  similarity       FLOAT,
+  confidence_score NUMERIC,
+  resolution_count INT
+)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    d.id,
+    d.title,
+    d.solution_summary,
+    d.solution_steps,
+    1 - (e.embedding <=> query_embedding) AS similarity,
+    d.confidence_score,
+    d.resolution_count
+  FROM support_knowledge_embeddings e
+  JOIN support_knowledge_docs d ON d.id = e.doc_id
+  WHERE d.status = 'active'
+    AND (filter_category IS NULL OR d.category_id = filter_category)
+    AND 1 - (e.embedding <=> query_embedding) >= match_threshold
+  ORDER BY e.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
+-- ============================================================
+-- INTERAÇÕES DA IA (log de cada ação do agente)
+-- ============================================================
+CREATE TABLE ticket_ai_interactions (
+  id               UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id        UUID    NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  interaction_type TEXT    NOT NULL
+                   CHECK (interaction_type IN (
+                     'triage','knowledge_search','autonomous_response',
+                     'draft_suggestion','satisfaction_check','auto_close',
+                     'escalation_decision','learning_extraction'
+                   )),
+  query_text       TEXT,
+  matched_doc_ids  UUID[]  DEFAULT '{}',
+  top_similarity   NUMERIC(4,3),
+  confidence_tier  TEXT    CHECK (confidence_tier IN ('T1','T2','T3')),
+  generated_response TEXT,
+  model_used       TEXT    DEFAULT 'gemini-flash',
+  prompt_tokens    INTEGER,
+  completion_tokens INTEGER,
+  outcome          TEXT    CHECK (outcome IN (
+    'sent_autonomously','draft_shown','routed_to_human',
+    'customer_satisfied','customer_not_satisfied','timeout_closed',
+    'knowledge_extracted','knowledge_updated'
+  )),
+  outcome_csat     SMALLINT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_interactions_ticket ON ticket_ai_interactions(ticket_id, created_at);
+
+-- ============================================================
+-- FILA DE APRENDIZADO
+-- ============================================================
+CREATE TABLE support_learning_queue (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id    UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE UNIQUE,
+  priority     SMALLINT    NOT NULL DEFAULT 5,
+  attempts     SMALLINT    NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_learning_queue_pending
+  ON support_learning_queue(priority, scheduled_at)
+  WHERE processed_at IS NULL;
+
+-- trigger updated_at para knowledge_docs
+CREATE TRIGGER set_kb_doc_updated_at
+  BEFORE UPDATE ON support_knowledge_docs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+      ]]></sql>
+    </task>
+
+    <deliverables>
+      <deliverable>pgvector habilitado com índice HNSW para busca de similaridade</deliverable>
+      <deliverable>Tabelas: support_knowledge_docs, support_knowledge_embeddings, ticket_ai_interactions, support_learning_queue</deliverable>
+      <deliverable>Função SQL search_knowledge() para busca semântica via RPC</deliverable>
+      <deliverable>FK de support_tickets.ai_doc_used_id → support_knowledge_docs</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 3 — BACKEND: SERVIÇOS DE IA
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="3" name="Backend — Serviços de IA" estimatedDays="4">
+    <goal>Implementar os três serviços de IA: Embedding, Agente Autônomo e Extrator de Conhecimento.</goal>
+
+    <!-- 3.1 EMBEDDING SERVICE -->
+    <task id="3.1" name="EmbeddingService">
+      <file>src/services/embeddingService.ts</file>
+      <interface><![CDATA[
+export interface KBSearchResult {
+  docId: string;
+  title: string;
+  solutionSummary: string;
+  solutionSteps: Array<{ step: number; text: string; code?: string }>;
+  similarity: number;
+  confidenceScore: number;
+  resolutionCount: number;
+}
+
+export class EmbeddingService {
+  async generateEmbedding(text: string): Promise<number[]>
+  async searchKnowledge(query: string, opts?: {
+    threshold?: number;   // default 0.65
+    count?: number;       // default 5
+    categoryId?: string;
+  }): Promise<KBSearchResult[]>
+  async upsertDocEmbedding(docId: string, content: string): Promise<void>
+}
+      ]]></interface>
+      <implementation>
+        generateEmbedding: Chama gemini.embedContent e retorna embedding.values como number[].
+        searchKnowledge: Gera embedding da query, chama supabaseAdmin.rpc('search_knowledge', params), retorna mapeado.
+        upsertDocEmbedding: Gera embedding do content, faz upsert em support_knowledge_embeddings (delete + insert por doc_id).
+      </implementation>
+    </task>
+
+    <!-- 3.2 SUPORTE AI TRIAGE SERVICE -->
+    <task id="3.2" name="SupportAITriageService">
+      <file>src/services/supportAITriage.ts</file>
+      <description>
+        Chamado assincronamente após abertura de ticket.
+        Classifica o ticket com Gemini e depois dispara handleNewTicket do SupportAIAgent.
+      </description>
+      <promptTemplate><![CDATA[
+Você é um agente de triagem de suporte técnico para a Reputei, uma plataforma SaaS de monitoramento de reputação online.
+
+Analise o ticket abaixo e retorne SOMENTE um JSON válido (sem markdown, sem explicações):
+
+{
+  "priority": "low" | "medium" | "high" | "critical",
+  "category_name": "<uma das categorias listadas abaixo>",
+  "sentiment": "positive" | "neutral" | "negative" | "frustrated",
+  "summary": "<resumo em português, máx 120 caracteres>"
+}
+
+Ticket:
+Assunto: {{subject}}
+Descrição: {{description}}
+Canal: {{channel}}
+Plano do tenant: {{plan_name}}
+
+Categorias disponíveis: {{categories_list}}
+
+Critérios de prioridade:
+- critical: sistema totalmente inacessível, perda de dados, impacto financeiro imediato
+- high: funcionalidade principal quebrada, SLA de clientes afetado
+- medium: funcionalidade degradada, workaround possível
+- low: dúvida, melhoria, solicitação sem urgência
+
+JSON:
+      ]]></promptTemplate>
+      <steps>
+        <step>Busca ticket + tenant + plano + lista de categorias ativas</step>
+        <step>Chama Gemini com o prompt acima</step>
+        <step>Valida JSON: se inválido, usa defaults (priority: 'medium', category: null)</step>
+        <step>Atualiza support_tickets: ai_sentiment, ai_summary, priority, category_id, status='ai_triaged'</step>
+        <step>Recalcula sla_deadline com base na nova priority + regra SLA do plano do tenant</step>
+        <step>Grava ticket_audit_log: action='status_changed', from='open', to='ai_triaged', actor_role='ai'</step>
+        <step>Dispara SupportAIAgent.handleNewTicket(ticketId) de forma assíncrona (sem await no caller)</step>
+      </steps>
+    </task>
+
+    <!-- 3.3 SUPPORT AI AGENT -->
+    <task id="3.3" name="SupportAIAgent">
+      <file>src/services/supportAIAgent.ts</file>
+
+      <method name="handleNewTicket(ticketId: string)">
+        <steps>
+          <step>Busca ticket + mensagens + dados do tenant/plano</step>
+          <step>Compõe query combinando subject + description + (category name se disponível)</step>
+          <step>Chama embeddingService.searchKnowledge(query, { threshold: 0.65, count: 5, categoryId })</step>
+          <step>Determina tier: T1 se topSimilarity >= 0.85 | T2 se >= 0.65 | T3 se menor</step>
+          <step>Registra em ticket_ai_interactions: type='knowledge_search', topSimilarity, confidenceTier</step>
+          <step condition="T1">
+            1. Gera resposta com _generateAutonomousResponse(ticket, kbResults)
+            2. Insere ticket_message: author_role='ai', body=resposta, is_internal=false
+            3. Atualiza ticket: status='ai_responding', ai_confidence=topSimilarity, ai_doc_used_id=kbResults[0].docId, ai_attempt_count=1
+            4. Grava audit_log: action='status_changed', from='ai_triaged', to='ai_responding', actor_role='ai'
+            5. Registra ticket_ai_interactions: type='autonomous_response', outcome='sent_autonomously', generatedResponse
+            6. Chama notificationService.notifyTenantAIResponded(ticket)
+          </step>
+          <step condition="T2">
+            1. Gera rascunho com _generateDraftResponse(ticket, kbResults)
+            2. Atualiza ticket: status='needs_human', ai_confidence=topSimilarity, ai_draft_response=rascunho
+            3. Grava audit_log: action='status_changed', from='ai_triaged', to='needs_human', actor_role='ai'
+            4. Registra ticket_ai_interactions: type='draft_suggestion', outcome='draft_shown'
+            5. Chama notificationService.notifyAgentDraftReady(ticket)
+          </step>
+          <step condition="T3">
+            1. Atualiza ticket: status='needs_human', ai_confidence=topSimilarity
+            2. Grava audit_log: action='status_changed', from='ai_triaged', to='needs_human', actor_role='ai'
+            3. Registra ticket_ai_interactions: type='knowledge_search', outcome='routed_to_human'
+            4. Chama notificationService.notifyAgentNewTicket(ticket)
+          </step>
+        </steps>
+      </method>
+
+      <method name="handleCustomerReply(ticketId: string, messageBody: string)">
+        <description>Chamado apenas quando ticket está em status='ai_responding'</description>
+        <steps>
+          <step>Chama Gemini com prompt de detecção de satisfação (abaixo)</step>
+          <step condition="SATISFIED">
+            _closeTicketAutonomously(ticketId)
+          </step>
+          <step condition="UNSATISFIED e ticket.ai_attempt_count == 1">
+            1. Busca novamente na KB com query enriquecida: query original + ' ' + messageBody
+            2. Se nova topSimilarity >= 0.75:
+               a. Gera nova resposta
+               b. Insere ticket_message com nova resposta
+               c. Atualiza ticket: ai_attempt_count=2, ai_confidence=novaSimilarity
+               d. Registra ticket_ai_interactions: type='autonomous_response', outcome='sent_autonomously'
+            3. Se nova topSimilarity &lt; 0.75:
+               a. Vai para fluxo UNSATISFIED >= 2
+          </step>
+          <step condition="UNSATISFIED e ticket.ai_attempt_count >= 2 OU sem nova solução">
+            1. Atualiza ticket: status='needs_human'
+            2. Insere ticket_message: author_role='system', body='Vou transferir você para um especialista. Em breve alguém irá te atender.'
+            3. Grava audit_log: status_changed, from='ai_responding', to='needs_human', actor_role='ai'
+            4. Registra ticket_ai_interactions: outcome='customer_not_satisfied'
+            5. Chama notificationService.notifyAgentEscalated(ticket, 'ai_failed')
+          </step>
+          <step condition="UNCLEAR">
+            Insere ticket_message: 'Pode me informar se o problema foi resolvido ou ainda precisa de ajuda?'
+          </step>
+        </steps>
+        <satisfactionDetectionPrompt><![CDATA[
+Analise a mensagem do cliente abaixo e determine se ele ficou satisfeito com a resolução do suporte.
+
+Mensagem: "{{messageBody}}"
+
+Contexto: o agente de suporte acabou de fornecer uma solução para o problema do cliente.
+
+Responda SOMENTE com uma das opções:
+- SATISFIED  → cliente confirmou que o problema foi resolvido ou agradeceu
+- UNSATISFIED → cliente disse que o problema persiste ou não foi resolvido
+- UNCLEAR    → não é possível determinar com certeza
+
+Resposta:
+        ]]></satisfactionDetectionPrompt>
+      </method>
+
+      <method name="_generateAutonomousResponse(ticket, kbResults): Promise&lt;string&gt;">
+        <promptTemplate><![CDATA[
+Você é o assistente de suporte técnico da Reputei, uma plataforma de monitoramento de reputação online.
+Responda ao cliente de forma clara, empática e objetiva em português brasileiro.
+
+== TICKET ==
+Assunto: {{ticket.subject}}
+Descrição: {{ticket.description}}
+Plano: {{tenant.plan_name}}
+
+== BASE DE CONHECIMENTO — SOLUÇÕES DISPONÍVEIS ==
+{{kbResults.map((r, i) => `[${i+1}] ${r.title}\n${r.solutionSummary}`).join('\n\n')}}
+
+== INSTRUÇÕES ==
+- Use a solução mais relevante para responder
+- Seja direto e conciso (máximo 5 parágrafos)
+- Se houver passos, use lista numerada
+- Termine com: "Isso resolveu o seu problema?"
+- NÃO mencione base de conhecimento, IA ou sistema interno
+- Se não tiver certeza, use "normalmente" ou "geralmente"
+- Tom: profissional mas acessível
+
+Resposta:
+        ]]></promptTemplate>
+      </method>
+
+      <method name="_closeTicketAutonomously(ticketId: string)">
+        <steps>
+          <step>Atualiza ticket: status='ai_resolved', resolved_at=NOW(), ai_handled=true</step>
+          <step>Insere ticket_message: author_role='system', body='Que ótimo! Fico feliz em ter ajudado. Este chamado será encerrado em breve. Se precisar de mais ajuda, abra um novo chamado.'</step>
+          <step>Grava audit_log: action='resolved', actor_role='ai'</step>
+          <step>Registra ticket_ai_interactions: type='auto_close', outcome='customer_satisfied'</step>
+          <step>Insere em support_learning_queue com priority = (csat_score ? 6 - csat_score : 3)</step>
+          <step>Chama notificationService.notifyTenantResolved(ticket) com link de CSAT</step>
+        </steps>
+      </method>
+
+    </task>
+
+    <!-- 3.4 KNOWLEDGE LEARNING SERVICE -->
+    <task id="3.4" name="KnowledgeLearningService">
+      <file>src/services/knowledgeLearningService.ts</file>
+
+      <method name="processQueue()">
+        <steps>
+          <step>Busca até 10 itens da support_learning_queue WHERE processed_at IS NULL ORDER BY priority ASC, scheduled_at ASC</step>
+          <step>Para cada item: try { await extractKnowledge(item.ticketId); item.processed_at = NOW() } catch (e) { item.attempts++; item.last_error = e.message; if (item.attempts >= 3) item.processed_at = NOW() }</step>
+          <step>Após extração bem-sucedida: atualiza ticket para status='closed', closed_at=NOW()</step>
+          <step>Grava audit_log: action='closed', actor_role='system', metadata: { reason: 'learning_complete' }</step>
+        </steps>
+      </method>
+
+      <method name="extractKnowledge(ticketId: string): Promise&lt;string&gt;">
+        <steps>
+          <step>Busca ticket + mensagens (filtra author_role != 'system') + category</step>
+          <step>Formata thread: cada mensagem como "[ROLE] mensagem"</step>
+          <step>Chama Gemini com extraction prompt (abaixo)</step>
+          <step>Valida JSON: se inválido, lança erro para retry</step>
+          <step>Busca KB por similaridade do problem_description (threshold 0.80, count 1)</step>
+          <step condition="doc_existente (similarity >= 0.80)">
+            1. Adiciona problem_description às problem_variants (se não duplicado)
+            2. Incrementa resolution_count
+            3. Recalcula avg_csat se ticket.csat_score disponível
+            4. Adiciona ticket.id ao source_ticket_ids
+            5. Chama embeddingService.upsertDocEmbedding com conteúdo atualizado
+            6. Registra ticket_ai_interactions: type='learning_extraction', outcome='knowledge_updated'
+          </step>
+          <step condition="sem_doc_similar">
+            1. Cria novo support_knowledge_docs com dados extraídos
+            2. Chama embeddingService.upsertDocEmbedding para o novo doc
+            3. Registra ticket_ai_interactions: type='learning_extraction', outcome='knowledge_extracted'
+          </step>
+          <step>Auto-publica (status='active', auto_published=true) se: avg_csat >= 4.0 OU resolution_count >= 3</step>
+          <step>Retorna docId</step>
+        </steps>
+        <extractionPrompt><![CDATA[
+Você é um engenheiro de suporte técnico construindo uma base de conhecimento a partir de tickets resolvidos.
+
+== THREAD DO TICKET ==
+Categoria: {{category}}
+Assunto: {{subject}}
+
+{{formattedThread}}
+
+== TAREFA ==
+Extraia um documento de conhecimento em JSON. Retorne SOMENTE o JSON, sem markdown.
+
+{
+  "title": "título descritivo do problema em até 80 caracteres",
+  "problem_description": "descrição canônica do problema em 2-3 frases objetivas",
+  "problem_variants": ["outras formas como este problema pode ser descrito pelo usuário"],
+  "solution_summary": "resposta completa e direta ao problema, em linguagem natural, 2-4 parágrafos, pronta para ser enviada a um cliente",
+  "solution_steps": [
+    { "step": 1, "text": "descrição do passo", "code": "valor ou comando opcional" }
+  ],
+  "keywords": ["palavras-chave relevantes para busca semântica"],
+  "tags": ["tags de categoria"]
+}
+
+Regras:
+- Foque na solução definitiva, não no diagnóstico
+- solution_summary deve soar natural, como se fosse escrita por um humano para um cliente
+- Se a solução exigir acesso administrativo, deixe claro
+- Use português brasileiro
+        ]]></extractionPrompt>
+      </method>
+
+    </task>
+
+    <deliverables>
+      <deliverable>src/services/embeddingService.ts — geração e busca de embeddings via Gemini</deliverable>
+      <deliverable>src/services/supportAITriage.ts — triagem automática com Gemini</deliverable>
+      <deliverable>src/services/supportAIAgent.ts — agente autônomo completo (T1/T2/T3 + aprendizado)</deliverable>
+      <deliverable>src/services/knowledgeLearningService.ts — extração de conhecimento de tickets resolvidos</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 4 — BACKEND: API PORTAL (assinante)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="4" name="Backend — API Portal" estimatedDays="2">
+    <goal>Criar todos os endpoints que o assinante (tenant) usa para abrir e acompanhar tickets.</goal>
+    <fileTarget>src/api/server.ts (registrar rotas) + src/api/handlers/supportPortal.ts</fileTarget>
+
+    <routes>
+      <route method="POST" path="/api/support">
+        <auth>verifyJWT → tenantId obrigatório</auth>
+        <body>multipart/form-data: subject (string), description (string), category_id (string), files[] (File[])</body>
+        <steps>
+          <step>Valida: subject não vazio, description min 20 chars, category_id existe e está ativa</step>
+          <step>Valida arquivos: cada arquivo MIME em allowlist ['image/jpeg','image/png','image/gif','image/webp','application/pdf'], tamanho max 10MB, max 5 arquivos</step>
+          <step>Insere support_ticket com status='open', tenant_id, created_by, subject, description, category_id, sla_deadline calculado</step>
+          <step>Upload de cada arquivo para Supabase Storage: path = support-attachments/{tenantId}/{ticketId}/{filename}</step>
+          <step>Insere registros em ticket_attachments para cada arquivo</step>
+          <step>Grava ticket_audit_log: action='created', actor_id=userId, actor_role='tenant_user'</step>
+          <step>Dispara assincronamente: supportAITriageService.triage(ticketId) — não bloquear resposta</step>
+          <step>Retorna: { id, ticket_number, status, sla_deadline }</step>
+        </steps>
+        <rateLimiting>Máx 10 tickets criados por tenantId por hora. Retornar 429 se excedido.</rateLimiting>
+      </route>
+
+      <route method="GET" path="/api/support">
+        <auth>verifyJWT → tenantId</auth>
+        <queryParams>status?, priority?, page=1, limit=20, search?</queryParams>
+        <steps>
+          <step>Query em support_tickets WHERE tenant_id = tenantId com filtros opcionais</step>
+          <step>ORDER BY created_at DESC, LIMIT/OFFSET para paginação</step>
+          <step>Retorna: { tickets: [...], total, page, limit }</step>
+        </steps>
+      </route>
+
+      <route method="GET" path="/api/support/:id">
+        <auth>verifyJWT → verificar que ticket.tenant_id == tenantId</auth>
+        <steps>
+          <step>Busca ticket com category, assigned agent name</step>
+          <step>Busca ticket_messages WHERE is_internal = false ORDER BY created_at ASC</step>
+          <step>Busca ticket_attachments para o ticket</step>
+          <step>Para cada attachment, gera signed URL (expiração: 3600s) via Supabase Storage</step>
+          <step>Retorna ticket + messages + attachments com signed URLs</step>
+        </steps>
+      </route>
+
+      <route method="POST" path="/api/support/:id/messages">
+        <auth>verifyJWT → verificar tenant</auth>
+        <body>{ body: string }</body>
+        <steps>
+          <step>Valida que body não está vazio (min 1 char)</step>
+          <step>Se ticket.status == 'waiting_tenant': atualiza para 'in_progress' + grava audit_log</step>
+          <step>Se ticket.status == 'ai_responding': chama supportAIAgent.handleCustomerReply(ticketId, body) de forma assíncrona</step>
+          <step>Insere ticket_message: author_role='tenant_user', is_internal=false</step>
+          <step>Grava audit_log: action='message_added'</step>
+          <step>Notifica agente responsável se assigned_to !== null</step>
+          <step>Retorna: { id, created_at }</step>
+        </steps>
+      </route>
+
+      <route method="POST" path="/api/support/:id/confirm-resolution">
+        <auth>verifyJWT → verificar tenant</auth>
+        <body>{ csat_score?: number (1-5), csat_comment?: string }</body>
+        <steps>
+          <step>Valida que ticket.status IN ('ai_responding','in_progress','resolved')</step>
+          <step>Se csat_score fornecido: atualiza ticket.csat_score e csat_at; grava audit_log action='csat_rated'</step>
+          <step>Chama supportAIAgent._closeTicketAutonomously(ticketId) OU atualiza para 'resolved' se human-handled</step>
+        </steps>
+      </route>
+
+      <route method="POST" path="/api/support/:id/csat">
+        <auth>verifyJWT → verificar tenant</auth>
+        <body>{ score: number (1-5), comment?: string }</body>
+        <condition>Ticket deve estar em status 'resolved', 'closed' ou 'ai_resolved'</condition>
+        <steps>
+          <step>Atualiza ticket: csat_score, csat_comment, csat_at</step>
+          <step>Grava audit_log: action='csat_rated', metadata: { score }</step>
+          <step>Se ticket estava em learning_queue: atualiza priority com base no score</step>
+        </steps>
+      </route>
+
+      <route method="GET" path="/api/support/kb/search">
+        <auth>verifyJWT (opcional — pode ser pública futuramente)</auth>
+        <queryParams>q (string, min 3 chars), category_id?</queryParams>
+        <steps>
+          <step>Chama embeddingService.searchKnowledge(q, { threshold: 0.70, count: 5, categoryId })</step>
+          <step>Retorna apenas: id, title, solution_summary (NÃO expõe solution_steps detalhados ao portal)</step>
+          <step>Incrementa views no doc encontrado</step>
+        </steps>
+      </route>
+
+    </routes>
+
+    <deliverables>
+      <deliverable>7 endpoints do portal implementados com validação e autenticação</deliverable>
+      <deliverable>Rate limiting em POST /api/support (10/h por tenant)</deliverable>
+      <deliverable>Upload para Supabase Storage com signed URLs para leitura</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 5 — BACKEND: API ADMIN (agentes e gestores)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="5" name="Backend — API Admin" estimatedDays="2">
+    <goal>Criar todos os endpoints administrativos para gestão de tickets, SLA, KB e analytics de IA.</goal>
+    <fileTarget>src/api/handlers/supportAdmin.ts</fileTarget>
+
+    <routes>
+      <route method="GET"   path="/api/admin/support/tickets"><description>Lista todos os tickets com filtros: status, priority, assigned_to, tenant_id, sla_breached, category_id, date_from, date_to, search, ai_handled, has_draft. Paginação: page, limit.</description></route>
+      <route method="GET"   path="/api/admin/support/tickets/:id"><description>Detalhe completo: ticket + todas as mensagens (incluindo is_internal) + attachments com signed URLs + audit_log + AI interactions</description></route>
+      <route method="PATCH" path="/api/admin/support/tickets/:id/status">
+        <body>{ status: ticket_status, reason?: string }</body>
+        <stateMachine><![CDATA[
+Transições permitidas (from → to[]):
+open         → [in_progress, needs_human]
+ai_triaged   → [in_progress, needs_human]
+ai_responding → [in_progress, needs_human, ai_resolved]
+needs_human  → [in_progress]
+in_progress  → [waiting_tenant, escalated, resolved]
+waiting_tenant → [in_progress, escalated, resolved]
+escalated    → [in_progress, resolved]
+resolved     → [closed, reopened]
+ai_resolved  → [closed, reopened]
+closed       → [reopened]
+reopened     → [in_progress]
+        ]]></stateMachine>
+        <steps>
+          <step>Valida transição conforme state machine acima</step>
+          <step>Atualiza ticket.status, resolved_at/closed_at se aplicável</step>
+          <step>Grava audit_log: action='status_changed', from_value, to_value, actor_id</step>
+          <step>Se status='resolved' ou 'ai_resolved': insere em support_learning_queue</step>
+          <step>Notifica tenant se status mudou para resolved ou closed</step>
+        </steps>
+      </route>
+      <route method="PATCH" path="/api/admin/support/tickets/:id/assign">
+        <body>{ agent_id: string }</body>
+        <steps>
+          <step>Valida que agent_id é usuário com perfil admin ou operador</step>
+          <step>Atualiza ticket.assigned_to; se first_response_at == null, preenche agora</step>
+          <step>Grava audit_log: action='assigned'</step>
+        </steps>
+      </route>
+      <route method="PATCH" path="/api/admin/support/tickets/:id/priority">
+        <body>{ priority: ticket_priority, reason?: string }</body>
+        <steps>
+          <step>Atualiza ticket.priority</step>
+          <step>Recalcula sla_deadline com nova regra SLA</step>
+          <step>Grava audit_log: action='priority_changed'</step>
+        </steps>
+      </route>
+      <route method="POST"  path="/api/admin/support/tickets/:id/messages">
+        <body>{ body: string, is_internal: boolean }</body>
+        <steps>
+          <step>Se first_response_at == null e is_internal == false: preenche agora</step>
+          <step>Insere ticket_message com author_role='agent'</step>
+          <step>Se status == 'needs_human' ou 'in_progress': mantém; se 'ai_responding': muda para 'in_progress'</step>
+          <step>Se status mudou para 'waiting_tenant': grava audit_log status_changed</step>
+          <step>Grava audit_log: action='message_added'</step>
+          <step>Notifica tenant se is_internal == false</step>
+        </steps>
+      </route>
+      <route method="POST"  path="/api/admin/support/tickets/:id/escalate">
+        <body>{ level: 1|2|3, reason: string }</body>
+        <steps>
+          <step>Atualiza ticket: escalation_level=level, status='escalated'</step>
+          <step>Grava audit_log: action='escalated', metadata: { level, reason }</step>
+          <step>Notifica gestor via UAZAPI se level >= 2</step>
+        </steps>
+      </route>
+      <route method="POST"  path="/api/admin/support/tickets/:id/approve-ai-draft">
+        <description>Agente aprova o rascunho gerado pela IA (Tier T2)</description>
+        <steps>
+          <step>Busca ticket.ai_draft_response; retorna 400 se vazio</step>
+          <step>Insere ticket_message: author_role='agent', body=ai_draft_response, is_internal=false</step>
+          <step>Atualiza ticket: ai_draft_response=null, status='in_progress'</step>
+          <step>Insere ticket_ai_interactions: outcome='sent_after_human_review'</step>
+          <step>Se first_response_at == null: preenche agora</step>
+        </steps>
+      </route>
+      <route method="GET"   path="/api/admin/support/dashboard"><description>KPIs: open_count, sla_breached_count, avg_first_response_mins, avg_resolution_hours, fcr_rate, escalation_rate, csat_avg, ai_resolution_rate, ai_assisted_rate, volume_by_category, volume_by_status, tickets_by_day (últimos 30 dias)</description></route>
+      <route method="GET"   path="/api/admin/support/audit-log"><description>Consulta ticket_audit_log com filtros: ticket_id, actor_id, action, date_from, date_to, page, limit</description></route>
+
+      <!-- SLA Rules -->
+      <route method="GET"   path="/api/admin/support/sla-rules" />
+      <route method="POST"  path="/api/admin/support/sla-rules" />
+      <route method="PATCH" path="/api/admin/support/sla-rules/:id" />
+
+      <!-- Knowledge Base -->
+      <route method="GET"   path="/api/admin/support/knowledge"><description>Lista docs KB com filtros: status, category_id, min_csat, search. Inclui resolution_count, avg_csat, last_used_at.</description></route>
+      <route method="GET"   path="/api/admin/support/knowledge/:id" />
+      <route method="POST"  path="/api/admin/support/knowledge"><description>Cria documento manualmente. Gera embedding automaticamente.</description></route>
+      <route method="PATCH" path="/api/admin/support/knowledge/:id"><description>Edita doc e regenera embedding se solution_summary ou problem_description mudaram.</description></route>
+      <route method="DELETE" path="/api/admin/support/knowledge/:id"><description>Remove doc e seu embedding.</description></route>
+      <route method="POST"  path="/api/admin/support/knowledge/:id/test">
+        <body>{ query: string }</body>
+        <description>Simula como a IA responderia ao query usando este doc. Retorna a resposta gerada e o similarity score.</description>
+      </route>
+
+      <!-- AI Analytics -->
+      <route method="GET" path="/api/admin/support/ai-analytics"><description>Métricas de desempenho da IA: ai_resolution_rate, ai_assisted_rate, avg_ai_confidence, avg_response_time_s, kb_doc_count, kb_active_count, kb_draft_count, top_resolved_categories, uncovered_categories (categorias com >5 tickets T3 na última semana), knowledge_growth_by_day, csat_ai_vs_human</description></route>
+    </routes>
+
+    <deliverables>
+      <deliverable>Todos os endpoints admin implementados com checkAdminRole()</deliverable>
+      <deliverable>State machine de transição de status validada no servidor</deliverable>
+      <deliverable>CRUD completo de SLA Rules e Knowledge Base</deliverable>
+      <deliverable>Dashboard de KPIs e analytics de IA</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 6 — BACKEND: SCHEDULER JOBS
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="6" name="Backend — Scheduler Jobs" estimatedDays="1">
+    <goal>Registrar 5 jobs no scheduler existente para automações de SLA, escalação e aprendizado.</goal>
+    <fileTarget>src/scheduler/slaWatchdog.ts (novo) + src/scheduler/aiSupportJobs.ts (novo) + atualizar src/scheduler/index.ts</fileTarget>
+
+    <job name="checkSlaBreaches" cron="*/5 * * * *">
+      <steps>
+        <step>Query: SELECT * FROM support_tickets WHERE sla_deadline &lt; NOW() AND is_sla_breached = FALSE AND status NOT IN ('resolved','closed','ai_resolved','waiting_tenant')</step>
+        <step>Para cada ticket: UPDATE is_sla_breached=TRUE, status='escalated', escalation_level=MAX(current_level, sla_rule.escalation_level)</step>
+        <step>Grava ticket_audit_log: action='sla_breached', actor_role='system', metadata: { sla_deadline, minutes_overdue }</step>
+        <step>Notifica via UAZAPI: agente (se assigned_to) + admin (SUPABASE_ADMIN_PHONE env var)</step>
+      </steps>
+    </job>
+
+    <job name="checkInactiveTickets" cron="*/15 * * * *">
+      <description>Escala tickets 'in_progress' sem mensagem de agente pelo tempo definido na regra SLA</description>
+      <steps>
+        <step>Query: tickets com status='in_progress' WHERE NOT EXISTS (mensagem de agente nos últimos escalation_mins minutos)</step>
+        <step>Incrementa escalation_level (máx. 3)</step>
+        <step>Grava audit_log: action='escalated', metadata: { reason: 'agent_inactivity', inactive_minutes }</step>
+        <step>Notifica escalation hierarchy</step>
+      </steps>
+    </job>
+
+    <job name="autoCloseResolved" cron="0 */6 * * *">
+      <steps>
+        <step>Query: tickets com status IN ('resolved','ai_resolved') E resolved_at &lt; NOW() - INTERVAL '7 days'</step>
+        <step>UPDATE status='closed', closed_at=NOW()</step>
+        <step>Grava audit_log: action='closed', actor_role='system', metadata: { reason: 'auto_close_7_days' }</step>
+      </steps>
+    </job>
+
+    <job name="processLearningQueue" cron="*/10 * * * *">
+      <implementation>Chama knowledgeLearningService.processQueue()</implementation>
+    </job>
+
+    <job name="checkAIRespondingTimeout" cron="*/30 * * * *">
+      <steps>
+        <step>Query: tickets status='ai_responding' WHERE última mensagem do tenant_user foi há mais de 24h</step>
+        <step>Chama supportAIAgent._closeTicketAutonomously(ticketId) com metadata reason='timeout_24h'</step>
+        <step>Grava audit_log: action='closed', actor_role='system', metadata: { reason: 'ai_timeout_24h' }</step>
+      </steps>
+    </job>
+
+    <deliverables>
+      <deliverable>5 jobs registrados no scheduler: checkSlaBreaches, checkInactiveTickets, autoCloseResolved, processLearningQueue, checkAIRespondingTimeout</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 7 — FRONTEND: PORTAL DO ASSINANTE
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="7" name="Frontend — Portal do Assinante" estimatedDays="4">
+    <goal>Criar a interface do assinante para abertura, acompanhamento e interação com suporte.</goal>
+
+    <component name="SupportFloatingButton" path="portal/src/components/SupportFloatingButton.tsx">
+      <description>Botão flutuante fixo no canto inferior direito, presente em todas as páginas do portal.</description>
+      <behavior>Ao clicar: abre drawer lateral (slide-in da direita) com o NewTicketWizard ou redireciona para /support.</behavior>
+      <badge>Exibe contagem de tickets abertos do tenant em badge vermelho.</badge>
+    </component>
+
+    <component name="NewTicketWizard" path="portal/src/components/support/NewTicketWizard.tsx">
+      <steps>
+        <step name="1 — Busca na KB">
+          <description>Campo de busca com debounce de 400ms que chama GET /api/support/kb/search?q=...</description>
+          <behavior>Exibe cards dos artigos encontrados com título e resumo. Botão "Isso resolve meu problema" fecha o wizard sem abrir ticket. Botão "Ainda preciso de ajuda" avança para o passo 2.</behavior>
+          <behavior>Se busca retornar vazio: exibe mensagem "Não encontramos um artigo sobre isso. Vamos abrir um chamado." e avança automaticamente.</behavior>
+        </step>
+        <step name="2 — Detalhes do Chamado">
+          <fields>
+            <field name="subject"     label="Assunto"     type="text"     required maxLength="120" />
+            <field name="category_id" label="Categoria"   type="select"   required source="GET /api/support/categories" />
+            <field name="description" label="Descrição"   type="textarea" required minLength="20" placeholder="Descreva o problema com o máximo de detalhes possível" />
+            <field name="attachments" label="Anexos"      type="file"     accept="image/*,.pdf" maxFiles="5" maxSizeMB="10" preview="true" multiple />
+          </fields>
+          <filePreview>Grid de thumbnails para imagens. Nome + tamanho para PDFs. Botão X para remover.</filePreview>
+        </step>
+        <step name="3 — Confirmação">
+          <content>Exibe: número do ticket, assunto, categoria, prazo SLA estimado. Botão "Ver meu chamado" navega para /support/:id.</content>
+        </step>
+      </steps>
+    </component>
+
+    <component name="TicketListPage" path="portal/src/pages/support/TicketListPage.tsx" route="/support">
+      <columns>Nº, Assunto, Categoria, Status (badge), Prioridade, Aberto em, Prazo SLA</columns>
+      <statusBadges>
+        open: âmbar | ai_triaged: roxo | in_progress: azul | ai_responding: índigo |
+        waiting_tenant: cinza | escalated: vermelho | resolved: verde | ai_resolved: esmeralda | closed: cinza-claro
+      </statusBadges>
+      <slaBadge>
+        Se sla_deadline - now() &lt; 2h e ticket aberto: badge amarelo com countdown "Vence em Xh".
+        Se is_sla_breached: badge vermelho "SLA violado".
+      </slaBadge>
+      <filters>Tabs: Todos / Abertos / Em Atendimento / Resolvidos / Fechados</filters>
+    </component>
+
+    <component name="TicketDetailPage" path="portal/src/pages/support/TicketDetailPage.tsx" route="/support/:id">
+      <layout>
+        <left width="65%">Thread de mensagens estilo chat, ordem cronológica crescente.</left>
+        <right width="35%">Sidebar: info do ticket (status, prioridade, prazo SLA, categoria), timeline de eventos.</right>
+      </layout>
+      <messageRendering>
+        tenant_user: balão alinhado à direita, fundo azul.
+        agent: balão alinhado à esquerda, avatar com iniciais, fundo branco.
+        ai: balão alinhado à esquerda, avatar "IA" roxo, label "Assistente Reputei", fundo roxo-claro.
+        system: texto centralizado em cinza itálico.
+      </messageRendering>
+      <aiResponseActions>
+        Após mensagem com author_role='ai': exibe dois botões inline no chat:
+        ✓ "Isso resolveu meu problema" → POST /api/support/:id/confirm-resolution { csat_score: null }
+        ✗ "Ainda preciso de ajuda" → foca no campo de resposta para o usuário digitar
+      </aiResponseActions>
+      <attachments>Grid de thumbnails clicáveis que abrem em lightbox (usando signed URL).</attachments>
+      <replyForm>
+        Textarea + botão enviar + botão de upload de anexo adicional.
+        Se status IN ('resolved','ai_resolved','closed'): esconde form de resposta, exibe bloco de CSAT se csat_score == null.
+      </replyForm>
+      <csatBlock>
+        5 estrelas clicáveis + campo de comentário opcional + botão "Enviar avaliação".
+        Exibe mensagem de agradecimento após envio.
+      </csatBlock>
+      <statusIndicator>
+        Se status == 'ai_responding': exibe "Assistente está analisando..." com spinner animado acima das mensagens.
+      </statusIndicator>
+    </component>
+
+    <deliverables>
+      <deliverable>SupportFloatingButton presente em portal/src/App.tsx</deliverable>
+      <deliverable>NewTicketWizard com 3 passos, upload com preview e busca na KB</deliverable>
+      <deliverable>TicketListPage com filtros por status e badges de SLA</deliverable>
+      <deliverable>TicketDetailPage com renderização diferenciada por author_role, ações de satisfação e CSAT</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE 8 — FRONTEND: PAINEL ADMIN
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="8" name="Frontend — Painel Admin" estimatedDays="5">
+    <goal>Criar toda a interface administrativa para gerenciamento de tickets, SLA, KB e analytics de IA.</goal>
+
+    <component name="SupportDashboard" path="admin/src/pages/support/SupportDashboard.tsx" route="/support">
+      <kpiRow>
+        <card label="Abertos"           metric="open_count"              color="yellow"  alert="true" />
+        <card label="SLA Violados"      metric="sla_breached_count"      color="red"     alert="true" />
+        <card label="1ª Resposta (avg)" metric="avg_first_response_mins" unit="min" />
+        <card label="Resolução (avg)"   metric="avg_resolution_hours"    unit="h" />
+        <card label="FCR"               metric="fcr_rate"                format="percent" />
+        <card label="CSAT"              metric="csat_avg"                format="stars" />
+        <card label="Resolução IA"      metric="ai_resolution_rate"      format="percent" color="purple" />
+        <card label="IA Assistida"      metric="ai_assisted_rate"        format="percent" color="blue" />
+      </kpiRow>
+      <charts>
+        <chart type="bar"   data="tickets_by_day"      label="Volume diário (últimos 30 dias)" />
+        <chart type="donut" data="volume_by_status"    label="Por status" />
+        <chart type="bar"   data="volume_by_category"  label="Por categoria" />
+        <chart type="area"  data="knowledge_growth_by_day" label="Crescimento da KB" />
+      </charts>
+    </component>
+
+    <component name="TicketQueue" path="admin/src/pages/support/TicketQueue.tsx" route="/support/tickets">
+      <columns>Nº, Tenant, Assunto, Categoria, Prioridade, IA, Status, Agente, SLA, Escalação</columns>
+      <columnIA>
+        ai_handled=true → ícone robô verde "Resolvido pela IA"
+        ai_draft_response IS NOT NULL → ícone lápis azul "Rascunho IA pronto"
+        status='needs_human' AND ai_confidence IS NOT NULL → ícone lupa laranja "IA buscou, sem cobertura"
+      </columnIA>
+      <highlightRows>
+        is_sla_breached=true → fundo vermelho-claro
+        escalation_level >= 2 → fundo laranja-claro
+        sla_deadline &lt; now()+2h AND status aberto → fundo amarelo-claro
+        ai_draft_response IS NOT NULL → fundo azul-muito-claro (ação pendente)
+      </highlightRows>
+      <filters>
+        status (multi-select), priority, assigned_to, tenant_id, sla_breached (bool),
+        category_id, ai_status (all|ai_resolved|has_draft|needs_human), date_from, date_to, search (text)
+      </filters>
+      <bulkActions>Atribuir a agente, Mudar prioridade, Fechar selecionados</bulkActions>
+    </component>
+
+    <component name="TicketDetailAdmin" path="admin/src/pages/support/TicketDetailAdmin.tsx" route="/support/tickets/:id">
+      <layout>Painel principal (thread) + sidebar direita com abas: Info, SLA, IA, Auditoria, Anexos</layout>
+      <threadPanel>
+        Toggle "Mostrar notas internas" — quando ativo, exibe mensagens is_internal com fundo amarelo e label "Nota interna".
+        Caixa de resposta com toggle Público/Nota interna. Botão "Responder" chama POST /api/admin/support/tickets/:id/messages.
+      </threadPanel>
+      <tabInfo>
+        Dados do tenant (nome, plano, telefone), histórico de tickets anteriores (lista dos últimos 5),
+        actions: Atribuir agente (select), Mudar prioridade, Mudar status (dropdown com state machine), Escalar (modal com nível + motivo).
+      </tabInfo>
+      <tabSLA>
+        Prazo original, prazo recalculado, tempo decorrido (barra de progresso), status SLA, regra aplicada, histórico de violações.
+      </tabSLA>
+      <tabIA>
+        Se ai_confidence IS NOT NULL:
+          - Tier (T1/T2/T3) com barra visual de confidence score
+          - Documento KB utilizado (título + link para /support/knowledge/:id)
+          - Histórico de interações da IA neste ticket (query, similarity, outcome)
+        Se ai_draft_response IS NOT NULL:
+          - Bloco em destaque azul com o rascunho da IA
+          - Botão "Aprovar e Enviar" (chama POST /approve-ai-draft)
+          - Botão "Descartar rascunho"
+        Badge topo do ticket: "Resolvido pela IA" (verde) | "IA Assistiu" (azul) | "IA buscou / sem cobertura" (laranja)
+      </tabIA>
+      <tabAuditoria>
+        Timeline vertical cronológica com: ícone por tipo de ação, actor name + role, from→to, timestamp, metadata (expandível).
+      </tabAuditoria>
+      <tabAnexos>
+        Grid de thumbnails para imagens, lista para PDFs. Cada item: preview, nome, tamanho, uploader, data. Botão download (signed URL).
+      </tabAnexos>
+    </component>
+
+    <component name="SLAConfigPage" path="admin/src/pages/support/SLAConfig.tsx" route="/support/sla">
+      <description>Matrix editável: linhas = prioridade (critical/high/medium/low), colunas = plano. Células mostram 1ª Resposta / Resolução / Escalação em minutos.</description>
+    </component>
+
+    <component name="KnowledgeBaseManager" path="admin/src/pages/support/KnowledgeBaseManager.tsx" route="/support/knowledge">
+      <list>
+        Filtros: status (draft/active/archived), categoria, search. Colunas: título, categoria, usos, avg CSAT, status, badge "Auto-IA" vs "Revisado".
+        Ações por linha: Publicar, Arquivar, Editar, Testar.
+      </list>
+      <editor>
+        Formulário com: título, categoria (select), problem_description (textarea), solution_summary (textarea grande),
+        solution_steps (lista dinâmica add/remove), keywords (tag input), tags (tag input).
+        Botão "Salvar rascunho" e "Publicar".
+      </editor>
+      <testPanel>
+        Campo "Teste de Busca": digita uma pergunta, clica "Testar", exibe:
+        - Similarity score
+        - Resposta que a IA geraria
+        Útil para validar se o doc será usado corretamente.
+      </testPanel>
+      <ticketHistory>
+        Na view de detalhe do doc: lista de tickets que geraram ou usaram este documento (com link para cada um).
+      </ticketHistory>
+    </component>
+
+    <component name="AIAnalyticsPage" path="admin/src/pages/support/AIAnalytics.tsx" route="/support/ai-analytics">
+      <kpiRow>
+        <card label="Resolução IA"     metric="ai_resolution_rate"     format="percent" color="green" />
+        <card label="IA Assistida"     metric="ai_assisted_rate"       format="percent" color="blue" />
+        <card label="Confiança Média"  metric="avg_ai_confidence"      format="percent" />
+        <card label="Tempo Resposta"   metric="avg_ai_response_time_s" unit="s" />
+        <card label="Docs Ativos KB"   metric="kb_active_count" />
+        <card label="CSAT IA"          metric="csat_ai_vs_human.ai_avg"    format="stars" color="green" />
+        <card label="CSAT Humano"      metric="csat_ai_vs_human.human_avg" format="stars" color="blue" />
+      </kpiRow>
+      <charts>
+        <chart type="area" data="knowledge_growth_by_day"     label="Crescimento da KB (docs ativos)" />
+        <chart type="bar"  data="ai_resolution_by_category"   label="Resolução IA por categoria (%)" />
+      </charts>
+      <coverageAlert>
+        Se uncovered_categories.length > 0: exibe painel de alerta:
+        "As categorias abaixo têm muitos tickets sem cobertura na KB esta semana.
+         Considere criar documentos manualmente."
+        Lista cada categoria com contagem de tickets T3.
+      </coverageAlert>
+    </component>
+
+    <component name="AuditLogPage" path="admin/src/pages/support/AuditLog.tsx" route="/support/audit">
+      <filters>ticket_id, actor_id (select de usuários), action (multi-select), date_from, date_to</filters>
+      <table>Colunas: Ticket Nº, Ação, Actor (name + role), De → Para, Data/Hora, Metadata (expandível)</table>
+      <export>Botões "Exportar CSV" e "Exportar JSON" com os filtros aplicados</export>
+    </component>
+
+    <navigation>
+      Adicionar ao menu lateral do admin na seção "Suporte":
+      - Dashboard (/support)
+      - Tickets (/support/tickets) — badge com count de tickets abertos
+      - Conhecimento (/support/knowledge) — badge com count de drafts pendentes
+      - Analytics IA (/support/ai-analytics)
+      - Config SLA (/support/sla)
+      - Auditoria (/support/audit)
+    </navigation>
+
+    <deliverables>
+      <deliverable>SupportDashboard com 8 KPIs e 4 gráficos</deliverable>
+      <deliverable>TicketQueue com highlight rows, coluna IA e filtro ai_status</deliverable>
+      <deliverable>TicketDetailAdmin com 5 abas incluindo painel completo de IA e rascunho aprovável</deliverable>
+      <deliverable>SLAConfigPage com matrix editável</deliverable>
+      <deliverable>KnowledgeBaseManager com editor, test panel e histórico de tickets</deliverable>
+      <deliverable>AIAnalyticsPage com cobertura KB e alertas</deliverable>
+      <deliverable>AuditLogPage com filtros e export CSV/JSON</deliverable>
+      <deliverable>Navegação lateral atualizada com badges dinâmicos</deliverable>
+    </deliverables>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SEÇÃO 3 — INTEGRAÇÕES TRANSVERSAIS
+  ═══════════════════════════════════════════════════════════════ -->
+  <crossCuttingIntegrations>
+
+    <integration name="Supabase Storage — bucket support-attachments">
+      <setup>
+        Criar bucket 'support-attachments' com:
+        - public: false (acesso somente via signed URLs)
+        - file size limit: 10 MB
+        - allowed MIME types: image/jpeg, image/png, image/gif, image/webp, application/pdf
+      </setup>
+      <signedUrls>Expiração de 3600 segundos (1h). Gerar no momento do request, nunca armazenar.</signedUrls>
+    </integration>
+
+    <integration name="WhatsApp UAZAPI — Templates de Notificação">
+      <file>src/services/supportNotifications.ts</file>
+      <templates>
+        <template event="ticket_opened">
+          "Olá {{nome}}! Seu chamado #{{numero}} foi registrado. Prazo estimado: {{prazo}}. Acompanhe em: {{link}}"
+        </template>
+        <template event="ai_responded">
+          "Seu chamado #{{numero}}: nosso assistente enviou uma resposta. Acesse para verificar: {{link}}"
+        </template>
+        <template event="ticket_resolved">
+          "Seu chamado #{{numero}} foi resolvido! 😊 Avalie o atendimento (1 a 5 estrelas): {{csat_link}}"
+        </template>
+        <template event="sla_breach_agent">
+          "⚠️ SLA violado — Ticket #{{numero}} ({{tenant}}) sem resolução há {{minutes}} min. Acesse: {{link}}"
+        </template>
+        <template event="new_ticket_agent">
+          "📩 Novo chamado #{{numero}} de {{tenant}}: {{subject}}. Prioridade: {{priority}}. Acesse: {{link}}"
+        </template>
+        <template event="escalation_level2">
+          "🚨 Escalado Nível 2 — Ticket #{{numero}} ({{tenant}}): {{subject}}. Ação requerida. Acesse: {{link}}"
+        </template>
+      </templates>
+    </integration>
+
+  </crossCuttingIntegrations>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SEÇÃO 4 — TESTES
+  ═══════════════════════════════════════════════════════════════ -->
+  <testSuite file="tests/support.test.ts">
+    <testCase id="T1">Abertura de ticket cria registro com audit_log action='created' e sla_deadline calculado corretamente</testCase>
+    <testCase id="T2">Triagem IA atualiza priority, category, ai_summary e status='ai_triaged'</testCase>
+    <testCase id="T3">SLA watchdog marca is_sla_breached=true e status='escalated' após sla_deadline ultrapassado</testCase>
+    <testCase id="T4">Tenant não consegue acessar ticket de outro tenant (RLS — espera 0 resultados)</testCase>
+    <testCase id="T5">Upload de MIME type não permitido retorna HTTP 415</testCase>
+    <testCase id="T6">Auto-close muda para 'closed' tickets resolved há mais de 7 dias</testCase>
+    <testCase id="T7">CSAT retorna 400 se ticket não está em status resolved/closed/ai_resolved</testCase>
+    <testCase id="T8">State machine rejeita transição inválida (ex.: open → closed) com HTTP 422</testCase>
+    <testCase id="T9">handleCustomerReply com SATISFIED chama _closeTicketAutonomously e grava audit_log action='resolved' actor_role='ai'</testCase>
+    <testCase id="T10">handleCustomerReply com UNSATISFIED na 2ª tentativa muda status para 'needs_human'</testCase>
+    <testCase id="T11">extractKnowledge cria novo doc quando sem similar na KB; enriquece doc existente quando similarity >= 0.80</testCase>
+    <testCase id="T12">Approve AI draft insere mensagem como author_role='agent' e limpa ai_draft_response</testCase>
+  </testSuite>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SEÇÃO 5 — RESUMO DE ENTREGÁVEIS
+  ═══════════════════════════════════════════════════════════════ -->
+  <deliverablesSummary>
+    <category name="Banco de Dados">
+      <item>2 migrations SQL (010, 011) — 12 tabelas novas, 2 enums, 1 função SQL, pgvector com HNSW</item>
+      <item>RLS em todas as tabelas de suporte</item>
+    </category>
+    <category name="Backend">
+      <item>4 serviços de IA: EmbeddingService, SupportAITriageService, SupportAIAgent, KnowledgeLearningService</item>
+      <item>1 serviço de notificações: SupportNotificationService</item>
+      <item>~25 endpoints REST: 7 portal + 18 admin</item>
+      <item>5 jobs no scheduler: SLA breach, inatividade, auto-close, learning queue, AI timeout</item>
+    </category>
+    <category name="Frontend Portal">
+      <item>4 componentes: SupportFloatingButton, NewTicketWizard (3 passos), TicketListPage, TicketDetailPage</item>
+    </category>
+    <category name="Frontend Admin">
+      <item>7 componentes: SupportDashboard, TicketQueue, TicketDetailAdmin, SLAConfigPage, KnowledgeBaseManager, AIAnalyticsPage, AuditLogPage</item>
+    </category>
+    <category name="Testes">
+      <item>12 casos de teste cobrindo fluxos críticos</item>
+    </category>
+    <totalEffort unit="dias-dev" value="25">
+      <breakdown>
+        <phase id="1-2"  name="DB (núcleo + IA)"          days="2" />
+        <phase id="3"    name="Serviços de IA"             days="4" />
+        <phase id="4-5"  name="APIs portal + admin"        days="4" />
+        <phase id="6"    name="Scheduler jobs"             days="1" />
+        <phase id="7"    name="Frontend portal"            days="4" />
+        <phase id="8"    name="Frontend admin"             days="5" />
+        <phase id="x"    name="Integrações + testes"       days="5" />
+      </breakdown>
+    </totalEffort>
+  </deliverablesSummary>
+
+</implementationPrompt>

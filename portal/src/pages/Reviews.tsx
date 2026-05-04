@@ -227,6 +227,21 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
                   {r.author_name && <span>{r.author_name}</span>}
                   {r.rating != null && <span className="stars">{ratingStars(r.rating)}</span>}
                   <span>{timeAgo(r.published_at)}</span>
+                  {r.url && (
+                    <a 
+                      href={r.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ 
+                        marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, 
+                        color: 'var(--accent)', fontSize: 11, fontWeight: 600, textDecoration: 'none' 
+                      }}
+                      className="review-link-external"
+                    >
+                      Responder <ExternalLink size={12} />
+                    </a>
+                  )}
                 </div>
               </div>
               {r.title && <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>{r.title}</div>}

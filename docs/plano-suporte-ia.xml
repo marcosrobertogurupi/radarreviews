@@ -1,0 +1,763 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EXTENSÃO DO PLANO DE SUPORTE — CAMADA DE IA AUTÔNOMA (AGENTIC RAG)
+  Projeto: Reputei / Radar de Reviews
+  Pré-requisito: plano-suporte.xml (Fases 1-5)
+  Data: 2026-05-04
+
+  Arquitetura: Agentic RAG
+    — RAG puro responde perguntas; Agentic RAG planeja, age e aprende.
+    — IA resolve 40-80% dos tickets sozinha quando a KB está madura.
+    — Escalação humana apenas para casos sem cobertura ou cliente insatisfeito.
+
+  Referências:
+    — unthread.io/blog/support-knowledge-management-statistics
+    — alhena.ai/blog/rag-agentic-ai-in-customer-support
+    — n8n.io/workflows/11648-ai-whatsapp-support-with-human-handoff-using-gemini-twilio-and-supabase-rag
+    — cobbai.com/blog/ai-knowledge-base-for-customer-service
+-->
+<aiAgentExtension
+  name="Suporte com IA Autônoma e Base de Conhecimento Auto-Aprendiz"
+  version="1.0"
+  extends="plano-suporte.xml"
+  additionalPhases="3"
+  totalAdditionalDays="10"
+>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       VISÃO GERAL DA ARQUITETURA AGENTIC RAG
+  ═══════════════════════════════════════════════════════════════ -->
+  <architecture>
+    <description>
+      A IA opera como um agente autônomo com ciclo Perceber → Recuperar → Raciocinar → Agir.
+      Cada atendimento gera ou enriquece documentos internos de conhecimento (KB).
+      A IA consulta a KB por similaridade semântica (pgvector) antes de cada resposta.
+      Quando confiante, responde e fecha sozinha. Quando incerta, redige rascunho para o agente.
+      Quanto mais tickets resolvidos, maior a cobertura e autonomia da IA.
+    </description>
+
+    <!-- FUNIL DE CONFIANÇA DA IA -->
+    <confidenceFunnel>
+      <tier id="T1" label="Alta Confiança"   minScore="0.85" maxScore="1.00">
+        <behavior>IA responde autonomamente sem revisão humana</behavior>
+        <behavior>Aguarda confirmação do assinante</behavior>
+        <behavior>Se assinante confirmar resolução → IA fecha o ticket</behavior>
+        <behavior>Se assinante não responder em 24h → IA fecha automaticamente</behavior>
+        <behavior>Se assinante não satisfeito → IA tenta 1 vez mais com abordagem diferente</behavior>
+        <behavior>Após 2ª tentativa sem sucesso → escala para humano (status: needs_human)</behavior>
+      </tier>
+      <tier id="T2" label="Confiança Média"  minScore="0.65" maxScore="0.84">
+        <behavior>IA redige resposta sugerida mas NÃO envia automaticamente</behavior>
+        <behavior>Agente vê o rascunho em destaque no painel, revisa e envia com 1 clique</behavior>
+        <behavior>Se agente aprovar, a resolução é contabilizada como IA-assistida</behavior>
+      </tier>
+      <tier id="T3" label="Baixa Confiança"  minScore="0.00" maxScore="0.64">
+        <behavior>IA apenas categoriza e prioriza (triagem básica)</behavior>
+        <behavior>Ticket vai direto para fila humana com status: needs_human</behavior>
+        <behavior>IA registra que não encontrou solução → agenda revisão de KB</behavior>
+      </tier>
+    </confidenceFunnel>
+
+    <!-- ESTADOS DE TICKET ADICIONADOS AO FUNIL EXISTENTE -->
+    <additionalStatuses>
+      <status name="ai_responding"   label="IA Respondendo"       description="IA enviou resposta autônoma, aguardando feedback do assinante" />
+      <status name="ai_resolved"     label="Resolvido pela IA"     description="Assinante confirmou resolução pela IA ou timeout de 24h" />
+      <status name="needs_human"     label="Aguardando Humano"     description="IA não tem confiança suficiente ou assinante não satisfeito após 2 tentativas" />
+      <status name="learning"        label="Em Aprendizado"        description="Ticket resolvido em processamento para extração de conhecimento" />
+    </additionalStatuses>
+
+    <!-- CICLO DE APRENDIZADO -->
+    <learningCycle>
+      <step order="1">Ticket resolvido (por humano ou IA) → status='learning'</step>
+      <step order="2">Job LearningExtractor processa ticket: mensagens + resolução final</step>
+      <step order="3">Gemini extrai par estruturado problema/solução em JSON</step>
+      <step order="4">Sistema busca documento existente na KB por similaridade semântica (&gt; 0.80)</step>
+      <step order="5a" condition="documento_existente">Enriquece doc: adiciona variação do problema, incrementa resolution_count, recalcula avg_csat</step>
+      <step order="5b" condition="documento_novo">Cria novo KnowledgeDoc + gera embedding + indexa no pgvector</step>
+      <step order="6">Publica na KB com status='draft' (admin revisa antes de ativar, ou auto-publica se CSAT ≥ 4.0)</step>
+      <step order="7">Ticket vai para status='closed'</step>
+    </learningCycle>
+
+  </architecture>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE IA-1 — BANCO DE DADOS (EXTENSÃO)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="IA-1" name="Banco de Dados — Camada de IA" estimatedDays="2">
+
+    <migration id="011" file="migrations/011_ai_knowledge_layer.sql">
+
+      <!-- HABILITAR PGVECTOR -->
+      <sql><![CDATA[
+-- Supabase já disponibiliza pgvector, basta habilitar
+CREATE EXTENSION IF NOT EXISTS vector;
+      ]]></sql>
+
+      <!-- DOCUMENTOS DE CONHECIMENTO -->
+      <table name="support_knowledge_docs">
+        <description>
+          Base de conhecimento gerada automaticamente a partir de tickets resolvidos.
+          Cada documento representa um par problema-solução aprendido pelo sistema.
+        </description>
+        <sql><![CDATA[
+CREATE TABLE support_knowledge_docs (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id         UUID        REFERENCES ticket_categories(id),
+
+  -- Conteúdo do documento (gerado por IA)
+  title               TEXT        NOT NULL,
+  problem_description TEXT        NOT NULL,   -- descrição canônica do problema
+  problem_variants    TEXT[]      DEFAULT '{}', -- variações de como o problema apareceu
+  solution_steps      JSONB       NOT NULL,    -- array de passos [{step: int, text: str, code?: str}]
+  solution_summary    TEXT        NOT NULL,    -- resposta curta em linguagem natural (para a IA usar)
+  tags                TEXT[]      DEFAULT '{}',
+  keywords            TEXT[]      DEFAULT '{}',
+
+  -- Origem e qualidade
+  source_ticket_ids   UUID[]      DEFAULT '{}', -- tickets que geraram este documento
+  resolution_count    INTEGER     NOT NULL DEFAULT 1,  -- quantas vezes foi usado com sucesso
+  avg_csat            NUMERIC(3,2) DEFAULT NULL,        -- CSAT médio das resoluções via este doc
+  confidence_score    NUMERIC(4,3) DEFAULT 0.700,       -- confiança acumulada (cresce com uso)
+
+  -- Estado de publicação
+  status              TEXT        NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft', 'active', 'archived', 'needs_review')),
+  auto_published      BOOLEAN     NOT NULL DEFAULT FALSE, -- TRUE se publicado automaticamente (CSAT ≥ 4.0)
+  reviewed_by         UUID        REFERENCES auth.users(id),
+  reviewed_at         TIMESTAMPTZ,
+
+  -- Metadados
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_kb_docs_category ON support_knowledge_docs(category_id) WHERE status = 'active';
+CREATE INDEX idx_kb_docs_status   ON support_knowledge_docs(status);
+        ]]></sql>
+      </table>
+
+      <!-- EMBEDDINGS VETORIAIS (pgvector) -->
+      <table name="support_knowledge_embeddings">
+        <description>
+          Embeddings vetoriais dos documentos de conhecimento para busca por similaridade semântica.
+          Gerados com Gemini Embedding Model (768 dimensões).
+          Separado da tabela principal para performance.
+        </description>
+        <sql><![CDATA[
+CREATE TABLE support_knowledge_embeddings (
+  id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_id      UUID    NOT NULL REFERENCES support_knowledge_docs(id) ON DELETE CASCADE,
+  content     TEXT    NOT NULL,                    -- texto usado para gerar o embedding
+  embedding   vector(768) NOT NULL,                -- Gemini text-embedding-004 = 768 dims
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Índice HNSW para busca por similaridade rápida (cosine distance)
+CREATE INDEX idx_kb_embeddings_hnsw
+  ON support_knowledge_embeddings
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+        ]]></sql>
+
+        <helperFunction><![CDATA[
+-- Função para busca semântica na KB (usada pelo AI Agent)
+CREATE OR REPLACE FUNCTION search_knowledge(
+  query_embedding vector(768),
+  match_threshold FLOAT    DEFAULT 0.65,
+  match_count     INT      DEFAULT 5,
+  filter_category UUID     DEFAULT NULL
+)
+RETURNS TABLE (
+  doc_id            UUID,
+  title             TEXT,
+  solution_summary  TEXT,
+  solution_steps    JSONB,
+  similarity        FLOAT,
+  confidence_score  NUMERIC,
+  resolution_count  INT
+)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    d.id            AS doc_id,
+    d.title,
+    d.solution_summary,
+    d.solution_steps,
+    1 - (e.embedding <=> query_embedding) AS similarity,
+    d.confidence_score,
+    d.resolution_count
+  FROM support_knowledge_embeddings e
+  JOIN support_knowledge_docs d ON d.id = e.doc_id
+  WHERE d.status = 'active'
+    AND (filter_category IS NULL OR d.category_id = filter_category)
+    AND 1 - (e.embedding <=> query_embedding) >= match_threshold
+  ORDER BY e.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+        ]]></helperFunction>
+      </table>
+
+      <!-- INTERAÇÕES DA IA POR TICKET -->
+      <table name="ticket_ai_interactions">
+        <description>
+          Registra cada vez que a IA agiu em um ticket: busca, resposta, resultado.
+          Usado para análise de desempenho da IA e para alimentar o ciclo de aprendizado.
+        </description>
+        <sql><![CDATA[
+CREATE TABLE ticket_ai_interactions (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id           UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  interaction_type    TEXT        NOT NULL
+                      CHECK (interaction_type IN (
+                        'triage', 'knowledge_search', 'autonomous_response',
+                        'draft_suggestion', 'satisfaction_check', 'auto_close',
+                        'escalation_decision', 'learning_extraction'
+                      )),
+
+  -- Busca semântica
+  query_text          TEXT,
+  query_embedding     vector(768),
+  matched_doc_ids     UUID[]      DEFAULT '{}',
+  top_similarity      NUMERIC(4,3),
+  confidence_tier     TEXT        CHECK (confidence_tier IN ('T1','T2','T3')),
+
+  -- Resposta gerada
+  generated_response  TEXT,
+  model_used          TEXT        DEFAULT 'gemini-flash',
+  prompt_tokens       INTEGER,
+  completion_tokens   INTEGER,
+
+  -- Resultado
+  outcome             TEXT        CHECK (outcome IN (
+    'sent_autonomously', 'draft_shown', 'routed_to_human',
+    'customer_satisfied', 'customer_not_satisfied', 'timeout_closed',
+    'knowledge_extracted', 'knowledge_updated'
+  )),
+  outcome_csat        SMALLINT,
+
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_interactions_ticket ON ticket_ai_interactions(ticket_id, created_at);
+CREATE INDEX idx_ai_interactions_type   ON ticket_ai_interactions(interaction_type);
+        ]]></sql>
+      </table>
+
+      <!-- ADICIONAR COLUNAS DE IA NA TABELA PRINCIPAL DE TICKETS -->
+      <sql><![CDATA[
+ALTER TABLE support_tickets
+  ADD COLUMN ai_confidence     NUMERIC(4,3),         -- confiança da última busca semântica
+  ADD COLUMN ai_attempt_count  SMALLINT DEFAULT 0,   -- quantas vezes a IA tentou resolver
+  ADD COLUMN ai_doc_used_id    UUID REFERENCES support_knowledge_docs(id),
+  ADD COLUMN ai_handled        BOOLEAN NOT NULL DEFAULT FALSE,  -- TRUE = resolvido pela IA sem humano
+  ADD COLUMN ai_draft_response TEXT;                 -- rascunho gerado para agente revisar (tier T2)
+
+-- Adicionar novos status ao enum existente
+ALTER TYPE ticket_status ADD VALUE IF NOT EXISTS 'ai_responding';
+ALTER TYPE ticket_status ADD VALUE IF NOT EXISTS 'ai_resolved';
+ALTER TYPE ticket_status ADD VALUE IF NOT EXISTS 'needs_human';
+ALTER TYPE ticket_status ADD VALUE IF NOT EXISTS 'learning';
+      ]]></sql>
+
+      <!-- FILA DE APRENDIZADO (tickets aguardando extração de conhecimento) -->
+      <table name="support_learning_queue">
+        <sql><![CDATA[
+CREATE TABLE support_learning_queue (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id       UUID        NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE UNIQUE,
+  priority        SMALLINT    NOT NULL DEFAULT 5,   -- 1=alta (CSAT 5), 5=normal
+  attempts        SMALLINT    NOT NULL DEFAULT 0,
+  last_error      TEXT,
+  scheduled_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_learning_queue_unprocessed
+  ON support_learning_queue(scheduled_at)
+  WHERE processed_at IS NULL;
+        ]]></sql>
+      </table>
+
+    </migration>
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE IA-2 — SERVIÇOS DE IA (BACKEND)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="IA-2" name="Serviços de IA — Backend" estimatedDays="5">
+
+    <!-- IA-2.1 SERVIÇO DE EMBEDDING -->
+    <service name="EmbeddingService" file="src/services/embeddingService.ts">
+      <description>
+        Centraliza geração e busca de embeddings via Gemini text-embedding-004.
+        768 dimensões, suporta português nativamente.
+      </description>
+      <methods>
+        <method name="generateEmbedding(text: string): Promise&lt;number[]&gt;">
+          Chama Gemini Embedding API com o texto fornecido.
+          Retorna vetor de 768 floats.
+        </method>
+        <method name="searchKnowledge(query: string, options): Promise&lt;KBSearchResult[]&gt;">
+          1. Gera embedding do query text.
+          2. Chama função SQL search_knowledge() via Supabase RPC.
+          3. Retorna docs ordenados por similaridade com score.
+        </method>
+        <method name="upsertDocEmbedding(docId: string, content: string): Promise&lt;void&gt;">
+          Gera embedding do conteúdo do doc e salva/atualiza em support_knowledge_embeddings.
+        </method>
+      </methods>
+    </service>
+
+    <!-- IA-2.2 AGENTE DE SUPORTE AUTÔNOMO -->
+    <service name="SupportAIAgent" file="src/services/supportAIAgent.ts">
+      <description>
+        Núcleo do agente autônomo. Orquestra o ciclo Perceber → Recuperar → Raciocinar → Agir.
+        Chamado após triagem de cada novo ticket e após cada resposta do assinante.
+      </description>
+
+      <method name="handleNewTicket(ticketId: string): Promise&lt;void&gt;">
+        <steps>
+          <step>Busca ticket + histórico de mensagens + dados do tenant/plano</step>
+          <step>Compõe query: subject + description + category</step>
+          <step>Chama EmbeddingService.searchKnowledge(query, { threshold: 0.65, count: 5 })</step>
+          <step>Determina tier de confiança (T1/T2/T3) pelo top_similarity</step>
+          <step condition="T1 (≥ 0.85)">
+            → Chama _generateAutonomousResponse()
+            → Insere ticket_message com author_role='ai'
+            → Atualiza ticket: status='ai_responding', ai_confidence, ai_doc_used_id, ai_attempt_count=1
+            → Registra ticket_ai_interactions: type='autonomous_response', outcome='sent_autonomously'
+            → Notifica assinante via WhatsApp que a IA respondeu
+          </step>
+          <step condition="T2 (0.65-0.84)">
+            → Chama _generateDraftResponse()
+            → Salva em support_tickets.ai_draft_response
+            → Atualiza ticket: status='needs_human' (mas com rascunho)
+            → Notifica agente: "IA sugeriu resposta, revise e envie"
+            → Registra ticket_ai_interactions: type='draft_suggestion', outcome='draft_shown'
+          </step>
+          <step condition="T3 (< 0.65)">
+            → Atualiza ticket: status='needs_human', ai_confidence
+            → Registra ticket_ai_interactions: type='knowledge_search', outcome='routed_to_human'
+            → Notifica agente: "Ticket sem cobertura na KB, requer atendimento humano"
+          </step>
+        </steps>
+      </method>
+
+      <method name="handleCustomerReply(ticketId: string, messageId: string): Promise&lt;void&gt;">
+        <description>Chamado quando assinante responde em ticket com status='ai_responding'</description>
+        <steps>
+          <step>Analisa a mensagem do assinante com Gemini para detectar satisfação</step>
+          <step>Prompt: "O assinante ficou satisfeito com a resolução? Responda: SATISFIED | UNSATISFIED | UNCLEAR"</step>
+          <step condition="SATISFIED">
+            → Registra ticket_ai_interactions: outcome='customer_satisfied'
+            → Chama _closeTicketAutonomously(ticketId)
+          </step>
+          <step condition="UNSATISFIED e ai_attempt_count == 1">
+            → Busca novamente na KB com query enriquecida (incluindo feedback do assinante)
+            → Se nova similaridade ≥ 0.75: gera nova resposta, ai_attempt_count=2
+            → Notifica assinante com nova tentativa
+          </step>
+          <step condition="UNSATISFIED e ai_attempt_count >= 2">
+            → Atualiza ticket: status='needs_human'
+            → Insere mensagem de sistema: "Vou transferir para um especialista humano"
+            → Notifica agente com contexto completo das tentativas da IA
+            → Registra ticket_ai_interactions: outcome='customer_not_satisfied'
+          </step>
+          <step condition="UNCLEAR">
+            → IA pede clarificação: "Pode me dizer se o problema foi resolvido?"
+          </step>
+        </steps>
+      </method>
+
+      <method name="_generateAutonomousResponse(ticket, kbResults): Promise&lt;string&gt;">
+        <promptTemplate><![CDATA[
+Você é o agente de suporte técnico da Reputei, uma plataforma de monitoramento de reputação.
+Responda ao assinante de forma clara, empática e direta em português brasileiro.
+
+== CONTEXTO DO TICKET ==
+Assunto: {{ticket.subject}}
+Descrição: {{ticket.description}}
+Plano do assinante: {{tenant.plan_name}}
+Canal: {{ticket.channel}}
+
+== SOLUÇÕES ENCONTRADAS NA BASE DE CONHECIMENTO ==
+{{kbResults | formatKBResults}}
+
+== INSTRUÇÕES ==
+- Use a solução encontrada para resolver o problema
+- Seja conciso (máx. 5 parágrafos)
+- Se houver passos, use lista numerada
+- Termine perguntando se o problema foi resolvido
+- NÃO mencione que você é uma IA na primeira resposta
+- Se não tiver certeza absoluta, diga "geralmente" ou "normalmente"
+
+Resposta:
+        ]]></promptTemplate>
+      </method>
+
+      <method name="_closeTicketAutonomously(ticketId): Promise&lt;void&gt;">
+        <steps>
+          <step>Atualiza ticket: status='ai_resolved', resolved_at=NOW(), ai_handled=TRUE</step>
+          <step>Insere mensagem de sistema: "Que ótimo! Fico feliz em ter ajudado. Este chamado será encerrado automaticamente. Se precisar de mais ajuda, abra um novo chamado."</step>
+          <step>Envia mensagem WhatsApp com link de CSAT: "Avalie nosso atendimento em ⭐ a ⭐⭐⭐⭐⭐"</step>
+          <step>Adiciona ticket à support_learning_queue com prioridade baseada no CSAT</step>
+          <step>Grava audit_log: action='resolved', actor_role='ai'</step>
+          <step>Scheduler auto-close rodará normalmente após 7 dias para mover para 'closed'</step>
+        </steps>
+      </method>
+
+    </service>
+
+    <!-- IA-2.3 EXTRATOR DE CONHECIMENTO (LEARNING) -->
+    <service name="KnowledgeLearningService" file="src/services/knowledgeLearningService.ts">
+      <description>
+        Processa tickets resolvidos e extrai documentos de conhecimento estruturados.
+        Opera como job agendado a cada 10 minutos, consumindo a support_learning_queue.
+      </description>
+
+      <method name="processQueue(): Promise&lt;void&gt;">
+        <steps>
+          <step>Busca até 10 itens não processados da support_learning_queue ORDER BY priority ASC, scheduled_at ASC</step>
+          <step>Para cada ticket: chama extractKnowledge(ticketId)</step>
+          <step>Marca queue item como processado ou registra erro e incrementa attempts (máx. 3)</step>
+          <step>Atualiza ticket para status='closed' após extração bem-sucedida</step>
+        </steps>
+      </method>
+
+      <method name="extractKnowledge(ticketId: string): Promise&lt;string&gt;">
+        <description>Retorna o ID do KnowledgeDoc criado ou atualizado</description>
+        <steps>
+          <step>Busca ticket + todas as mensagens + dados do tenant</step>
+          <step>Filtra mensagens: exclui mensagens de sistema, mantém thread completa</step>
+          <step>Chama Gemini para extrair par problema/solução estruturado</step>
+          <step>Valida JSON retornado</step>
+          <step>Busca KB por similaridade do problema (threshold 0.80)</step>
+          <step condition="doc_similar_encontrado">Enriquece: adiciona variant, incrementa resolution_count, atualiza avg_csat</step>
+          <step condition="sem_similar">Cria novo KnowledgeDoc + gera embedding</step>
+          <step>Auto-publica se avg_csat ≥ 4.0 OU resolution_count ≥ 3</step>
+          <step>Registra ticket_ai_interactions: type='learning_extraction', outcome='knowledge_extracted' ou 'knowledge_updated'</step>
+        </steps>
+        <extractionPrompt><![CDATA[
+Você é um engenheiro de suporte analisando um ticket resolvido para construir uma base de conhecimento.
+
+== THREAD DO TICKET ==
+Categoria: {{category}}
+Assunto: {{subject}}
+{{messages | formatThread}}
+
+== TAREFA ==
+Extraia um documento de conhecimento estruturado em JSON com:
+{
+  "title": "título curto e descritivo do problema (máx 80 chars)",
+  "problem_description": "descrição canônica do problema em 2-3 frases",
+  "problem_variants": ["outras formas como este problema pode ser descrito"],
+  "solution_summary": "resposta direta e completa em linguagem natural (2-4 parágrafos)",
+  "solution_steps": [
+    { "step": 1, "text": "descrição do passo", "code": "comando ou valor opcional" }
+  ],
+  "keywords": ["palavra-chave1", "palavra-chave2"],
+  "tags": ["tag-categoria", "tag-produto"],
+  "quality_notes": "observações sobre limitações ou casos especiais desta solução"
+}
+
+Regras:
+- Foque na solução definitiva, não no diagnóstico
+- Use português brasileiro
+- Se a solução exigir acesso admin, indique claramente
+- Retorne SOMENTE o JSON, sem markdown
+
+JSON:
+        ]]></extractionPrompt>
+      </method>
+
+    </service>
+
+    <!-- IA-2.4 SCHEDULER JOBS ADICIONAIS -->
+    <service name="AISchedulerJobs" file="src/scheduler/aiSupportJobs.ts" extends="slaWatchdog.ts">
+
+      <job name="processLearningQueue" cronExpression="*/10 * * * *">
+        <description>Processa fila de aprendizado, extrai conhecimento de tickets resolvidos</description>
+        <implementation>Chama KnowledgeLearningService.processQueue()</implementation>
+      </job>
+
+      <job name="checkAIRespondingTimeout" cronExpression="*/30 * * * *">
+        <description>Fecha tickets em status 'ai_responding' sem resposta do assinante por 24h</description>
+        <steps>
+          <step>Query: tickets status='ai_responding' com última mensagem do assinante há mais de 24h</step>
+          <step>Chama SupportAIAgent._closeTicketAutonomously() com outcome='timeout_closed'</step>
+          <step>Adiciona à learning_queue com prioridade 3</step>
+          <step>Registra audit_log: action='closed', metadata: {reason: 'ai_timeout_24h'}</step>
+        </steps>
+      </job>
+
+      <job name="scheduleKBReview" cronExpression="0 9 * * 1">
+        <description>Segunda-feira 09h: notifica admin sobre documentos na KB aguardando revisão</description>
+        <steps>
+          <step>Conta docs com status='draft' na support_knowledge_docs</step>
+          <step>Se count > 0: envia notificação ao admin via WhatsApp</step>
+        </steps>
+      </job>
+
+    </service>
+
+    <!-- IA-2.5 ENDPOINTS ADICIONAIS DA API -->
+    <apiAdditions>
+
+      <route method="POST" path="/api/support/:id/confirm-resolution" auth="tenant">
+        <description>Assinante confirma explicitamente que o problema foi resolvido (alternativa ao chat)</description>
+        <steps>
+          <step>Valida que ticket pertence ao tenant e está em status ai_responding ou in_progress</step>
+          <step>Chama SupportAIAgent._closeTicketAutonomously() ou muda para resolved se humano</step>
+          <step>Registra CSAT se body contiver score</step>
+        </steps>
+      </route>
+
+      <route method="POST" path="/api/admin/support/tickets/:id/approve-ai-draft" auth="admin|operador">
+        <description>Agente aprova e envia o rascunho gerado pela IA (Tier T2)</description>
+        <steps>
+          <step>Busca ai_draft_response do ticket</step>
+          <step>Insere como ticket_message com author_role='agent' (agente é o remetente visível)</step>
+          <step>Registra em ticket_ai_interactions: outcome='sent_after_human_review'</step>
+          <step>Muda status para in_progress</step>
+          <step>Limpa ai_draft_response</step>
+        </steps>
+      </route>
+
+      <route method="GET"    path="/api/admin/support/knowledge"          auth="admin">Listagem da KB com métricas</route>
+      <route method="GET"    path="/api/admin/support/knowledge/:id"       auth="admin">Detalhe do documento</route>
+      <route method="PATCH"  path="/api/admin/support/knowledge/:id"       auth="admin">Editar / publicar / arquivar documento</route>
+      <route method="DELETE" path="/api/admin/support/knowledge/:id"       auth="admin">Remove documento e embedding</route>
+      <route method="POST"   path="/api/admin/support/knowledge/:id/test"  auth="admin">
+        <description>Testa um doc: envia query e retorna simulação de como a IA responderia</description>
+      </route>
+
+      <route method="GET" path="/api/admin/support/ai-analytics" auth="admin">
+        <description>Métricas de desempenho da IA</description>
+        <returns><![CDATA[
+{
+  "ai_resolution_rate":      0.62,  // % tickets resolvidos pela IA sem humano
+  "ai_assisted_rate":        0.18,  // % tickets onde IA fez rascunho aprovado por humano
+  "avg_ai_confidence":       0.81,
+  "avg_ai_response_time_s":  4.2,   // tempo médio para IA gerar resposta
+  "kb_doc_count":            87,
+  "kb_active_count":         71,
+  "kb_draft_count":          16,
+  "top_resolved_categories": [...],
+  "uncovered_categories":    [...],  // categorias com muitos tickets T3 (sem KB)
+  "knowledge_growth_by_day": [...],
+  "csat_ai_vs_human": {
+    "ai_avg":    4.4,
+    "human_avg": 4.1
+  }
+}
+        ]]></returns>
+      </route>
+
+    </apiAdditions>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       FASE IA-3 — FRONTEND ADMIN (PAINEL DE IA E CONHECIMENTO)
+  ═══════════════════════════════════════════════════════════════ -->
+  <phase id="IA-3" name="Frontend Admin — Camada de IA" estimatedDays="3">
+
+    <!-- Extensão do TicketDetailAdmin existente -->
+    <componentExtension name="TicketDetailAdmin" extends="admin/src/pages/support/TicketDetailAdmin.tsx">
+      <addPanel name="IA">
+        <feature>Exibe tier de confiança (T1/T2/T3) e score de similaridade com barra visual</feature>
+        <feature>Mostra qual documento da KB a IA usou, com link para o doc</feature>
+        <feature>Se tier T2: exibe rascunho da IA com botão "Aprovar e Enviar" em destaque</feature>
+        <feature>Histórico de tentativas da IA: query, docs consultados, response gerada</feature>
+        <feature>Badge "Resolvido pela IA" ou "IA Assistiu" visível no topo do ticket</feature>
+      </addPanel>
+    </componentExtension>
+
+    <!-- Painel de Análises da IA -->
+    <component name="AIAnalyticsDashboard" path="admin/src/pages/support/AIAnalytics.tsx">
+      <description>Painel dedicado ao desempenho e evolução da IA de suporte</description>
+      <sections>
+        <section name="Visão Geral">
+          <kpiCards>
+            <card label="Taxa de Resolução IA"    metric="ai_resolution_rate"  format="percent" color="green" />
+            <card label="Taxa IA Assistida"       metric="ai_assisted_rate"    format="percent" color="blue" />
+            <card label="Confiança Média"         metric="avg_ai_confidence"   format="percent" />
+            <card label="Docs na Base (ativos)"   metric="kb_active_count" />
+            <card label="CSAT Médio (IA)"         metric="csat_ai_vs_human.ai_avg"    format="stars" />
+            <card label="CSAT Médio (Humano)"     metric="csat_ai_vs_human.human_avg" format="stars" />
+          </kpiCards>
+          <chart type="area"  data="knowledge_growth_by_day" label="Crescimento da base de conhecimento" />
+          <chart type="bar"   data="ai_resolution_by_category" label="Resolução da IA por categoria" />
+        </section>
+
+        <section name="Cobertura da KB">
+          <description>
+            Mapa de calor: categorias vs taxa de cobertura da IA.
+            Categorias em vermelho (baixa cobertura) indicam onde criar documentos manualmente.
+          </description>
+          <table>Doc, Categoria, Usos, Avg CSAT, Última vez usado, Status</table>
+          <alert>Exibe aviso para categorias com &gt;5 tickets T3 na última semana (sem KB)</alert>
+        </section>
+      </sections>
+    </component>
+
+    <!-- Gerenciador da Base de Conhecimento (KB) -->
+    <component name="KnowledgeBaseManager" path="admin/src/pages/support/KnowledgeBaseManager.tsx">
+      <description>Interface completa para gerenciar os documentos de conhecimento gerados pela IA</description>
+      <features>
+        <feature>Lista de documentos com filtros: status, categoria, avg_csat, resolution_count</feature>
+        <feature>Preview da resposta que a IA daria usando aquele doc (simulação)</feature>
+        <feature>Editor para ajustar manualmente o solution_summary e solution_steps</feature>
+        <feature>Botões: Publicar / Arquivar / Precisar Revisão (needs_review)</feature>
+        <feature>Badge visual: "Auto-gerado pela IA" vs "Revisado por humano"</feature>
+        <feature>Histórico de quais tickets geraram / usaram o documento</feature>
+        <feature>Botão "Criar documento manual" — admin escreve diretamente sem precisar de ticket</feature>
+        <feature>Campo "Testar documento" — digita uma pergunta e vê como a IA responderia</feature>
+      </features>
+    </component>
+
+    <!-- Modificação no TicketQueue: indicadores visuais de IA -->
+    <componentExtension name="TicketQueue" extends="admin/src/pages/support/TicketQueue.tsx">
+      <addColumn name="IA" position="after_status">
+        <values>
+          <value condition="ai_handled=true"             icon="🤖" tooltip="Resolvido pela IA" color="green" />
+          <value condition="ai_draft_response IS NOT NULL" icon="✏️" tooltip="Rascunho IA aguardando aprovação" color="blue" />
+          <value condition="status='needs_human' AND ai_confidence IS NOT NULL" icon="🔍" tooltip="IA buscou mas não encontrou solução" color="orange" />
+        </values>
+      </addColumn>
+      <addFilter name="ai_status" options="all, ai_resolved, has_draft, needs_human, no_ai_data" />
+    </componentExtension>
+
+    <!-- Modificação no portal: IA conversa com assinante -->
+    <componentExtension name="TicketDetail (Portal)" extends="portal/src/pages/support/TicketDetail.tsx">
+      <feature>Mensagens da IA (author_role='ai') recebem avatar e label "Assistente Reputei"</feature>
+      <feature>Botão "Isso resolveu meu problema ✓" e "Ainda preciso de ajuda ✗" visível após resposta da IA</feature>
+      <feature>Indicador de status amigável: "Aguardando resposta da IA..." com spinner quando ai_responding</feature>
+    </componentExtension>
+
+  </phase>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       DIAGRAMA DE FLUXO DO AGENTE
+  ═══════════════════════════════════════════════════════════════ -->
+  <agentFlowDiagram>
+    <flow><![CDATA[
+ASSINANTE ABRE TICKET
+         │
+         ▼
+[Triagem IA] — classifica categoria, prioridade, sentimento
+         │
+         ▼
+[Busca Semântica na KB] — pgvector similarity search
+         │
+    ┌────┴────────────────┬─────────────────────────┐
+    │                     │                          │
+similarity ≥ 0.85     0.65 ≤ sim < 0.85         sim < 0.65
+   T1 (Alta)              T2 (Média)              T3 (Baixa)
+    │                     │                          │
+    ▼                     ▼                          ▼
+IA Responde         IA gera rascunho           Vai direto para
+Automaticamente     → Agente revisa             fila humana
+    │               → Aprova com 1 clique       [needs_human]
+    │                     │
+    ▼                     │
+[ai_responding]           │
+    │                     │
+ASSINANTE RESPONDE        │
+    │                     │
+    ├─ SATISFEITO ─────────────────────────────► IA fecha ticket
+    │                                             ai_resolved
+    │                                             → CSAT prompt
+    │                                             → Learning queue
+    │
+    ├─ INSATISFEITO (tentativa 1) ──► IA busca novamente na KB
+    │                                 com query enriquecida
+    │                                      │
+    │                          ┌───────────┴────────────┐
+    │                     sim ≥ 0.75               sim < 0.75
+    │                     nova tentativa         [needs_human]
+    │                     (attempt_count=2)
+    │
+    ├─ INSATISFEITO (tentativa 2) ──► [needs_human] → Agente humano
+    │
+    └─ SEM RESPOSTA (24h) ──────────► Auto-close (timeout)
+                                      → Learning queue
+
+AGENTE HUMANO RESOLVE
+         │
+         ▼
+[status=resolved] → [status=learning]
+         │
+         ▼
+[KnowledgeLearningService] extrai par problema/solução
+         │
+    ┌────┴──────────────────┐
+    │                       │
+Doc similar na KB       Doc novo
+(similarity ≥ 0.80)
+    │                       │
+    ▼                       ▼
+Enriquece doc          Cria novo doc
++ nova variant         + gera embedding
++ recalcula CSAT       + indexa no HNSW
+    │                       │
+    └──────────┬────────────┘
+               │
+          CSAT ≥ 4.0          CSAT < 4.0
+          OU uses ≥ 3          (ou primeiro)
+               │                   │
+               ▼                   ▼
+         Auto-publica          status='draft'
+         status='active'       Admin revisa
+               │
+               ▼
+    [KB MADURA — próximo ticket similar → T1]
+    ]]></flow>
+  </agentFlowDiagram>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RESUMO DE ESFORÇO ADICIONAL
+  ═══════════════════════════════════════════════════════════════ -->
+  <additionalEffort>
+    <summary>
+      <totalAdditionalDays>10</totalAdditionalDays>
+      <phases>
+        <item phase="IA-1" name="DB — pgvector, knowledge docs, ai interactions"  days="2" />
+        <item phase="IA-2" name="Backend — AI Agent, Embedding, Learning Services" days="5" />
+        <item phase="IA-3" name="Frontend Admin — Painel IA, KB Manager"          days="3" />
+      </phases>
+      <grandTotal unit="dias" planoBase="15" extensaoIA="10" total="25" />
+    </summary>
+
+    <kpiProjections>
+      <projection label="Resolução autônoma pela IA (KB madura: ~200 docs)"
+                  value="40-60% dos tickets" source="unthread.io 2026" />
+      <projection label="Redução de volume com self-service + IA"
+                  value="-55% do total" source="Deloitte 2025" />
+      <projection label="Tempo médio de primeira resposta"
+                  value="&lt; 30s (IA) vs 4h+ (humano)" />
+      <projection label="CSAT IA vs Humano"
+                  value="equivalente ou superior após 3 meses de KB madura" />
+    </kpiProjections>
+
+    <additionalDeliverables>
+      <deliverable>4 novas tabelas: knowledge_docs, knowledge_embeddings, ai_interactions, learning_queue</deliverable>
+      <deliverable>Função SQL search_knowledge() com índice HNSW para busca por similaridade</deliverable>
+      <deliverable>EmbeddingService: geração e busca de embeddings via Gemini text-embedding-004</deliverable>
+      <deliverable>SupportAIAgent: agente autônomo com ciclo completo de Perceber→Recuperar→Raciocinar→Agir</deliverable>
+      <deliverable>KnowledgeLearningService: extração automática de conhecimento de tickets resolvidos</deliverable>
+      <deliverable>2 jobs novos no scheduler: processLearningQueue (10min) e checkAIRespondingTimeout (30min)</deliverable>
+      <deliverable>6 endpoints novos (confirm-resolution, approve-ai-draft, KB CRUD, AI analytics)</deliverable>
+      <deliverable>AIAnalyticsDashboard: métricas de desempenho e evolução da IA</deliverable>
+      <deliverable>KnowledgeBaseManager: interface para revisar, editar e publicar documentos gerados por IA</deliverable>
+      <deliverable>Indicadores visuais de IA em toda a interface (TicketQueue, TicketDetail portal e admin)</deliverable>
+    </additionalDeliverables>
+  </additionalEffort>
+
+</aiAgentExtension>
