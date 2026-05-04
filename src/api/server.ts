@@ -1123,9 +1123,6 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
 }
 
 async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res, 'Content-Type, Authorization')
-  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-
   try {
     const { data: { user } } = await supabaseAdmin.auth.getUser(req.headers.authorization?.split(' ')[1] || '')
     if (!user) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
@@ -1183,9 +1180,6 @@ async function handleSendWhatsApp(req: http.IncomingMessage, res: http.ServerRes
 }
 
 async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  setCors(req, res, 'Content-Type, Authorization')
-  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-
   try {
     const auth = await getAuthUser(req.headers.authorization)
     if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
@@ -1244,9 +1238,30 @@ async function handleRespondReview(req: http.IncomingMessage, res: http.ServerRe
 
 // ── Servidor ──────────────────────────────────────────────────────
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = req.url ?? '/'
-  console.log(`[api] ${req.method} ${url} (Origin: ${req.headers.origin || 'N/A'})`)
+  const origin = req.headers.origin || 'N/A'
+  console.log(`[api] ${req.method} ${url} (Origin: ${origin})`)
+
+  // Log de depuração no banco para ver o que está chegando em produção
+  if (url.startsWith('/api/')) {
+    try {
+      await supabaseAdmin.from('system_notifications').insert({
+        type: 'debug',
+        message: `API Request: ${req.method} ${url} | Origin: ${origin}`,
+        status: 'info'
+      })
+    } catch (e) {
+      console.error('Erro ao logar no banco:', e)
+    }
+  }
+
+  setCors(req, res)
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204)
+    res.end()
+    return
+  }
 
   if (url === '/' || url === '/health') {
     res.writeHead(200); res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), version: '2026-04-30-v1' })); return
