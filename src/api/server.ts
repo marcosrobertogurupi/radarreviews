@@ -1198,8 +1198,15 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
     } else {
       res.writeHead(404).end(JSON.stringify({ error: 'Nenhum dado encontrado para gerar o relatório neste período.' }))
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[api-reports] Erro:', err)
+    try {
+      await supabaseAdmin.from('system_notifications').insert({
+        type: 'error',
+        message: `ERRO RELATÓRIO: ${err.message || 'Erro desconhecido'} | Stack: ${err.stack?.substring(0, 500)}`,
+        status: 'error'
+      })
+    } catch (e) {}
     res.writeHead(500).end(JSON.stringify({ error: 'Erro interno ao gerar relatório' }))
   }
 }
