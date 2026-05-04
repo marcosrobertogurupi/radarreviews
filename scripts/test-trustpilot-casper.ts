@@ -20,8 +20,9 @@ async function testCasperAsync() {
       `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`,
       { 
         companyWebsite: domain, 
-        maxItems: limit,
-        sort: 'newest'
+        endAtPageNumber: 1, // apenas 1 página (~20 reviews)
+        filterByDatePeriod: 'last3months',
+        sortBy: 'recency'
       }
     )
 

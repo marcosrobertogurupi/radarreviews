@@ -701,6 +701,7 @@ export default function Connectors() {
                     />
                     <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.4 }}>
                       Ex Node: Para Reddit insira <span style={{color:'white'}}>&#123;"keywords": ["SuaMarca"]&#125;</span><br/>
+                      Para Trustpilot use <span style={{color:'white'}}>&#123;"filter_date": "last3months", "max_items": 20&#125;</span><br/>
                       Para ConsumidorGov insira <span style={{color:'white'}}>&#123;"resource_url": "URL_DO_CSV"&#125;</span>
                     </div>
                   </div>

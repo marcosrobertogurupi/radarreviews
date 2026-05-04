@@ -89,7 +89,16 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       try {
         logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, external_id: externalId })
         const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
-        const apifyItems = await fetchTrustpilotReviews(externalId, 20, ctx)
+        
+        // Configurações personalizadas via JSON config
+        const config = (connector.config || {}) as any
+        const limit = config.max_items || 20
+        const options = {
+          filterByDatePeriod: config.filter_date || 'any date',
+          sortBy: 'recency' as const
+        }
+
+        const apifyItems = await fetchTrustpilotReviews(externalId, limit, ctx, options)
         
         if (apifyItems.length > 0) {
           const normalized = apifyItems.map(item => normalize(item, connector))

@@ -144,28 +144,33 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
 /**
  * Coleta reviews do Trustpilot via Apify
  */
-export async function fetchTrustpilotReviews(domain: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
+export async function fetchTrustpilotReviews(
+  domain: string, 
+  limit = 20, 
+  ctx?: ApifyContext,
+  options: { filterByDatePeriod?: string; sortBy?: 'recency' | 'relevancy' } = {}
+): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado nas variáveis de ambiente')
-  const sanitizedDomain = domain.replace(/^https?:\/\//, '').split('/')[0]
-  const startUrl = `https://www.trustpilot.com/review/${sanitizedDomain}`
+  const sanitizedDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
 
   const actorId = 'casper11515~trustpilot-reviews-scraper'
-  const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`
   
   console.log(`[Apify] Chamando scraper para ${domain}...`)
-  console.log(`[Apify] URL: https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=...`)
 
   try {
-    // Usaremos a estratégia de execução assíncrona para evitar os limites de 300s do run-sync
+    // Mapeamento de limite para páginas (cada página tem ~20 reviews)
+    const endAtPageNumber = Math.ceil(limit / 20) || 1
+
     console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
     const runResponse = await axios.post(
       `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`,
       { 
         companyWebsite: sanitizedDomain, 
-        maxItems: limit,
-        sort: 'newest',
-        timeout: 300 // Aumentado para 5 minutos
+        endAtPageNumber,
+        filterByDatePeriod: options.filterByDatePeriod || 'any date',
+        sortBy: options.sortBy || 'recency',
+        timeout: 300
       }
     )
 
