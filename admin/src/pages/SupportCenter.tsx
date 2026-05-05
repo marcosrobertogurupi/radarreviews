@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { API_URL, timeAgo } from '../../portal/src/lib/utils' // Reutilizando utils do portal se possível ou copiando
+import { API_URL, timeAgo } from '../lib/utils'
 import { 
   LifeBuoy, MessageSquare, BookOpen, BarChart2, 
   CheckCircle, AlertCircle, Clock, ChevronRight,
