@@ -103,7 +103,12 @@ export function ratingStars(rating: number): string {
  * Retorna a URL absoluta para responder ao review.
  * Trata URLs relativas que podem vir de alguns scrapers (ex: Reclame Aqui).
  */
-export function getReviewResponseUrl(review: { channel: string; url?: string }): string {
+export function getReviewResponseUrl(review: { channel: string; url?: string; external_id?: string }): string {
+  // Para Reclame Aqui, o formato /reclamacao/[ID]/ é o mais robusto e não depende de slugs de empresa
+  if (review.channel === 'reclame_aqui' && review.external_id) {
+    return `https://www.reclameaqui.com.br/reclamacao/${review.external_id}/`
+  }
+
   if (!review.url) return '#'
   
   // Se já for absoluta, retorna como está
@@ -120,9 +125,6 @@ export function getReviewResponseUrl(review: { channel: string; url?: string }):
     return `https://www.consumidor.gov.br${path}`
   }
 
-  // Fallback: se não for absoluta e não tiver regra, tenta prefixar com o canal se soubermos,
-  // mas por enquanto retorna o path original (que o browser tentará resolver relativo ao portal)
-  // O ideal é que todos os scrapers mandem absoluto, mas esse helper previne os casos conhecidos.
   return review.url
 }
 
