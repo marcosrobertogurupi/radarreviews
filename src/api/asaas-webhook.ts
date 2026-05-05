@@ -70,10 +70,10 @@ export async function handleAsaasWebhook(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
-  // Apenas POST
+  // Apenas POST — mas sempre retornar 200 para não pausar a fila do Asaas
   if (req.method !== 'POST') {
-    res.writeHead(405)
-    res.end('Method not allowed')
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: false, reason: 'Method not allowed' }))
     return
   }
 
@@ -86,19 +86,22 @@ export async function handleAsaasWebhook(
     payload = JSON.parse(raw)
   } catch {
     console.error('[asaas-webhook] JSON inválido recebido')
-    res.writeHead(400)
-    res.end('Invalid JSON')
+    // Sempre retornar 200 para não pausar a fila do Asaas
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: false, reason: 'Invalid JSON' }))
     return
   }
 
-  // Validar token de autenticação (opcional mas recomendado)
+  // Validar token de autenticação
+  // IMPORTANTE: Sempre retornar 200 mesmo com token inválido para não pausar a fila
   const webhookToken = getAsaasWebhookToken()
   if (webhookToken) {
     const receivedToken = req.headers['asaas-access-token'] as string
     if (receivedToken !== webhookToken) {
-      console.warn('[asaas-webhook] Token inválido recebido')
-      res.writeHead(401)
-      res.end('Unauthorized')
+      console.warn('[asaas-webhook] Token inválido recebido:', receivedToken?.slice(0, 8) + '...')
+      // Retornar 200 para não pausar a fila, mas NÃO processar o evento
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, reason: 'Token mismatch - event ignored' }))
       return
     }
   }
