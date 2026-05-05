@@ -18,10 +18,12 @@ import TrialExpired from './pages/TrialExpired'
 import GenerateReviews from './pages/GenerateReviews'
 import Settings from './pages/Settings'
 import Support from './pages/Support'
+import Benchmarking from './pages/Benchmarking'
+import Widget from './pages/Widget'
 import { ToastProvider } from './components/Toast'
 import SupportFloatingButton from './components/SupportFloatingButton'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'benchmarking' | 'widget' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support'
 type AuthView = 'login' | 'signup'
 
 const NAV = [
@@ -29,6 +31,8 @@ const NAV = [
   { id: 'reviews'   as Page, label: 'Reviews',      icon: MessageSquare },
   { id: 'alerts'    as Page, label: 'Alertas',      icon: Bell },
   { id: 'copilot'   as Page, label: 'IA Copilot',   icon: Bot },
+  { id: 'benchmarking' as Page, label: 'Benchmarking', icon: BarChart2 },
+  { id: 'widget'    as Page, label: 'Widget Site',  icon: Layout },
   { id: 'generate'  as Page, label: 'Gerar Reviews', icon: Send },
   { id: 'reports'   as Page, label: 'Relatórios',    icon: FileText },
   { id: 'pricing'   as Page, label: 'Planos',        icon: CreditCard },
@@ -184,6 +188,8 @@ export default function App() {
     reviews:   <Reviews tenantId={tenantId} onNavigateCopilot={() => setPage('copilot')} />,
     alerts:    <Alerts tenantId={tenantId} />,
     copilot:   <Copilot session={session} />,
+    benchmarking: <Benchmarking tenantId={tenantId} />,
+    widget:    <Widget tenantId={tenantId} />,
     generate:  <GenerateReviews tenantId={tenantId} />,
     reports:   <Reports tenantId={tenantId} />,
     pricing:   <Pricing tenantTrial={tenantTrial} />,

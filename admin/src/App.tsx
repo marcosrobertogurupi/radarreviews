@@ -13,14 +13,12 @@ import Reviews from './pages/Reviews'
 import Alerts from './pages/Alerts'
 import Connectors from './pages/Connectors'
 import Tenants from './pages/Tenants'
-import Competitors from './pages/Competitors'
-import Widget from './pages/Widget'
 import Audit from './pages/Audit'
 import Plans from './pages/Plans'
 import SupportCenter from './pages/SupportCenter'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'competitors' | 'widget' | 'tenants' | 'plans' | 'audit' | 'support'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support'
 
 
 export interface TenantOption { id: string; name: string }
@@ -30,8 +28,6 @@ const NAV = [
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
   { id: 'alerts' as Page,      label: 'Alertas',     icon: Bell },
   { id: 'connectors' as Page,  label: 'Conectores',  icon: Radio },
-  { id: 'competitors' as Page, label: 'Benchmarking', icon: BarChart2 },
-  { id: 'widget' as Page,      label: 'Widgets',      icon: Layout },
   { id: 'tenants' as Page,     label: 'Assinantes',  icon: Building2 },
   { id: 'plans' as Page,       label: 'Planos',      icon: CreditCard },
   { id: 'audit' as Page,       label: 'Auditoria',   icon: ShieldCheck },
@@ -185,8 +181,6 @@ export default function App() {
     reviews:    <Reviews    {...filterProps} />,
     alerts:     <Alerts     {...filterProps} />,
     connectors: <Connectors />,
-    competitors: <Competitors />,
-    widget:     <Widget {...filterProps} />,
     tenants:    <Tenants />,
     plans:      <Plans />,
     audit:      <Audit />,
