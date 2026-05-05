@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { logger } from '../../lib/logger.js'
+import { AI_CONFIG } from '../../lib/ai-config.js'
 
 export interface MetaSentimentResult {
   label: 'positive' | 'negative' | 'neutral'
@@ -22,7 +23,7 @@ export async function analyzeMetaSentiment(text: string): Promise<MetaSentimentR
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({
-    model: `models/${AI_CONFIG.model}`,
+    model: AI_CONFIG.model,
     generationConfig: {
       responseMimeType: AI_CONFIG.responseMimeType,
       temperature: AI_CONFIG.temperature,

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SyncJob } from '../lib/supabase'
 import { formatDate } from '../lib/utils'
-import { History, ShieldAlert } from 'lucide-react'
+import { History, ShieldAlert, Activity, Ghost, ShieldCheck } from 'lucide-react'
 
 interface QuietFailure {
   connector: Connector
@@ -20,6 +20,8 @@ export default function Audit() {
   const [tab, setTab] = useState<'robots' | 'users'>('robots')
   const [filters, setFilters] = useState({ from: '', to: '', usuario: '', operacao: '', status: '' })
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [totalActiveCount, setTotalActiveCount] = useState(0)
+  const [totalErrorCount, setTotalErrorCount] = useState(0)
 
   useEffect(() => {
     loadAuditData()
@@ -107,6 +109,8 @@ export default function Audit() {
     setHealingConnectors(healing)
     setRecentJobs((jobs || []) as SyncJob[])
     setQuietFailures(qFailures)
+    setTotalActiveCount(allActive?.length || 0)
+    setTotalErrorCount(allErrors?.length || 0)
     setLoading(false)
     setRefreshing(false)
   }
@@ -152,17 +156,21 @@ export default function Audit() {
               <div className="kpi-value">{loading ? '...' : Math.max(0, 100 - ((errorConnectors || []).length * 5)).toFixed(0)}%</div>
             </div>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {/* Seção 1: Falhas Críticas */}
               <section>
                 <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <ShieldAlert size={20} color="#f87171" /> Falhas Críticas
                 </h3>
                 {errorConnectors.map(c => (
                   <div key={c.id} className="card" style={{ padding: 16, borderLeft: '4px solid #ef4444', marginBottom: 12 }}>
-                    <span style={{ fontWeight: 600 }}>{(c as any).monitored_businesses?.name}</span>
-                    <div style={{ fontSize: 13, color: '#fca5a5' }}>{c.error_message || 'Erro na extração'}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                      <span style={{ fontWeight: 600 }}>{(c as any).monitored_businesses?.name}</span>
+                      <span className="badge" style={{ fontSize: 10, background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>{c.channel.toUpperCase()}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#fca5a5', marginTop: 4 }}>{c.error_message || 'Erro na extração'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Em erro desde: {formatDate(c.first_error_at || c.updated_at || c.created_at)}</div>
                   </div>
                 ))}
                 {errorConnectors.length === 0 && !loading && (
@@ -171,31 +179,100 @@ export default function Audit() {
                   </div>
                 )}
               </section>
+
+              {/* Seção 2: Em Autocura */}
+              <section>
+                <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Activity size={20} color="#60a5fa" /> Canais em Autocura
+                </h3>
+                {healingConnectors.map(c => (
+                  <div key={c.id} className="card" style={{ padding: 16, borderLeft: '4px solid #3b82f6', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                      <span style={{ fontWeight: 600 }}>{(c as any).monitored_businesses?.name}</span>
+                      <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{c.channel.toUpperCase()}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#93c5fd', marginTop: 4 }}>{c.error_message || 'Instabilidade temporária'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Última tentativa: {formatDate(c.updated_at || c.created_at)}</div>
+                  </div>
+                ))}
+                {healingConnectors.length === 0 && !loading && (
+                  <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Nenhum canal em processo de autocura.
+                  </div>
+                )}
+              </section>
+
+              {/* Seção 3: Falhas Silenciosas */}
+              {quietFailures.length > 0 && (
+                <section>
+                  <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Ghost size={20} color="#fcd34d" /> Falhas Silenciosas (Inconsistência)
+                  </h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Canais ativos que não coletaram dados nos últimos ciclos.</p>
+                  {quietFailures.map(q => (
+                    <div key={q.connector.id} className="card" style={{ padding: 16, borderLeft: '4px solid #f59e0b', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                        <span style={{ fontWeight: 600 }}>{(q.connector as any).monitored_businesses?.name}</span>
+                        <span className="badge" style={{ fontSize: 10, background: 'rgba(245,158,11,0.1)', color: '#fbbf24' }}>{q.connector.channel.toUpperCase()}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: '#fde68a', marginTop: 4 }}>{q.consecutiveZeroes} ciclos consecutivos sem novos reviews.</div>
+                    </div>
+                  ))}
+                </section>
+              )}
             </div>
-            <div>
-              <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <History size={20} color="var(--accent)" /> Histórico de Sincronização
-              </h3>
-              <div className="card" style={{ padding: 0 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
-                      <th style={{ padding: 10, textAlign: 'left' }}>Data</th>
-                      <th style={{ padding: 10, textAlign: 'center' }}>Novos</th>
-                      <th style={{ padding: 10, textAlign: 'center' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentJobs.slice(0, 15).map(j => (
-                      <tr key={j.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: 10, color: 'var(--text-muted)' }}>{formatDate(j.started_at)}</td>
-                        <td style={{ padding: 10, textAlign: 'center' }}>{j.reviews_new}</td>
-                        <td style={{ padding: 10, textAlign: 'center', color: j.status === 'done' ? '#10b981' : '#ef4444' }}>{j.status}</td>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {/* Seção 4: Histórico de Sincronização */}
+              <section>
+                <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <History size={20} color="var(--accent)" /> Histórico Recente de Sincronização
+                </h3>
+                <div className="card" style={{ padding: 0 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
+                        <th style={{ padding: 10, textAlign: 'left' }}>Data</th>
+                        <th style={{ padding: 10, textAlign: 'center' }}>Novos</th>
+                        <th style={{ padding: 10, textAlign: 'center' }}>Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {recentJobs.slice(0, 15).map(j => (
+                        <tr key={j.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: 10, color: 'var(--text-muted)' }}>{formatDate(j.started_at)}</td>
+                          <td style={{ padding: 10, textAlign: 'center' }}>{j.reviews_new}</td>
+                          <td style={{ padding: 10, textAlign: 'center', color: j.status === 'done' ? '#10b981' : '#ef4444' }}>{j.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* Seção 5: Resumo de Integridade */}
+              <section>
+                <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ShieldCheck size={20} color="#10b981" /> Resumo de Integridade
+                </h3>
+                <div className="card" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 14, marginBottom: 12 }}>Status dos Conectores:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span>Críticos (Ação Manual)</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>{errorConnectors.length}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span>Instáveis (Autocura)</span>
+                      <span style={{ color: '#3b82f6', fontWeight: 600 }}>{healingConnectors.length}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span>Saudáveis</span>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>{Math.max(0, totalActiveCount)}</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </>

@@ -21,11 +21,13 @@ import type { JobResult } from '../types/connector.js'
 
 import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
 import { runMonthlyReportsJob } from '../lib/monthly-reports-job.js'
+import { checkSLA, runKnowledgeLearningJob, checkSupportInactivity } from '../lib/support-jobs.js'
 
 // Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
 const POLL_INTERVAL_MS = 120_000
 const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
 const MONTHLY_JOB_INTERVAL_MS = 4 * 3600_000 // 4 horas
+const SUPPORT_JOBS_INTERVAL_MS = 15 * 60_000 // 15 minutos
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -95,6 +97,11 @@ export async function startScheduler(): Promise<void> {
   await runMonthlyReportsJob().catch(err => {
     logger.error('[scheduler] Erro no job mensal na inicialização', { error: err })
   })
+  
+  // Jobs de Suporte
+  await checkSLA().catch(err => logger.error('[scheduler] Erro checkSLA', { err }))
+  await runKnowledgeLearningJob().catch(err => logger.error('[scheduler] Erro KB learning', { err }))
+  await checkSupportInactivity().catch(err => logger.error('[scheduler] Erro checkInactivity', { err }))
 
   // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
   async function runSyncCycle() {
@@ -118,6 +125,17 @@ export async function startScheduler(): Promise<void> {
       logger.error('[scheduler] Erro no ciclo de relatórios mensais', { error: err })
     })
   }, MONTHLY_JOB_INTERVAL_MS)
+
+  // Loop de Suporte — Rodar a cada 15 min
+  setInterval(async () => {
+    await Promise.all([
+      checkSLA(),
+      runKnowledgeLearningJob(),
+      checkSupportInactivity()
+    ]).catch(err => {
+      logger.error('[scheduler] Erro no ciclo de jobs de suporte', { error: err })
+    })
+  }, SUPPORT_JOBS_INTERVAL_MS)
 }
 
 /**

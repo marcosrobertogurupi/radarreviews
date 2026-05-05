@@ -30,3 +30,5 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     autoRefreshToken: false,
   },
 })
+
+export const supabaseAdmin = supabase

@@ -31,6 +31,9 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AuditoriaService } from '../services/auditoria.js'
+import { handleSupportPortal } from './support.js'
+import { handleSupportAdmin } from './supportAdmin.js'
+import { AI_CONFIG } from '../lib/ai-config.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -551,7 +554,7 @@ async function handleCopilot(
       
       const genAI = getGemini()
       const model = genAI.getGenerativeModel({
-        model: 'models/gemini-2.0-flash',
+        model: AI_CONFIG.model,
         generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
         systemInstruction: systemPrompt,
       })
@@ -1601,6 +1604,18 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(data))
   }
 
+  if (url.startsWith('/api/admin/support')) {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+    handleSupportAdmin(req, res, auth).catch(err => {
+      console.error('[support-admin-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
   if (url.startsWith('/api/auth/meta') || url.startsWith('/api/webhooks/meta')) {
     handleMetaWebhook(req, res).catch(err => {
       console.error('[meta-webhook] Erro:', err)
@@ -1624,6 +1639,18 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(404); res.end('Not found')
       }
     })()
+    return
+  }
+
+  if (url.startsWith('/api/support')) {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth) {
+      res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+    handleSupportPortal(req, res, auth).catch(err => {
+      console.error('[support-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
     return
   }
 

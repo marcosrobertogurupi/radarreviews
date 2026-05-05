@@ -356,7 +356,7 @@ async function analyzeWithGemini(
   text: string
 ): Promise<SentimentResult> {
   const model = genAI.getGenerativeModel({
-    model: `models/${AI_CONFIG.model}`,
+    model: AI_CONFIG.model,
     generationConfig: {
       responseMimeType: AI_CONFIG.responseMimeType,
       temperature: AI_CONFIG.temperature,

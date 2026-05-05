@@ -6,8 +6,9 @@
  */
 
 export const AI_CONFIG = {
-  model: 'gemini-1.5-flash',
-  temperature: 0.1, // Baixa temperatura para respostas mais precisas e menos criativas
+  model: 'models/gemini-flash-latest',
+  embeddingModel: 'models/gemini-embedding-001',
+  temperature: 0.1, 
   maxOutputTokens: 1024,
   responseMimeType: 'application/json'
 }

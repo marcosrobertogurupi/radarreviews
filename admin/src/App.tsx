@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
-  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard
+  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard, LifeBuoy
 
 } from 'lucide-react'
 import Login from './pages/Login'
@@ -17,9 +17,10 @@ import Competitors from './pages/Competitors'
 import Widget from './pages/Widget'
 import Audit from './pages/Audit'
 import Plans from './pages/Plans'
+import SupportCenter from './pages/SupportCenter'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'competitors' | 'widget' | 'tenants' | 'plans' | 'audit'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'competitors' | 'widget' | 'tenants' | 'plans' | 'audit' | 'support'
 
 
 export interface TenantOption { id: string; name: string }
@@ -34,7 +35,7 @@ const NAV = [
   { id: 'tenants' as Page,     label: 'Assinantes',  icon: Building2 },
   { id: 'plans' as Page,       label: 'Planos',      icon: CreditCard },
   { id: 'audit' as Page,       label: 'Auditoria',   icon: ShieldCheck },
-
+  { id: 'support' as Page,     label: 'Suporte',     icon: LifeBuoy },
 ]
 
 export default function App() {
@@ -189,7 +190,7 @@ export default function App() {
     tenants:    <Tenants />,
     plans:      <Plans />,
     audit:      <Audit />,
-
+    support:    <SupportCenter />,
   }
 
   return (

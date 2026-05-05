@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell,
-  Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText, User
+  Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText, User, LifeBuoy
 } from 'lucide-react'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
@@ -17,9 +17,11 @@ import Pricing from './pages/Pricing'
 import TrialExpired from './pages/TrialExpired'
 import GenerateReviews from './pages/GenerateReviews'
 import Settings from './pages/Settings'
+import Support from './pages/Support'
 import { ToastProvider } from './components/Toast'
+import SupportFloatingButton from './components/SupportFloatingButton'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing' | 'settings'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support'
 type AuthView = 'login' | 'signup'
 
 const NAV = [
@@ -30,6 +32,7 @@ const NAV = [
   { id: 'generate'  as Page, label: 'Gerar Reviews', icon: Send },
   { id: 'reports'   as Page, label: 'Relatórios',    icon: FileText },
   { id: 'pricing'   as Page, label: 'Planos',        icon: CreditCard },
+  { id: 'support'   as Page, label: 'Suporte',       icon: LifeBuoy },
   { id: 'settings'  as Page, label: 'Meu Perfil',    icon: User },
 ]
 
@@ -68,7 +71,14 @@ export default function App() {
       })
       .subscribe()
 
-    return () => { subscription.unsubscribe(); channel.unsubscribe() }
+    const navListener = () => setPage('support')
+    window.addEventListener('navigate_support', navListener)
+
+    return () => { 
+      subscription.unsubscribe(); 
+      channel.unsubscribe();
+      window.removeEventListener('navigate_support', navListener)
+    }
   }, [])
 
   // Verifica se o usuário logado já tem tenant provisionado e carrega tenant_id
@@ -178,6 +188,7 @@ export default function App() {
     reports:   <Reports tenantId={tenantId} />,
     pricing:   <Pricing tenantTrial={tenantTrial} />,
     settings:  <Settings />,
+    support:   <Support tenantId={tenantId} />,
   }
 
   return (
@@ -287,6 +298,7 @@ export default function App() {
       <main className="main-content">
         {pages[page]}
       </main>
+      <SupportFloatingButton />
       </div>
     </ToastProvider>
   )

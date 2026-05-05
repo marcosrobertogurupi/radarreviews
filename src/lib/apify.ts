@@ -3,6 +3,10 @@ import { logApiUsage } from './usage.js'
 
 const getApifyToken = () => process.env['APIFY_TOKEN']
 
+// Limites globais para evitar consumo excessivo de créditos
+const DEFAULT_TIMEOUT_SECS = 180 // 3 minutos
+const DEFAULT_MEMORY_MB = 256    // 256MB é suficiente para scrapers simples
+
 export interface ApifyContext {
   tenant_id: string
   connector_id?: string
@@ -18,6 +22,20 @@ export interface ApifyInstagramComment {
 }
 
 /**
+ * Aborta uma execução na Apify para parar cobrança
+ */
+async function abortRun(runId: string) {
+  const token = getApifyToken()
+  if (!token) return
+  try {
+    await axios.post(`https://api.apify.com/v2/actor-runs/${runId}/abort?token=${token}`)
+    console.log(`[Apify] Execução ${runId} abortada com sucesso (Timeout/Segurança).`)
+  } catch (err) {
+    console.error(`[Apify] Falha ao abortar execução ${runId}:`, err)
+  }
+}
+
+/**
  * Chama a Apify para coletar comentários recentes de um perfil do Instagram
  */
 export async function fetchInstagramComments(username: string, limit = 50, ctx?: ApifyContext): Promise<ApifyInstagramComment[]> {
@@ -30,14 +48,14 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
     // 1. Pegar os últimos posts usando a URL direta do perfil
     const profileUrl = `https://www.instagram.com/${username.replace('@', '')}/`
     const postsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
         directUrls: [profileUrl],
         resultsType: 'posts',
         resultsLimit: 5,
         addParentPost: true
       },
-      { timeout: 120000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
     const posts = postsResponse.data as any[]
@@ -52,12 +70,12 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 
     // 2. Pegar comentários desses posts usando o robô ESPECIALIZADO em comentários
     const commentsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
         directUrls: postUrls,
         resultsLimit: limit
       },
-      { timeout: 240000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
     const items = (commentsResponse.data as any[]).filter(item => !item.error && !item.requestErrorMessages)
@@ -70,7 +88,7 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
         service_name: 'apify',
         operation_type: 'instagram-comments',
         units_consumed: items.length,
-        estimated_cost_brl: 0.15 // Estimativa baseada em tempo de execução
+        estimated_cost_brl: 0.15 
       })
     }
 
@@ -106,9 +124,9 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
 
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       { companySlug, maxItems: limit, scrapeDetailedComplaints: true },
-      { timeout: 300000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
     const items = response.data as any[]
@@ -120,7 +138,7 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
         service_name: 'apify',
         operation_type: 'reclame-aqui',
         units_consumed: items.length,
-        estimated_cost_brl: 0.25 // Scraping do RA é mais custoso
+        estimated_cost_brl: 0.25 
       })
     }
 
@@ -155,44 +173,52 @@ export async function fetchTrustpilotReviews(
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
 
   const actorId = 'casper11515~trustpilot-reviews-scraper'
+  const timeoutSecs = 180 // Máximo 3 minutos para Trustpilot
   
   console.log(`[Apify] Chamando scraper para ${domain}...`)
 
+  let runId = ''
   try {
-    // Mapeamento de limite para páginas (cada página tem ~20 reviews)
     const endAtPageNumber = Math.ceil(limit / 20) || 1
 
     console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
     const runResponse = await axios.post(
-      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`,
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}&timeout=${timeoutSecs}&memory=${DEFAULT_MEMORY_MB}`,
       { 
         companyWebsite: sanitizedDomain, 
         endAtPageNumber,
         filterByDatePeriod: options.filterByDatePeriod || 'any date',
-        sortBy: options.sortBy || 'recency',
-        timeout: 300
+        sortBy: options.sortBy || 'recency'
       }
     )
 
-    const runId = runResponse.data.data.id
+    runId = runResponse.data.data.id
     const datasetId = runResponse.data.data.defaultDatasetId
     console.log(`[Apify] Robô iniciado (RunID: ${runId}). Aguardando conclusão...`)
 
-    // Polling simples (máximo 5 minutos)
+    // Polling rigoroso (máximo 4 minutos no total para dar margem ao timeout da Apify)
     let finished = false
     let attempts = 0
-    while (!finished && attempts < 60) {
+    const maxAttempts = 48 // 48 * 5s = 240s (4 min)
+    
+    while (!finished && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 5000))
       const statusCheck = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`)
       const status = statusCheck.data.data.status
-      if (status === 'SUCCEEDED') finished = true
-      else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+      
+      if (status === 'SUCCEEDED') {
+        finished = true
+      } else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
         throw new Error(`O robô falhou com status: ${status}`)
       }
       attempts++
     }
 
-    if (!finished) throw new Error('O robô demorou muito para responder (Timeout interno).')
+    if (!finished) {
+      // Tenta abortar o robô que ficou travado para economizar créditos
+      await abortRun(runId)
+      throw new Error('O robô demorou muito para responder e foi abortado por segurança.')
+    }
 
     console.log(`[Apify] Robô finalizado! Buscando dados do dataset ${datasetId}...`)
     const itemsResponse = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`)
@@ -210,7 +236,6 @@ export async function fetchTrustpilotReviews(
     }
 
     return items.map(item => {
-      // Normalização robusta de data
       let dateStr = item.reviewDate || item.createdAt || item.date || item.publishedDate || new Date().toISOString()
       try {
         const d = new Date(dateStr)
@@ -234,6 +259,10 @@ export async function fetchTrustpilotReviews(
       }
     })
   } catch (err: any) {
+    if (runId && !err.message.includes('abortado')) {
+      // Em caso de qualquer erro inesperado, tenta abortar para garantir
+      await abortRun(runId).catch(() => {})
+    }
     if (err.response?.data) {
       console.error(`[Apify] Detalhes do erro Trustpilot:`, JSON.stringify(err.response.data))
     }
@@ -249,9 +278,9 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: Ap
   if (!token) throw new Error('APIFY_TOKEN não configurado')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       { startUrls: [{ url: pageUrl }], maxResults: limit },
-      { timeout: 300000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
     if (ctx?.tenant_id) {
@@ -289,9 +318,9 @@ export async function fetchInstagramMentions(username: string, limit = 20, ctx?:
   const cleanUsername = username.replace('@', '')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       { usernames: [cleanUsername], limit },
-      { timeout: 300000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
     if (ctx?.tenant_id) {
@@ -325,9 +354,9 @@ export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: 
   const tag = hashtag.replace('#', '')
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${token}`,
+      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       { hashtags: [tag], resultsLimit: limit },
-      { timeout: 300000 }
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
     if (ctx?.tenant_id) {

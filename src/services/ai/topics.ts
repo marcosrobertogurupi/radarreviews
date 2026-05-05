@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { supabase } from '../../lib/supabase.js'
 import { logger } from '../../lib/logger.js'
+import { AI_CONFIG } from '../../lib/ai-config.js'
 
 /**
  * Serviço de análise de temas recorrentes usando Gemini
@@ -29,7 +30,7 @@ export async function processBusinessTopics(businessId: string): Promise<void> {
     const reviewsText = reviews.map(r => `[${r.sentiment}] ${r.body}`).join('\n---\n')
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const model = genAI.getGenerativeModel({ model: AI_CONFIG.model })
 
     const prompt = `
 Analise os seguintes reviews de clientes e extraia os 8 temas mais recorrentes mencionados.
