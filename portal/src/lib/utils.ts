@@ -104,20 +104,17 @@ export function ratingStars(rating: number): string {
  * Trata URLs relativas que podem vir de alguns scrapers (ex: Reclame Aqui).
  */
 export function getReviewResponseUrl(review: { channel: string; url?: string; external_id?: string }): string {
-  // Para Reclame Aqui, o formato /reclamacao/[ID]/ é o mais robusto e não depende de slugs de empresa
-  if (review.channel === 'reclame_aqui' && review.external_id) {
-    return `https://www.reclameaqui.com.br/reclamacao/${review.external_id}/`
-  }
-
   if (!review.url) return '#'
   
-  // Se já for absoluta, retorna como está
+  // Se já for absoluta (o que garantimos agora na ingestão), retorna como está
   if (review.url.startsWith('http')) return review.url
   
-  // Garantir que começa com barra para concatenação limpa se necessário
+  // Tratamento de URLs relativas (fallback para dados legados no banco)
   const path = review.url.startsWith('/') ? review.url : `/${review.url}`
 
   if (review.channel === 'reclame_aqui') {
+    // Tenta o formato padrão do www se não for absoluta. 
+    // Nota: A ingestão corrigida agora salva URLs absolutas incluindo o subdomínio correto (ex: green).
     return `https://www.reclameaqui.com.br${path}`
   }
   

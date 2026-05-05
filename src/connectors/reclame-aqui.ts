@@ -512,6 +512,15 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
     else if (s.includes('não resolvido') || s.includes('arquivado')) rating = 2
   }
 
+  // Tentar extrair subdomínio (www, green, hugme) do raw_url se disponível
+  let subdomain = 'www'
+  if (raw.url && raw.url.includes('.reclameaqui.com.br')) {
+    try {
+      const u = new URL(raw.url)
+      subdomain = u.hostname.split('.')[0] || 'www'
+    } catch { /* segue com www */ }
+  }
+
   const review: NormalizedReview = {
     tenant_id: connector.tenant_id,
     business_id: connector.business_id,
@@ -523,7 +532,10 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
     title: raw.title,
     sentiment: 'unanalyzed',
     tags: ['reclame_aqui', raw.status ?? 'sem_status'].filter(Boolean),
-    url: `https://www.reclameaqui.com.br/reclamacao/${external_id}/`,
+    // URL Robusta: usa o subdomínio detectado e o slug da empresa
+    url: raw.url && raw.url.startsWith('http') 
+      ? raw.url 
+      : `https://${subdomain}.reclameaqui.com.br/${connector.external_id}/${raw.url || raw.id}/`,
     raw_data: raw as unknown as Record<string, unknown>,
   }
 
