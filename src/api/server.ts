@@ -1214,6 +1214,66 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
   }
 }
 
+async function handleAnalyzeReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'POST')   { res.writeHead(405); res.end('Method not allowed'); return }
+
+  const reviewId = req.url?.split('/api/reviews/')[1]?.split('/analyze')[0]
+  if (!reviewId) { res.writeHead(400); res.end(JSON.stringify({ error: 'reviewId obrigatório' })); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const { data: review, error: getErr } = await supabaseAdmin
+      .from('reviews')
+      .select('*, monitored_businesses(tenant_id)')
+      .eq('id', reviewId)
+      .single()
+
+    if (getErr || !review) {
+      res.writeHead(404); res.end(JSON.stringify({ error: 'Review não encontrado' })); return
+    }
+
+    if (!['admin', 'operador'].includes(auth.perfil)) {
+      if (review.monitored_businesses?.tenant_id !== auth.tenantId) {
+        res.writeHead(403); res.end(JSON.stringify({ error: 'Sem permissão para analisar este review' })); return
+      }
+    }
+
+    // Import dinâmico para evitar problemas de ciclo/load
+    const { analyzeSentiment } = await import('../lib/sentiment.js')
+    
+    // Preparar objeto para análise (forçar estado unanalyzed)
+    const reviewToAnalyze = { ...review, sentiment: 'unanalyzed' }
+    const result = await analyzeSentiment(reviewToAnalyze)
+
+    const { error: updErr } = await supabaseAdmin
+      .from('reviews')
+      .update({
+        sentiment: result.sentiment,
+        dissatisfaction_score: result.dissatisfaction_score,
+        sentiment_topics: result.topics,
+        sentiment_summary: result.summary,
+        sentiment_suggestion: result.action_suggestion,
+        sentiment_result: result,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', reviewId)
+
+    if (updErr) throw updErr
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, result }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[analyze-review] Erro:', msg)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 async function handleRespondReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
@@ -1288,6 +1348,14 @@ const server = http.createServer(async (req, res) => {
   if (url.startsWith('/api/reviews/') && url.endsWith('/respond')) {
     handleRespondReview(req, res).catch(err => {
       console.error('[respond-review] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/reviews/') && url.endsWith('/analyze')) {
+    handleAnalyzeReview(req, res).catch(err => {
+      console.error('[analyze-review] Erro não tratado:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

@@ -30,6 +30,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
   const [suggestion, setSuggestion]   = useState('')
   const [responding, setResponding]   = useState(false)
   const [responseText, setResponseText] = useState('')
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
 
   async function load(silent = false) {
     if (!tenantId) return
@@ -145,6 +146,37 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
     setResponding(false)
   }
 
+  async function handleReanalyze(review: Review) {
+    if (analyzingIds.has(review.id)) return
+    
+    setAnalyzingIds(prev => new Set(prev).add(review.id))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(`${API_URL}/api/reviews/${review.id}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      })
+      const json = await res.json() as { ok?: boolean; error?: string; result?: any }
+      if (json.ok) {
+        toast('Análise concluída com sucesso!', 'success')
+        load(true)
+        if (selected?.id === review.id) {
+          setSelected(prev => prev ? { ...prev, ...json.result, sentiment: json.result.sentiment } : null)
+        }
+      } else {
+        toast(`Erro na análise: ${json.error}`, 'error')
+      }
+    } catch {
+      toast('Erro de conexão ao solicitar análise.', 'error')
+    }
+    setAnalyzingIds(prev => {
+      const next = new Set(prev)
+      next.delete(review.id)
+      return next
+    })
+  }
+
   const isActionable = (r: Review) => r.sentiment === 'negative' || r.sentiment === 'critical'
 
   function handleExport() {
@@ -216,7 +248,20 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
           {filtered.map(r => (
             <div key={r.id} className="card review-item" onClick={() => openDetail(r)}>
               <div className="review-header">
-                <span className={`badge badge-${r.sentiment}`}>{scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className={`badge badge-${r.sentiment}`}>{scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}</span>
+                  {r.sentiment === 'unanalyzed' && (
+                    <button 
+                      className="btn-ghost" 
+                      style={{ fontSize: 10, padding: '2px 8px', height: 'auto', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent)' }}
+                      onClick={(e) => { e.stopPropagation(); handleReanalyze(r) }}
+                      disabled={analyzingIds.has(r.id)}
+                    >
+                      {analyzingIds.has(r.id) ? <Loader size={10} style={{ animation: 'spin 0.7s linear infinite' }} /> : <RefreshCw size={10} />}
+                      Analisar com IA
+                    </button>
+                  )}
+                </div>
                 <div className="review-meta">
                   {r.tags?.includes('social_listening') && (
                     <span className="badge" style={{ background: 'rgba(99,102,241,0.15)', color: '#a5b4fc', borderColor: 'rgba(99,102,241,0.3)', fontSize: 10 }}>
@@ -277,6 +322,17 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
                 <span>{CHANNEL_ICONS[selected.channel]}</span>
                 <span style={{ fontSize: 16 }}>{CHANNEL_LABELS[selected.channel]}</span>
                 <span className={`badge badge-${selected.sentiment}`}>{scoreToEmoji(selected.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[selected.sentiment]}</span>
+                {selected.sentiment === 'unanalyzed' && (
+                  <button 
+                    className="btn btn-ghost" 
+                    style={{ fontSize: 11, padding: '4px 10px', color: 'var(--accent)' }}
+                    onClick={() => handleReanalyze(selected)}
+                    disabled={analyzingIds.has(selected.id)}
+                  >
+                    {analyzingIds.has(selected.id) ? <Loader size={12} style={{ animation: 'spin 0.7s linear infinite' }} /> : <RefreshCw size={12} />}
+                    Solicitar Análise da IA
+                  </button>
+                )}
               </div>
               <button className="modal-close" onClick={closeDetail}><X size={18} /></button>
             </div>
