@@ -99,6 +99,33 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(r) + '☆'.repeat(5 - r)
 }
 
+/**
+ * Retorna a URL absoluta para responder ao review.
+ * Trata URLs relativas que podem vir de alguns scrapers (ex: Reclame Aqui).
+ */
+export function getReviewResponseUrl(review: { channel: string; url?: string }): string {
+  if (!review.url) return '#'
+  
+  // Se já for absoluta, retorna como está
+  if (review.url.startsWith('http')) return review.url
+  
+  // Garantir que começa com barra para concatenação limpa se necessário
+  const path = review.url.startsWith('/') ? review.url : `/${review.url}`
+
+  if (review.channel === 'reclame_aqui') {
+    return `https://www.reclameaqui.com.br${path}`
+  }
+  
+  if (review.channel === 'consumidor_gov') {
+    return `https://www.consumidor.gov.br${path}`
+  }
+
+  // Fallback: se não for absoluta e não tiver regra, tenta prefixar com o canal se soubermos,
+  // mas por enquanto retorna o path original (que o browser tentará resolver relativo ao portal)
+  // O ideal é que todos os scrapers mandem absoluto, mas esse helper previne os casos conhecidos.
+  return review.url
+}
+
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api-production-24e1.up.railway.app'
 
 /**

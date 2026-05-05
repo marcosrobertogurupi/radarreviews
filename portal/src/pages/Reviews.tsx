@@ -4,7 +4,7 @@ import type { Review } from '../lib/supabase'
 import {
   CHANNEL_LABELS, CHANNEL_ICONS, SENTIMENT_LABELS, SENTIMENT_COLORS,
   TOPIC_LABELS, formatDate, timeAgo, scoreToEmoji, scoreToColor, ratingStars, API_URL,
-  downloadCSV,
+  downloadCSV, getReviewResponseUrl,
 } from '../lib/utils'
 import { X, ExternalLink, Lightbulb, Loader, MessageCircle, FileDown, RefreshCw } from 'lucide-react'
 import { useToast } from '../components/Toast'
@@ -275,7 +275,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
                   <span>{timeAgo(r.published_at)}</span>
                   {r.url && (
                     <a 
-                      href={r.url} 
+                      href={getReviewResponseUrl(r)} 
                       target="_blank" 
                       rel="noopener noreferrer" 
                       onClick={(e) => e.stopPropagation()}
@@ -422,7 +422,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
             {/* Ações */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               {selected.url && (
-                <a href={selected.url} target="_blank" rel="noopener noreferrer" className="btn">
+                <a href={getReviewResponseUrl(selected)} target="_blank" rel="noopener noreferrer" className="btn">
                   <ExternalLink size={14} /> Ver Original
                 </a>
               )}

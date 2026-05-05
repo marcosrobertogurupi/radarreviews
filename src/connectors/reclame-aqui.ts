@@ -523,7 +523,11 @@ function normalize(raw: ReclameAquiComplaint, connector: ChannelConnector): Norm
     title: raw.title,
     sentiment: 'unanalyzed',
     tags: ['reclame_aqui', raw.status ?? 'sem_status'].filter(Boolean),
-    ...(raw.url ? { url: raw.url } : {}),
+    ...(raw.url ? { 
+      url: raw.url.startsWith('http') 
+        ? raw.url 
+        : `${BASE_URL}${raw.url.startsWith('/') ? '' : '/'}${raw.url}` 
+    } : {}),
     raw_data: raw as unknown as Record<string, unknown>,
   }
 
