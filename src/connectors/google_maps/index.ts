@@ -148,6 +148,7 @@ function normalizeOld(raw: any, connector: ChannelConnector): NormalizedReview {
     author_name: raw.author_name || 'Anônimo',
     rating: raw.rating,
     sentiment: 'unanalyzed',
+    url: `https://www.google.com/maps/place/?q=place_id:${connector.external_id}`,
     raw_data: raw
   }
 }
@@ -165,6 +166,7 @@ function normalizeNew(raw: any, connector: ChannelConnector): NormalizedReview {
     author_name: raw.authorAttribution?.displayName || 'Anônimo',
     rating: raw.rating,
     sentiment: 'unanalyzed',
+    url: `https://www.google.com/maps/place/?q=place_id:${connector.external_id}`,
     raw_data: raw
   }
 }
