@@ -165,7 +165,8 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
           setSelected(prev => prev ? { ...prev, ...json.result, sentiment: json.result.sentiment } : null)
         }
       } else {
-        toast(`Erro na análise: ${json.error}`, 'error')
+        const msg = typeof json.error === 'object' ? (json.error as any).message || JSON.stringify(json.error) : (json.error || 'Erro desconhecido')
+        toast(`Erro na análise: ${msg}`, 'error')
       }
     } catch {
       toast('Erro de conexão ao solicitar análise.', 'error')

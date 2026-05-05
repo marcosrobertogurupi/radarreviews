@@ -1257,8 +1257,7 @@ async function handleAnalyzeReview(req: http.IncomingMessage, res: http.ServerRe
         sentiment_topics: result.topics,
         sentiment_summary: result.summary,
         sentiment_suggestion: result.action_suggestion,
-        sentiment_result: result,
-        updated_at: new Date().toISOString()
+        sentiment_result: result
       })
       .eq('id', reviewId)
 
