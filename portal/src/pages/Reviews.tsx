@@ -6,7 +6,7 @@ import {
   TOPIC_LABELS, formatDate, timeAgo, scoreToEmoji, scoreToColor, ratingStars, API_URL,
   downloadCSV,
 } from '../lib/utils'
-import { X, ExternalLink, Lightbulb, Loader, MessageCircle, FileDown } from 'lucide-react'
+import { X, ExternalLink, Lightbulb, Loader, MessageCircle, FileDown, RefreshCw } from 'lucide-react'
 import { useToast } from '../components/Toast'
 
 interface Props { tenantId: string; onNavigateCopilot: () => void }
