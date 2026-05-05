@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-
-import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info } from 'lucide-react'
+import type { Session } from '@supabase/supabase-js'
+import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info, Loader2, ExternalLink, Copy } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 
 
@@ -41,12 +41,16 @@ function fmt(n: number) {
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function Pricing({ tenantTrial }: { tenantTrial?: { plan: string; plan_status: string; trial_ends_at: string | null } | null }) {
+export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan: string; plan_status: string; trial_ends_at: string | null } | null; session?: Session | null }) {
   const [period,   setPeriod]   = useState<Period>('anual')
   const [pix,      setPix]      = useState(false)
   const [customCh, setCustomCh] = useState(3)
   const [modal,    setModal]    = useState<string | null>(null)
   const [plans,    setPlans]    = useState<any[]>([])
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutData, setCheckoutData] = useState<{ invoiceUrl?: string; pixQrCode?: string; pixCopyPaste?: string; subscriptionId?: string; status?: string } | null>(null)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function loadPlans() {
@@ -339,36 +343,161 @@ export default function Pricing({ tenantTrial }: { tenantTrial?: { plan: string;
         </span>
       </div>
 
-      {/* ── Modal ───────────────────────────────────────────────── */}
+      {/* ── Modal de Checkout ────────────────────────────────────── */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div className="modal-overlay" onClick={() => { setModal(null); setCheckoutData(null); setCheckoutError('') }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="modal-title">
-              Plano {modal} — Trial gratuito
-              <button className="modal-close" onClick={() => setModal(null)}>✕</button>
+              Plano {modal} — {inTrial ? 'Assinar agora' : 'Iniciar trial'}
+              <button className="modal-close" onClick={() => { setModal(null); setCheckoutData(null); setCheckoutError('') }}>✕</button>
             </div>
-            <div style={{ textAlign: 'center', padding: '20px 0 8px' }}>
-              <div style={{ fontSize: 52, marginBottom: 16 }}>🚀</div>
-              <h3 style={{ fontFamily: 'Outfit', fontSize: 20, fontWeight: 700, marginBottom: 10 }}>
-                Em breve!
-              </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13.5, lineHeight: 1.7, maxWidth: 340, margin: '0 auto' }}>
-                A integração de pagamentos com <strong>Asaas</strong> (PIX + cartão + boleto)
-                está sendo implementada. Entre em contato para liberar acesso antecipado.
-              </p>
-              <div style={{ marginTop: 20, padding: '14px 20px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10, fontSize: 13 }}>
-                📧 <strong>suporte@netservice.net.br</strong>
+
+            {/* Estado: Carregando checkout */}
+            {checkoutLoading && (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                <Loader2 size={36} className="spin" style={{ color: 'var(--accent)', marginBottom: 16 }} />
+                <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Preparando seu checkout...</p>
               </div>
-              {pix && (
-                <div style={{ marginTop: 10, padding: '10px 20px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, fontSize: 12, color: '#10b981' }}>
-                  Desconto PIX de {PIX_EXTRA}% será aplicado automaticamente no checkout
+            )}
+
+            {/* Estado: Erro */}
+            {checkoutError && !checkoutLoading && (
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+                <p style={{ color: '#ef4444', fontSize: 13.5, lineHeight: 1.7, marginBottom: 16 }}>
+                  {checkoutError}
+                </p>
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  onClick={() => handleCheckout(modal)}
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+
+            {/* Estado: Checkout pronto */}
+            {checkoutData && !checkoutLoading && !checkoutError && (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                <h3 style={{ fontFamily: 'Outfit', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                  Assinatura criada!
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
+                  Seu plano foi configurado com sucesso. Complete o pagamento para ativar.
+                </p>
+
+                {/* Link para fatura Asaas */}
+                {checkoutData.invoiceUrl && (
+                  <a
+                    href={checkoutData.invoiceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary"
+                    style={{ width: '100%', justifyContent: 'center', marginBottom: 12, textDecoration: 'none', display: 'flex', gap: 8 }}
+                  >
+                    <ExternalLink size={16} />
+                    Abrir página de pagamento
+                  </a>
+                )}
+
+                {/* PIX Copia e Cola */}
+                {checkoutData.pixCopyPaste && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ 
+                      padding: '12px 16px', background: 'rgba(16,185,129,0.08)', 
+                      border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, 
+                      fontSize: 12, color: '#10b981', marginBottom: 8,
+                      wordBreak: 'break-all'
+                    }}>
+                      <strong>PIX Copia e Cola:</strong>
+                      <p style={{ marginTop: 6, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)' }}>
+                        {checkoutData.pixCopyPaste.slice(0, 60)}...
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ width: '100%', justifyContent: 'center', gap: 8 }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(checkoutData.pixCopyPaste!)
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 2000)
+                      }}
+                    >
+                      <Copy size={14} />
+                      {copied ? 'Copiado!' : 'Copiar código PIX'}
+                    </button>
+                  </div>
+                )}
+
+                {/* QR Code PIX */}
+                {checkoutData.pixQrCode && (
+                  <div style={{ marginTop: 16, textAlign: 'center' }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                      Escaneie o QR Code com seu app de banco:
+                    </p>
+                    <img 
+                      src={`data:image/png;base64,${checkoutData.pixQrCode}`} 
+                      alt="QR Code PIX" 
+                      style={{ width: 200, height: 200, borderRadius: 8, border: '2px solid rgba(99,102,241,0.2)' }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ marginTop: 16, padding: '10px 16px', background: 'rgba(99,102,241,0.06)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Após o pagamento, seu plano será ativado automaticamente em instantes.
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Estado inicial: Confirmação */}
+            {!checkoutData && !checkoutLoading && !checkoutError && (
+              <div style={{ textAlign: 'center', padding: '20px 0 8px' }}>
+                <div style={{ fontSize: 52, marginBottom: 16 }}>💳</div>
+                <h3 style={{ fontFamily: 'Outfit', fontSize: 20, fontWeight: 700, marginBottom: 10 }}>
+                  Confirmar assinatura
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13.5, lineHeight: 1.7, maxWidth: 340, margin: '0 auto' }}>
+                  Pagamento processado via <strong>Asaas</strong> (PIX + cartão + boleto).
+                  {inTrial && ' Seu trial permanece ativo até a primeira cobrança.'}
+                </p>
+
+                <div style={{ margin: '20px 0', padding: '14px 20px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10, fontSize: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Plano</span>
+                    <strong>{modal}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Período</span>
+                    <strong>{PERIOD_OPTIONS.find(p => p.value === period)?.label}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Pagamento</span>
+                    <strong>{pix ? 'PIX' : 'Cartão de crédito'}</strong>
+                  </div>
+                  {totalDiscount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#10b981' }}>
+                      <span>Desconto total</span>
+                      <strong>-{totalDiscount}%</strong>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+                  onClick={() => handleCheckout(modal)}
+                >
+                  {pix ? '🔒 Gerar PIX' : '🔒 Ir para pagamento'} <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+
             <button
               className="btn btn-ghost"
-              style={{ width: '100%', justifyContent: 'center', marginTop: 20 }}
-              onClick={() => setModal(null)}
+              style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}
+              onClick={() => { setModal(null); setCheckoutData(null); setCheckoutError('') }}
             >
               Fechar
             </button>
@@ -377,4 +506,47 @@ export default function Pricing({ tenantTrial }: { tenantTrial?: { plan: string;
       )}
     </div>
   )
+
+  // ── Checkout handler ──────────────────────────────────────────
+  async function handleCheckout(planName: string) {
+    setCheckoutLoading(true)
+    setCheckoutError('')
+    setCheckoutData(null)
+
+    // Mapear nome visual → slug
+    const slugMap: Record<string, string> = {
+      'Básico': 'basico',
+      'Completo': 'completo',
+      'Custom': 'custom',
+      'Enterprise': 'enterprise',
+    }
+    const planSlug = slugMap[planName] || 'completo'
+
+    try {
+      const res = await fetch(`${API_URL}/api/subscription/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          plan: planSlug,
+          billingMethod: pix ? 'pix' : 'credit_card',
+          periodicity: period,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || `Erro ${res.status}`)
+      }
+
+      setCheckoutData(data)
+    } catch (err: any) {
+      setCheckoutError(err.message || 'Erro ao processar checkout. Tente novamente.')
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
 }

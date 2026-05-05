@@ -19,7 +19,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { startScheduler } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
-import { createAsaasCustomer, createAsaasSubscription } from '../lib/asaas.js'
+import { createAsaasCustomer, createAsaasSubscription, getAsaasSubscriptionPayments, getAsaasPixQrCode, getAsaasSubscription } from '../lib/asaas.js'
+import { handleAsaasWebhook } from './asaas-webhook.js'
 import { askClaude } from '../services/ai/claude.js'
 import { sendDirectResponse } from '../services/ai/responder.js'
 import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
@@ -1305,6 +1306,201 @@ async function handleRespondReview(req: http.IncomingMessage, res: http.ServerRe
   }
 }
 
+// ── Checkout de Assinatura ────────────────────────────────────────
+
+async function handleSubscriptionCheckout(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || !auth.tenantId) {
+    res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return
+  }
+
+  let body: {
+    plan?: string
+    billingMethod?: 'pix' | 'credit_card'
+    periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual'
+  }
+  try {
+    let raw = ''
+    for await (const chunk of req) raw += chunk
+    body = JSON.parse(raw)
+  } catch {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
+  }
+
+  const { plan = 'completo', billingMethod = 'pix', periodicity = 'trimestral' } = body
+
+  try {
+    // 1. Buscar dados do tenant
+    const { data: tenant, error: tErr } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, asaas_customer_id, asaas_subscription_id, admin_email')
+      .eq('id', auth.tenantId)
+      .single()
+
+    if (tErr || !tenant) {
+      res.writeHead(404); res.end(JSON.stringify({ error: 'Tenant não encontrado' })); return
+    }
+
+    // 2. Buscar preço do plano
+    const { data: planData } = await supabaseAdmin
+      .from('plans')
+      .select('slug, price_monthly')
+      .eq('slug', plan)
+      .maybeSingle()
+
+    const basePrice = planData?.price_monthly ?? 139
+
+    // Descontos por periodicidade
+    const periodDiscounts: Record<string, number> = { monthly: 0, trimestral: 0.05, semestral: 0.10, anual: 0.20 }
+    const periodDiscount = periodDiscounts[periodicity] || 0
+    const pixDiscountMult = billingMethod === 'pix' ? 0.95 : 1
+    const finalPrice = Number((basePrice * (1 - periodDiscount) * pixDiscountMult).toFixed(2))
+
+    // 3. Criar ou reusar customer no Asaas
+    let customerId = tenant.asaas_customer_id
+    if (!customerId) {
+      const { data: userData } = await supabaseAdmin
+        .from('tenant_users')
+        .select('user_id')
+        .eq('tenant_id', auth.tenantId)
+        .single()
+
+      const userEmail = tenant.admin_email || auth.email || ''
+      const customer = await createAsaasCustomer({
+        name: tenant.name,
+        email: userEmail,
+        cpfCnpj: '', // Será preenchido pelo checkout do Asaas
+      })
+      customerId = customer.id
+
+      await supabaseAdmin
+        .from('tenants')
+        .update({ asaas_customer_id: customerId })
+        .eq('id', auth.tenantId)
+    }
+
+    // 4. Se já tem assinatura ativa, retornar dados dela
+    if (tenant.asaas_subscription_id) {
+      const existingSub = await getAsaasSubscription(tenant.asaas_subscription_id)
+      if (existingSub && existingSub.status === 'ACTIVE') {
+        // Buscar cobranças pendentes para gerar PIX/link
+        const payments = await getAsaasSubscriptionPayments(tenant.asaas_subscription_id)
+        const pendingPayment = payments?.data?.find((p: any) => p.status === 'PENDING')
+
+        let pixData = null
+        if (pendingPayment && billingMethod === 'pix') {
+          pixData = await getAsaasPixQrCode(pendingPayment.id)
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          subscriptionId: tenant.asaas_subscription_id,
+          status: existingSub.status,
+          invoiceUrl: pendingPayment?.invoiceUrl || null,
+          pixQrCode: pixData?.encodedImage || null,
+          pixCopyPaste: pixData?.payload || null,
+        }))
+        return
+      }
+    }
+
+    // 5. Criar nova assinatura
+    const nextDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+    const subscription = await createAsaasSubscription({
+      customerId,
+      billingType: billingMethod === 'pix' ? 'PIX' : 'CREDIT_CARD',
+      value: finalPrice,
+      nextDueDate,
+      cycle: periodicity === 'anual' ? 'ANNUALLY' :
+             periodicity === 'semestral' ? 'SEMIANNUALLY' :
+             periodicity === 'trimestral' ? 'QUARTERLY' : 'MONTHLY',
+      description: `Plano ${plan.toUpperCase()} - Reputei (${periodicity})`,
+      externalReference: auth.tenantId,
+    })
+
+    // 6. Salvar no banco
+    await supabaseAdmin
+      .from('tenants')
+      .update({
+        asaas_subscription_id: subscription.id,
+        plan: plan,
+        billing_method: billingMethod,
+        subscription_status: 'trial',
+      })
+      .eq('id', auth.tenantId)
+
+    // 7. Retornar dados do checkout
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      ok: true,
+      subscriptionId: subscription.id,
+      invoiceUrl: subscription.invoiceUrl || null,
+      status: 'CREATED',
+    }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[checkout] Erro:', msg)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+// ── Status da assinatura ──────────────────────────────────────────
+
+async function handleSubscriptionStatus(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || !auth.tenantId) {
+    res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return
+  }
+
+  try {
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('plan, plan_status, subscription_status, billing_method, trial_ends_at, asaas_subscription_id')
+      .eq('id', auth.tenantId)
+      .single()
+
+    if (!tenant) {
+      res.writeHead(404); res.end(JSON.stringify({ error: 'Tenant não encontrado' })); return
+    }
+
+    // Se tem assinatura no Asaas, buscar status atualizado
+    let asaasStatus = null
+    if (tenant.asaas_subscription_id) {
+      asaasStatus = await getAsaasSubscription(tenant.asaas_subscription_id)
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      plan: tenant.plan,
+      planStatus: tenant.plan_status,
+      subscriptionStatus: tenant.subscription_status,
+      billingMethod: tenant.billing_method,
+      trialEndsAt: tenant.trial_ends_at,
+      hasSubscription: !!tenant.asaas_subscription_id,
+      asaasStatus: asaasStatus?.status || null,
+    }))
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 // ── Servidor ──────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -1379,6 +1575,32 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/plans') {
     handleGetPlans(req, res).catch(err => {
       console.error('[plans] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  // Webhook do Asaas (público — autenticação via token no header)
+  if (url === '/api/webhooks/asaas') {
+    handleAsaasWebhook(req, res).catch(err => {
+      console.error('[asaas-webhook] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(200); res.end(JSON.stringify({ ok: true })) }
+    })
+    return
+  }
+
+  // Checkout / status de assinatura para o portal do assinante
+  if (url === '/api/subscription/checkout' && req.method === 'POST') {
+    handleSubscriptionCheckout(req, res).catch(err => {
+      console.error('[checkout] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/subscription/status' && req.method === 'GET') {
+    handleSubscriptionStatus(req, res).catch(err => {
+      console.error('[subscription-status] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

@@ -193,7 +193,7 @@ export default function App() {
     widget:    <Widget tenantId={tenantId} />,
     generate:  <GenerateReviews tenantId={tenantId} />,
     reports:   <Reports tenantId={tenantId} />,
-    pricing:   <Pricing tenantTrial={tenantTrial} />,
+    pricing:   <Pricing tenantTrial={tenantTrial} session={session} />,
     settings:  <Settings />,
     support:   <Support tenantId={tenantId} />,
   }

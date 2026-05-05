@@ -83,3 +83,75 @@ export async function getAsaasPaymentLink(subscriptionId: string) {
     return null;
   }
 }
+
+/**
+ * Busca detalhes de uma assinatura no Asaas
+ */
+export async function getAsaasSubscription(subscriptionId: string) {
+  try {
+    const response = await asaas.get(`/subscriptions/${subscriptionId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[Asaas] Erro ao buscar assinatura:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Cancela uma assinatura no Asaas
+ */
+export async function cancelAsaasSubscription(subscriptionId: string) {
+  try {
+    const response = await asaas.delete(`/subscriptions/${subscriptionId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[Asaas] Erro ao cancelar assinatura:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.errors?.[0]?.description || 'Erro ao cancelar assinatura');
+  }
+}
+
+/**
+ * Busca cobranças (payments) de uma assinatura
+ */
+export async function getAsaasSubscriptionPayments(subscriptionId: string) {
+  try {
+    const response = await asaas.get(`/subscriptions/${subscriptionId}/payments`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[Asaas] Erro ao buscar cobranças:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Busca o QR Code PIX de uma cobrança específica
+ */
+export async function getAsaasPixQrCode(paymentId: string) {
+  try {
+    const response = await asaas.get(`/payments/${paymentId}/pixQrCode`);
+    return response.data; // { encodedImage, payload, expirationDate }
+  } catch (error: any) {
+    console.error('[Asaas] Erro ao gerar QR Code PIX:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Busca a URL da fatura (invoice) de uma cobrança
+ */
+export async function getAsaasInvoiceUrl(paymentId: string) {
+  try {
+    const response = await asaas.get(`/payments/${paymentId}/invoiceUrl`);
+    return response.data; // { invoiceUrl }
+  } catch (error: any) {
+    console.error('[Asaas] Erro ao buscar invoice URL:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+/**
+ * Token de autenticação do webhook Asaas (configurado no painel Asaas)
+ */
+export function getAsaasWebhookToken(): string {
+  return process.env.ASAAS_WEBHOOK_TOKEN || '';
+}
