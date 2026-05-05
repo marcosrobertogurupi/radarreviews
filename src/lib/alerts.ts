@@ -111,13 +111,18 @@ export async function checkAlerts(
 
   if (events.length === 0) return
 
-  // Inserir alert_events em lote
-  const { error: insertError } = await supabase.from('alert_events').insert(events)
+  // Inserir alert_events em lote e capturar os registros inseridos (para ter os IDs)
+  const { data: insertedEvents, error: insertError } = await supabase
+    .from('alert_events')
+    .insert(events)
+    .select()
 
   if (insertError) {
     logger.warn('[alerts] Falha ao inserir alert_events', { error: insertError.message })
     return
   }
+
+  if (!insertedEvents || insertedEvents.length === 0) return
 
   // Disparar webhooks para regras que têm notify_webhook configurado
   const rulesById = new Map((rules as AlertRule[]).map(r => [r.id, r]))
@@ -130,11 +135,13 @@ export async function checkAlerts(
     .eq('id', tenantId)
     .single()
 
-  for (const event of events) {
+  for (const event of insertedEvents) {
     const rule = rulesById.get(event.rule_id)
     // Se a regra diz para notificar, usamos o webhook da regra ou o padrão de assinantes
     const webhookUrl = rule?.notify_webhook || process.env['N8N_SUBSCRIBER_ALERTS_WEBHOOK']
     
+    // Corrigido: Dispara se tiver webhookUrl E (notify_email OU notify_webhook_bool)
+    // Usamos notify_email como flag geral de "quer receber alertas externos"
     if (webhookUrl && rule?.notify_email) {
       // Verificar Horário de Silêncio
       if (isQuietTime(rule) && (event.detail.urgency_level as string) !== 'urgente') {
@@ -149,13 +156,24 @@ export async function checkAlerts(
         subscriber_whatsapp: tenant?.admin_whatsapp || '',
         subscriber_email: tenant?.admin_email || '',
       }
-      await fireWebhook(webhookUrl, event, rule, extraData).catch(err => {
+
+      try {
+        await fireWebhook(webhookUrl, event, rule, extraData)
+        
+        // Registrar que foi notificado com sucesso
+        await supabase
+          .from('alert_events')
+          .update({ notified: true })
+          .eq('id', event.id)
+          
+        logger.info('[alerts] Evento marcado como notificado', { event_id: event.id })
+      } catch (err) {
         logger.warn('[alerts] Falha ao disparar webhook', {
           rule_id: rule.id,
           webhook_url: webhookUrl,
           error: err instanceof Error ? err.message : String(err),
         })
-      })
+      }
     }
   }
 }
