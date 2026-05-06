@@ -2,6 +2,7 @@ import http from 'node:http'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
 import nodemailer from 'nodemailer'
+import dns from 'node:dns/promises'
 
 function json(res: http.ServerResponse, status: number, data: any) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -237,8 +238,18 @@ export async function handleProspectAdmin(
             throw new Error('Configurações de SMTP ausentes no .env (SMTP_HOST, SMTP_USER, SMTP_PASS)')
           }
 
+          let resolvedHost = smtpHost
+          try {
+            const addresses = await dns.resolve4(smtpHost)
+            if (addresses && addresses.length > 0) {
+              resolvedHost = addresses[0]
+            }
+          } catch (dnsErr) {
+            console.warn('[prospectAdmin] Falha ao resolver DNS para IPv4, usando host original:', dnsErr)
+          }
+
           const transporter = nodemailer.createTransport({
-            host: smtpHost,
+            host: resolvedHost,
             port: smtpPort,
             secure: false, // Sem SSL/TLS direto
             ignoreTLS: true, // Força texto puro e ignora negociação de STARTTLS
@@ -250,7 +261,6 @@ export async function handleProspectAdmin(
             connectionTimeout: 8000, // Timeout de 8s caso a nuvem bloqueie a porta de saída
             greetingTimeout: 8000,
             socketTimeout: 8000,
-            family: 4, // Força conexão via IPv4, evitando falha ENETUNREACH de IPv6 na Railway
             tls: {
               rejectUnauthorized: false
             }
