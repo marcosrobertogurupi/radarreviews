@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useToast } from '../components/Toast'
 import {
   Target, Users, Send, CheckCircle, AlertOctagon, HelpCircle,
   Play, Check, Edit3, Trash2, Mail, MessageSquare, ExternalLink, Loader2, ArrowRight
@@ -111,6 +112,7 @@ const SEGMENT_NAMES: Record<string, { label: string; priority: 'alta' | 'media';
 }
 
 export default function Prospects() {
+  const { toast } = useToast()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [selectedCampId, setSelectedCampId] = useState('')
   const [leads, setLeads] = useState<Lead[]>([])
@@ -289,45 +291,47 @@ export default function Prospects() {
 
       const resData = await response.json()
       if (resData.error) throw new Error(resData.error)
-
+ 
       setShowImportModal(false)
       setXmlText('')
       await loadCampaigns()
       if (resData.campaignId) {
         setSelectedCampId(resData.campaignId)
       }
+      toast('Campanha importada e leads gerados com sucesso!', 'success')
     } catch (err: any) {
-      alert(`Erro na importação: ${err.message}`)
+      toast(`Erro na importação: ${err.message}`, 'error')
     } finally {
       setImporting(false)
     }
   }
-
+ 
   function fallbackCopyText(text: string) {
     const textArea = document.createElement("textarea")
     textArea.value = text
-    
+     
     // Evitar scroll ou visualização indesejada do elemento temporário
     textArea.style.top = "0"
     textArea.style.left = "0"
     textArea.style.position = "fixed"
     textArea.style.opacity = "0"
-    
+     
     document.body.appendChild(textArea)
     textArea.focus()
     textArea.select()
-    
+     
     try {
       const successful = document.execCommand('copy')
       if (successful) {
         setCopiedPrompt(true)
+        toast('Prompt copiado para a área de transferência!', 'success')
         setTimeout(() => setCopiedPrompt(false), 2000)
       } else {
-        alert('Não foi possível copiar automaticamente. Selecione o texto e copie manualmente.')
+        toast('Selecione o texto e copie manualmente.', 'info')
       }
     } catch (err) {
       console.error('Fallback falhou:', err)
-      alert('Não foi possível copiar automaticamente. Selecione o texto e copie manualmente.')
+      toast('Selecione o texto e copie manualmente.', 'info')
     }
     
     document.body.removeChild(textArea)
@@ -339,6 +343,7 @@ export default function Prospects() {
         navigator.clipboard.writeText(generatedPromptText)
           .then(() => {
             setCopiedPrompt(true)
+            toast('Prompt copiado para a área de transferência!', 'success')
             setTimeout(() => setCopiedPrompt(false), 2000)
           })
           .catch(err => {
@@ -483,8 +488,10 @@ REQUISITOS ADICIONAIS:
       if (!response.ok) throw new Error('Erro ao salvar')
       setEditingLeadId(null)
       loadLeadsAndFollowups()
-    } catch (err) {
+      toast('Lead atualizado com sucesso!', 'success')
+    } catch (err: any) {
       console.error(err)
+      toast(`Erro ao salvar lead: ${err.message}`, 'error')
     }
   }
 
@@ -502,8 +509,10 @@ REQUISITOS ADICIONAIS:
       })
       if (!response.ok) throw new Error('Erro ao atualizar status')
       loadLeadsAndFollowups()
-    } catch (err) {
+      toast('Status do lead atualizado!', 'success')
+    } catch (err: any) {
       console.error(err)
+      toast(`Erro ao atualizar status: ${err.message}`, 'error')
     }
   }
 
@@ -521,8 +530,10 @@ REQUISITOS ADICIONAIS:
       })
       if (!response.ok) throw new Error('Erro ao cancelar')
       loadLeadsAndFollowups()
-    } catch (err) {
+      toast('Follow-up cancelado com sucesso!', 'success')
+    } catch (err: any) {
       console.error(err)
+      toast(`Erro ao cancelar follow-up: ${err.message}`, 'error')
     }
   }
 
@@ -591,23 +602,23 @@ REQUISITOS ADICIONAIS:
 
       const resData = await response.json()
       if (resData.error) throw new Error(resData.error)
-
-      alert(resData.message || 'Disparado com sucesso!')
+ 
+      toast(resData.message || 'Mensagem disparada com sucesso!', 'success')
       setShowPreviewModal(false)
       loadLeadsAndFollowups()
     } catch (err: any) {
-      alert(`Falha no envio: ${err.message}`)
+      toast(`Falha no envio: ${err.message}`, 'error')
     } finally {
       setSendingDispatch(false)
     }
   }
-
+ 
   // Disparar passo comercial (retrocompatível)
   async function handleDispatch(lead: Lead, step: number, channel: 'email' | 'whatsapp') {
     try {
       let text = ''
       let subject = ''
-
+ 
       if (channel === 'whatsapp') {
         text = step === 1 
           ? `Oi, ${lead.contact_name || 'Gestor'}! Sou Consultor da Reputei. Vi que a ${lead.company_name} tem nota ${lead.variables.nota_google || 'N/A'} no Google Maps. Oferecemos 30 dias grátis pra monitorar e evitar reclamações. Quer conhecer em 10 min?`
@@ -616,7 +627,7 @@ REQUISITOS ADICIONAIS:
         subject = `Reputação online da ${lead.company_name}`
         text = `Olá, ${lead.contact_name || 'Gestor'}. Represento a Reputei, plataforma de reputação online. Notamos oportunidades de melhorar suas avaliações no Google. Gostaria de 30 dias grátis de trial?`
       }
-
+ 
       const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/dispatch`, {
         method: 'POST',
@@ -632,14 +643,14 @@ REQUISITOS ADICIONAIS:
           subject
         })
       })
-
+ 
       const resData = await response.json()
       if (resData.error) throw new Error(resData.error)
-
-      alert(resData.message || 'Disparado com sucesso!')
+ 
+      toast(resData.message || 'Disparado com sucesso!', 'success')
       loadLeadsAndFollowups()
     } catch (err: any) {
-      alert(`Falha no envio: ${err.message}`)
+      toast(`Falha no envio: ${err.message}`, 'error')
     }
   }
 
