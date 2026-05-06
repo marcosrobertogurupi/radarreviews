@@ -14,7 +14,10 @@ export async function sendWhatsAppMessage(params: {
 
   try {
     // Formatar número para o padrão internacional (apenas números)
-    const formattedNumber = number.replace(/\D/g, '')
+    let formattedNumber = number.replace(/\D/g, '')
+    if (formattedNumber.length === 10 || formattedNumber.length === 11) {
+      formattedNumber = '55' + formattedNumber
+    }
 
     const url = `${baseUrl.replace(/\/+$/, '')}/send/text`
     
