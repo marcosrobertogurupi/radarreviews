@@ -155,7 +155,60 @@ export default function App() {
 
   function refresh() { window.dispatchEvent(new Event('refresh_data')) }
 
-  if (loadingSession) return <div style={{ height: '100vh', background: 'var(--bg-base)' }} />
+  if (loadingSession) {
+    return (
+      <div style={{
+        height: '100vh',
+        background: '#090a0f',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        color: '#ffffff',
+        gap: 20
+      }}>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 0.6; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1); }
+          }
+          .premium-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(99, 102, 241, 0.1);
+            border-top: 3px solid #6366f1;
+            border-right: 3px solid #818cf8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+          }
+          .premium-loading-text {
+            font-size: 16px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            color: #e2e8f0;
+            animation: pulse 2s ease-in-out infinite;
+            text-align: center;
+          }
+          .premium-loading-subtext {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: -8px;
+          }
+        `}</style>
+        <div className="premium-spinner" />
+        <div className="premium-loading-text">
+          Acessando painel do assinante. Aguarde...
+        </div>
+        <div className="premium-loading-subtext">📡 Carregando sua reputação inteligente...</div>
+      </div>
+    )
+  }
 
   if (!session) {
     if (authView === 'signup')
@@ -164,8 +217,60 @@ export default function App() {
   }
 
   // Sessão estabelecida mas ainda verificando tenant
-  if (hasTenant === null)
-    return <div style={{ height: '100vh', background: 'var(--bg-base)' }} />
+  if (hasTenant === null) {
+    return (
+      <div style={{
+        height: '100vh',
+        background: '#090a0f',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        color: '#ffffff',
+        gap: 20
+      }}>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 0.6; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1); }
+          }
+          .premium-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(99, 102, 241, 0.1);
+            border-top: 3px solid #6366f1;
+            border-right: 3px solid #818cf8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+          }
+          .premium-loading-text {
+            font-size: 16px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            color: #e2e8f0;
+            animation: pulse 2s ease-in-out infinite;
+            text-align: center;
+          }
+          .premium-loading-subtext {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: -8px;
+          }
+        `}</style>
+        <div className="premium-spinner" />
+        <div className="premium-loading-text">
+          Acessando painel do assinante. Aguarde...
+        </div>
+        <div className="premium-loading-subtext">📡 Carregando sua reputação inteligente...</div>
+      </div>
+    )
+  }
 
   // Usuário logado mas sem tenant (onboarding interrompido)
   if (!hasTenant)
