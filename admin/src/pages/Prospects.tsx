@@ -4,6 +4,7 @@ import {
   Target, Users, Send, CheckCircle, AlertOctagon, HelpCircle,
   Play, Check, Edit3, Trash2, Mail, MessageSquare, ExternalLink, Loader2, ArrowRight
 } from 'lucide-react'
+const API_URL = (import.meta.env.VITE_API_URL ?? 'https://reputei-api-production.up.railway.app').replace(/\/+$/, '')
 
 interface Campaign {
   id: string
@@ -258,7 +259,7 @@ export default function Prospects() {
       }
 
       // Enviar para API
-      const response = await fetch('/api/admin/prospects/import', {
+      const response = await fetch(`${API_URL}/api/admin/prospects/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -443,7 +444,7 @@ REQUISITOS ADICIONAIS:
   // Atualizar variáveis de forma inline
   async function handleSaveVariables(leadId: string) {
     try {
-      const response = await fetch(`/api/admin/prospects/leads/${leadId}`, {
+      const response = await fetch(`${API_URL}/api/admin/prospects/leads/${leadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ variables: editVars })
@@ -459,7 +460,7 @@ REQUISITOS ADICIONAIS:
   // Atualizar status do lead manualmente
   async function handleUpdateStatus(leadId: string, status: string) {
     try {
-      const response = await fetch(`/api/admin/prospects/leads/${leadId}`, {
+      const response = await fetch(`${API_URL}/api/admin/prospects/leads/${leadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
@@ -474,7 +475,7 @@ REQUISITOS ADICIONAIS:
   // Cancelar followup agendado
   async function handleCancelFollowup(fuId: string) {
     try {
-      const response = await fetch('/api/admin/prospects/followups/cancel', {
+      const response = await fetch(`${API_URL}/api/admin/prospects/followups/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: fuId })
@@ -502,7 +503,7 @@ REQUISITOS ADICIONAIS:
         text = `Olá, ${lead.contact_name || 'Gestor'}. Represento a Reputei, plataforma de reputação online. Notamos oportunidades de melhorar suas avaliações no Google. Gostaria de 30 dias grátis de trial?`
       }
 
-      const response = await fetch('/api/admin/prospects/dispatch', {
+      const response = await fetch(`${API_URL}/api/admin/prospects/dispatch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
