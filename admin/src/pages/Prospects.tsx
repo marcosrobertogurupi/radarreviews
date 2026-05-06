@@ -129,7 +129,14 @@ export default function Prospects() {
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [generatedPromptText, setGeneratedPromptText] = useState('')
   const [copiedPrompt, setCopiedPrompt] = useState(false)
-
+  const [templates, setTemplates] = useState<any[]>([])
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [previewLead, setPreviewLead] = useState<Lead | null>(null)
+  const [previewChannel, setPreviewChannel] = useState<'email' | 'whatsapp'>('whatsapp')
+  const [previewStep, setPreviewStep] = useState(1)
+  const [previewText, setPreviewText] = useState('')
+  const [previewSubject, setPreviewSubject] = useState('')
+  const [sendingDispatch, setSendingDispatch] = useState(false)
   useEffect(() => {
     loadCampaigns()
   }, [])
@@ -178,6 +185,14 @@ export default function Prospects() {
         .order('scheduled_at', { ascending: true })
       if (fErr) throw fErr
       setFollowups(fuData ?? [])
+
+      // Buscar templates da campanha
+      const { data: templatesData, error: tErr } = await supabase
+        .from('prospect_templates')
+        .select('*')
+        .eq('campaign_id', selectedCampId)
+      if (tErr) throw tErr
+      setTemplates(templatesData ?? [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
     } finally {
@@ -511,13 +526,88 @@ REQUISITOS ADICIONAIS:
     }
   }
 
-  // Disparar passo comercial
+  // Substituir variáveis do template
+  function replaceVariables(text: string, lead: Lead) {
+    if (!text) return ''
+    return text
+      .replace(/\[NOME_CONTATO\]/gi, lead.contact_name || 'Gestor')
+      .replace(/\[EMPRESA\]/gi, lead.company_name || '')
+      .replace(/\[CIDADE\]/gi, lead.city || '')
+      .replace(/\[NOTA_GOOGLE\]/gi, String(lead.variables?.nota_google ?? '—'))
+      .replace(/\[QTD_RECLAMACOES\]/gi, String(lead.variables?.qtd_reclamacoes ?? '0'))
+  }
+
+  // Abrir preview de disparo de canal
+  function openDispatchPreview(lead: Lead, step: number, channel: 'email' | 'whatsapp') {
+    const template = templates.find(t => t.segment_id === lead.segment_id && t.channel === channel)
+    let rawText = ''
+    let rawSubject = ''
+
+    if (template) {
+      rawText = template.body
+      rawSubject = template.subject || ''
+    } else {
+      if (channel === 'whatsapp') {
+        rawText = step === 1 
+          ? `Oi [NOME_CONTATO], tudo bem? Vi que a [EMPRESA] em [CIDADE] tem nota [NOTA_GOOGLE] no Google Maps. Oferecemos uma solução automatizada para monitorar e responder reviews negativos. Quer bater um papo de 10 min?`
+          : `Oi [NOME_CONTATO]! Só passando pra retomar nosso papo sobre a reputação da [EMPRESA].`
+      } else {
+        rawSubject = `Oportunidade de Reputação Online para a [EMPRESA]`
+        rawText = `Olá [NOME_CONTATO], sou da Reputei. Vi que a [EMPRESA] tem nota [NOTA_GOOGLE] no Google. Gostaria de 30 dias grátis de trial para melhorar suas avaliações?`
+      }
+    }
+
+    const formattedText = replaceVariables(rawText, lead)
+    const formattedSubject = replaceVariables(rawSubject, lead)
+
+    setPreviewLead(lead)
+    setPreviewChannel(channel)
+    setPreviewStep(step)
+    setPreviewText(formattedText)
+    setPreviewSubject(formattedSubject)
+    setShowPreviewModal(true)
+  }
+
+  // Confirmar e enviar do preview
+  async function handleConfirmDispatch() {
+    if (!previewLead) return
+    setSendingDispatch(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch(`${API_URL}/api/admin/prospects/dispatch`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
+        body: JSON.stringify({
+          lead_id: previewLead.id,
+          channel: previewChannel,
+          step: previewStep,
+          text: previewText,
+          subject: previewSubject
+        })
+      })
+
+      const resData = await response.json()
+      if (resData.error) throw new Error(resData.error)
+
+      alert(resData.message || 'Disparado com sucesso!')
+      setShowPreviewModal(false)
+      loadLeadsAndFollowups()
+    } catch (err: any) {
+      alert(`Falha no envio: ${err.message}`)
+    } finally {
+      setSendingDispatch(false)
+    }
+  }
+
+  // Disparar passo comercial (retrocompatível)
   async function handleDispatch(lead: Lead, step: number, channel: 'email' | 'whatsapp') {
     try {
       let text = ''
       let subject = ''
 
-      // Mock templates para frontend se os do banco não estiverem carregados localmente
       if (channel === 'whatsapp') {
         text = step === 1 
           ? `Oi, ${lead.contact_name || 'Gestor'}! Sou Consultor da Reputei. Vi que a ${lead.company_name} tem nota ${lead.variables.nota_google || 'N/A'} no Google Maps. Oferecemos 30 dias grátis pra monitorar e evitar reclamações. Quer conhecer em 10 min?`
@@ -961,7 +1051,7 @@ REQUISITOS ADICIONAIS:
 
                           {/* WhatsApp Automático */}
                           <button
-                            onClick={() => handleDispatch(lead, 1, 'whatsapp')}
+                            onClick={() => openDispatchPreview(lead, 1, 'whatsapp')}
                             className="btn btn-sm btn-ghost"
                             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6 }}
                           >
@@ -970,7 +1060,7 @@ REQUISITOS ADICIONAIS:
 
                           {/* E-mail Automático */}
                           <button
-                            onClick={() => handleDispatch(lead, 2, 'email')}
+                            onClick={() => openDispatchPreview(lead, 2, 'email')}
                             className="btn btn-sm btn-ghost"
                             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6 }}
                           >
@@ -1163,6 +1253,102 @@ REQUISITOS ADICIONAIS:
                     <ExternalLink size={16} /> Copiar Prompt
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Preview de Envio */}
+      {showPreviewModal && previewLead && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 28, width: 550, maxWidth: '95%', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: previewChannel === 'whatsapp' ? '#4ade80' : '#818cf8' }}>
+                {previewChannel === 'whatsapp' ? <MessageSquare size={20} /> : <Mail size={20} />} 
+                Visualizar Envio ({previewChannel === 'whatsapp' ? 'WhatsApp' : 'E-mail'} - P{previewStep})
+              </h3>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 24, cursor: 'pointer', outline: 'none' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 8, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 13 }}>🏢 <strong>Empresa:</strong> {previewLead.company_name}</div>
+              <div style={{ fontSize: 13 }}>👤 <strong>Decisor:</strong> {previewLead.contact_name || 'Gestor'}</div>
+              <div style={{ fontSize: 13 }}>📞 <strong>Destino:</strong> {previewChannel === 'whatsapp' ? previewLead.phone : previewLead.email}</div>
+            </div>
+
+            {previewChannel === 'email' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Assunto do E-mail:</span>
+                <input
+                  type="text"
+                  value={previewSubject}
+                  onChange={e => setPreviewSubject(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Mensagem (Você pode editar antes de enviar):</span>
+              <textarea
+                value={previewText}
+                onChange={e => setPreviewText(e.target.value)}
+                style={{
+                  width: '100%',
+                  height: 180,
+                  background: 'var(--bg-main)',
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  padding: 12,
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  outline: 'none',
+                  resize: 'none'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="btn btn-ghost"
+                style={{ padding: '8px 16px', borderRadius: 8 }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDispatch}
+                disabled={sendingDispatch || !previewText.trim()}
+                className="btn btn-primary"
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: previewChannel === 'whatsapp' ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #818cf8, #6366f1)',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                {sendingDispatch ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Confirmar e Enviar
               </button>
             </div>
           </div>
