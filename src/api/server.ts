@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import { AuditoriaService } from '../services/auditoria.js'
 import { handleSupportPortal } from './support.js'
 import { handleSupportAdmin } from './supportAdmin.js'
+import { handleProspectAdmin } from './prospectAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
 
 // ── Clientes ────────────────────────────────────────────────────
@@ -1905,6 +1906,18 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (url.startsWith('/api/admin/prospects')) {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+    handleProspectAdmin(req, res, auth).catch(err => {
+      console.error('[prospect-admin-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
   if (url.startsWith('/api/auth/meta') || url.startsWith('/api/webhooks/meta')) {
     handleMetaWebhook(req, res).catch(err => {
       console.error('[meta-webhook] Erro:', err)
@@ -2035,8 +2048,120 @@ async function checkConnectorsHealth(): Promise<void> {
   }
 }
 
+async function processProspectFollowups(): Promise<void> {
+  try {
+    const { data: pendingFollowups, error } = await supabaseAdmin
+      .from('prospect_followup_queue')
+      .select('*, prospect_leads(*)')
+      .eq('status', 'pending')
+      .lte('scheduled_at', new Date().toISOString())
+
+    if (error || !pendingFollowups?.length) return
+
+    console.log(`[prospect-worker] Processando ${pendingFollowups.length} follow-ups agendados`)
+
+    for (const item of pendingFollowups) {
+      const lead = item.prospect_leads
+      if (!lead || ['responded', 'converted', 'failed'].includes(lead.status)) {
+        await supabaseAdmin
+          .from('prospect_followup_queue')
+          .update({ status: 'canceled' })
+          .eq('id', item.id)
+        continue
+      }
+
+      const { data: template } = await supabaseAdmin
+        .from('prospect_templates')
+        .select('*')
+        .eq('campaign_id', lead.campaign_id)
+        .eq('segment_id', lead.segment_id)
+        .eq('channel', item.channel === 'whatsapp' ? (item.step === 3 ? 'whatsapp_retomada' : 'whatsapp') : 'email')
+        .single()
+
+      if (!template) {
+        await supabaseAdmin
+          .from('prospect_followup_queue')
+          .update({ status: 'failed', error_message: 'Template não localizado' })
+          .eq('id', item.id)
+        continue
+      }
+
+      let bodyText = template.body
+      const vars = lead.variables || {}
+      const varMap: Record<string, string> = {
+        '[EMPRESA]': lead.company_name,
+        '[NOME]': lead.contact_name || 'Gestor',
+        '[SEU_NOME]': 'Consultor Reputei',
+        '[SEU_CONTATO]': 'contato@reputei.com.br',
+        '[NOTA_GOOGLE]': vars.nota_google ? String(vars.nota_google) : 'N/A',
+        '[QTD_RECLAMACOES]': vars.qtd_reclamacoes ? String(vars.qtd_reclamacoes) : '0'
+      }
+
+      for (const [token, value] of Object.entries(varMap)) {
+        bodyText = bodyText.replaceAll(token, value)
+      }
+
+      let success = false
+      let responseBody = ''
+
+      if (item.channel === 'whatsapp') {
+        const uazapiToken = process.env['UAZAPI_TOKEN']
+        const baseUrl = process.env['UAZAPI_BASE_URL'] ?? 'https://netservice.uazapi.com'
+
+        if (!lead.phone || !uazapiToken) {
+          responseBody = 'Simulação: Envio manual (UAZAPI não configurada)'
+          success = true
+        } else {
+          const res = await sendWhatsAppMessage({
+            baseUrl,
+            token: uazapiToken,
+            number: lead.phone,
+            text: bodyText
+          })
+          success = res.success
+          responseBody = res.success ? 'WhatsApp follow-up enviado' : (res.error || 'Erro UAZAPI')
+        }
+      } else {
+        success = true
+        responseBody = `Simulação: E-mail follow-up enviado para ${lead.email}`
+      }
+
+      await supabaseAdmin.from('prospect_dispatch_logs').insert({
+        lead_id: lead.id,
+        channel: item.channel,
+        step: item.step,
+        status: success ? 'success' : 'failed',
+        response_body: responseBody
+      })
+
+      await supabaseAdmin
+        .from('prospect_followup_queue')
+        .update({
+          status: success ? 'sent' : 'failed',
+          sent_at: success ? new Date().toISOString() : null,
+          error_message: success ? null : responseBody
+        })
+        .eq('id', item.id)
+
+      if (success && item.step === 2) {
+        const scheduledAt = new Date(Date.now() + 120 * 3600 * 1000).toISOString()
+        await supabaseAdmin.from('prospect_followup_queue').insert({
+          lead_id: lead.id,
+          channel: 'whatsapp',
+          step: 3,
+          scheduled_at: scheduledAt,
+          status: 'pending'
+        })
+      }
+    }
+  } catch (err: any) {
+    console.error('[prospect-worker] Erro no worker:', err.message)
+  }
+}
+
 // Rodar a cada 15 minutos
 const ESCALATION_INTERVAL_MS = 15 * 60 * 1000
+const PROSPECT_INTERVAL_MS = 5 * 60 * 1000
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[api] Servidor Copilot rodando em http://localhost:${PORT}`)
@@ -2054,6 +2179,12 @@ server.listen(PORT, '0.0.0.0', () => {
     checkConnectorsHealth()
     setInterval(checkConnectorsHealth, ESCALATION_INTERVAL_MS)
   }, 60_000)
+
+  // Worker de prospecção rodando a cada 5 minutos
+  setTimeout(() => {
+    processProspectFollowups()
+    setInterval(processProspectFollowups, PROSPECT_INTERVAL_MS)
+  }, 10_000)
 })
 
 export {}

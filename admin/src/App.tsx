@@ -4,8 +4,8 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
-  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard, LifeBuoy
-
+  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard, LifeBuoy,
+  Target
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -16,15 +16,17 @@ import Tenants from './pages/Tenants'
 import Audit from './pages/Audit'
 import Plans from './pages/Plans'
 import SupportCenter from './pages/SupportCenter'
+import Prospects from './pages/Prospects'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects'
 
 
 export interface TenantOption { id: string; name: string }
 
 const NAV = [
   { id: 'dashboard' as Page,   label: 'Dashboard',   icon: LayoutDashboard },
+  { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
   { id: 'alerts' as Page,      label: 'Alertas',     icon: Bell },
   { id: 'connectors' as Page,  label: 'Conectores',  icon: Radio },
@@ -178,6 +180,7 @@ export default function App() {
 
   const pages: Record<Page, ReactElement> = {
     dashboard:  <Dashboard  {...filterProps} />,
+    prospects:  <Prospects />,
     reviews:    <Reviews    {...filterProps} />,
     alerts:     <Alerts     {...filterProps} />,
     connectors: <Connectors />,
