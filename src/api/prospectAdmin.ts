@@ -248,10 +248,11 @@ export async function handleProspectAdmin(
             connectionTimeout: 8000, // Timeout de 8s caso a nuvem bloqueie a porta de saída
             greetingTimeout: 8000,
             socketTimeout: 8000,
+            family: 4, // Força conexão via IPv4, evitando falha ENETUNREACH de IPv6 na Railway
             tls: {
               rejectUnauthorized: false
             }
-          })
+          } as any)
 
           const info = await transporter.sendMail({
             from: `"Reputei" <${smtpUser}>`,
