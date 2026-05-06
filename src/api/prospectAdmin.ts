@@ -228,14 +228,18 @@ export async function handleProspectAdmin(
       } else {
         // E-mail real usando nodemailer com credenciais fornecidas
         try {
+          const smtpPort = Number(process.env.SMTP_PORT || '587')
           const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.netservice.net.br',
-            port: Number(process.env.SMTP_PORT || '587'),
-            secure: false, // true para 465, false para outras portas
+            port: smtpPort,
+            secure: smtpPort === 465, // true para 465, false para outras portas
             auth: {
               user: process.env.SMTP_USER || 'posvenda@netservice.net.br',
               pass: process.env.SMTP_PASS || 'gauderio036927'
             },
+            connectionTimeout: 8000, // Timeout de 8s caso a nuvem bloqueie a porta de saída
+            greetingTimeout: 8000,
+            socketTimeout: 8000,
             tls: {
               rejectUnauthorized: false
             }
