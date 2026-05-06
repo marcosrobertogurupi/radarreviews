@@ -240,7 +240,9 @@ export async function handleProspectAdmin(
           const transporter = nodemailer.createTransport({
             host: smtpHost,
             port: smtpPort,
-            secure: smtpPort === 465, // true para 465, false para outras portas
+            secure: false, // Sem SSL/TLS direto
+            ignoreTLS: true, // Força texto puro e ignora negociação de STARTTLS
+            requireTLS: false,
             auth: {
               user: smtpUser,
               pass: smtpPass
