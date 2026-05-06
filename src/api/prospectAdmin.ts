@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
+import nodemailer from 'nodemailer'
 
 function json(res: http.ServerResponse, status: number, data: any) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -225,9 +226,36 @@ export async function handleProspectAdmin(
           responseBody = result.success ? 'WhatsApp enviado via UAZAPI' : (result.error || 'Erro UAZAPI')
         }
       } else {
-        // E-mail mock/simulação
-        dispatchSuccess = true
-        responseBody = `Simulação: E-mail de prospecção enviado para ${lead.email}`
+        // E-mail real usando nodemailer com credenciais fornecidas
+        try {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.netservice.net.br',
+            port: Number(process.env.SMTP_PORT || '587'),
+            secure: false, // true para 465, false para outras portas
+            auth: {
+              user: process.env.SMTP_USER || 'posvenda@netservice.net.br',
+              pass: process.env.SMTP_PASS || 'gauderio036927'
+            },
+            tls: {
+              rejectUnauthorized: false
+            }
+          })
+
+          const info = await transporter.sendMail({
+            from: `"Reputei" <${process.env.SMTP_USER || 'posvenda@netservice.net.br'}>`,
+            to: lead.email,
+            subject: subject || 'Oportunidade Comercial',
+            text: text,
+            html: text.replace(/\n/g, '<br />')
+          })
+
+          dispatchSuccess = true
+          responseBody = `E-mail de prospecção enviado com sucesso: ID ${info.messageId}`
+        } catch (mailErr: any) {
+          console.error('[prospectAdmin] Erro SMTP:', mailErr)
+          dispatchSuccess = false
+          responseBody = `Erro SMTP: ${mailErr.message}`
+        }
       }
 
       // Salvar log de disparo
