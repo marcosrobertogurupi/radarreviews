@@ -122,6 +122,9 @@ export default function Prospects() {
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null)
   const [editVars, setEditVars] = useState<Record<string, any>>({})
   const [activeTab, setActiveTab] = useState<'leads' | 'queue'>('leads')
+  const [showPromptModal, setShowPromptModal] = useState(false)
+  const [generatedPromptText, setGeneratedPromptText] = useState('')
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
 
   useEffect(() => {
     loadCampaigns()
@@ -180,12 +183,21 @@ export default function Prospects() {
 
   // Parse XML para JSON e importar
   async function handleImportXML() {
-    if (!xmlText.trim()) return
+    let cleanXml = xmlText.trim()
+    
+    // Remover marcações de bloco de código Markdown se o usuário colou com as crases (```xml)
+    if (cleanXml.startsWith('```')) {
+      cleanXml = cleanXml.replace(/^```[a-zA-Z]*\s*/, '')
+      cleanXml = cleanXml.replace(/\s*```$/, '')
+    }
+    cleanXml = cleanXml.trim()
+
+    if (!cleanXml) return
     setImporting(true)
     try {
       // Parser XML simplificado em frontend (robusto o suficiente para o formato fornecido)
       const parser = new DOMParser()
-      const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
+      const xmlDoc = parser.parseFromString(cleanXml, 'text/xml')
 
       const campanhaEl = xmlDoc.querySelector('campanha')
       if (!campanhaEl) throw new Error('Elemento <campanha> não localizado.')
@@ -217,14 +229,23 @@ export default function Prospects() {
           const company_name = l.querySelector('empresa')?.textContent || ''
           const city = l.querySelector('cidade')?.textContent || ''
           const target_role = l.querySelector('cargo_alvo')?.textContent || ''
+          const contact_name = l.querySelector('contato')?.textContent || l.querySelector('contato_nome')?.textContent || ''
+          const phone = l.querySelector('telefone')?.textContent || l.querySelector('celular')?.textContent || ''
+          const email = l.querySelector('email')?.textContent || ''
+          const nota_google = parseFloat(l.querySelector('nota_google')?.textContent || '4.0') || 4.0
+          const qtd_reclamacoes = parseInt(l.querySelector('qtd_reclamacoes')?.textContent || '0') || 0
+
           leadsList.push({
             segment_id: segId,
             company_name,
+            contact_name,
+            phone,
+            email,
             city,
             target_role,
             variables: {
-              nota_google: 4.0,
-              qtd_reclamacoes: 0
+              nota_google,
+              qtd_reclamacoes
             }
           })
         })
@@ -257,6 +278,166 @@ export default function Prospects() {
     } finally {
       setImporting(false)
     }
+  }
+
+  function fallbackCopyText(text: string) {
+    const textArea = document.createElement("textarea")
+    textArea.value = text
+    
+    // Evitar scroll ou visualização indesejada do elemento temporário
+    textArea.style.top = "0"
+    textArea.style.left = "0"
+    textArea.style.position = "fixed"
+    textArea.style.opacity = "0"
+    
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    
+    try {
+      const successful = document.execCommand('copy')
+      if (successful) {
+        setCopiedPrompt(true)
+        setTimeout(() => setCopiedPrompt(false), 2000)
+      } else {
+        alert('Não foi possível copiar automaticamente. Selecione o texto e copie manualmente.')
+      }
+    } catch (err) {
+      console.error('Fallback falhou:', err)
+      alert('Não foi possível copiar automaticamente. Selecione o texto e copie manualmente.')
+    }
+    
+    document.body.removeChild(textArea)
+  }
+
+  function handleCopyPrompt() {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(generatedPromptText)
+          .then(() => {
+            setCopiedPrompt(true)
+            setTimeout(() => setCopiedPrompt(false), 2000)
+          })
+          .catch(err => {
+            console.error('Falha ao usar clipboard API, tentando fallback:', err)
+            fallbackCopyText(generatedPromptText)
+          })
+      } else {
+        fallbackCopyText(generatedPromptText)
+      }
+    } catch (err) {
+      console.error('Erro na cópia:', err)
+      fallbackCopyText(generatedPromptText)
+    }
+  }
+
+  function handleGeneratePromptForSegment(segId: string) {
+    const segInfo = SEGMENT_NAMES[segId]
+    if (!segInfo) return
+
+    const segmentLabel = segInfo.label
+    let painPoint = ""
+    let samplePitch = ""
+
+    switch (segId) {
+      case 'seg_plano_saude':
+        painPoint = "Dificuldade em portabilidade de carências, atendimento lento de corretores e concorrência forte. Notas baixas no Google Maps afastam potenciais compradores antes de ligar."
+        samplePitch = "Mencione o impacto das notas nas buscas locais por corretores de planos de saúde."
+        break
+      case 'seg_imobi':
+        painPoint = "Reclamações frequentes sobre devolução de caução, vistorias rígidas e atendimento na locação de imóveis. Imobiliárias perdem novos proprietários e locatários."
+        samplePitch = "Foque na perda de novos contratos de locação devido às reclamações não respondidas no Reclame Aqui e Google."
+        break
+      case 'seg_edu':
+        painPoint = "Críticas sobre burocracia de matrículas, suporte financeiro ou atendimento de professores que aparecem online e afastam novos alunos na fase do vestibular."
+        samplePitch = "Mencione a taxa de conversão de leads de vestibular impactada por reclamações de ex-alunos."
+        break
+      case 'seg_hotel':
+        painPoint = "Avaliações negativas sobre Wi-Fi lento, café da manhã ou limpeza do quarto em plataformas como Booking ou TripAdvisor, destruindo a reputação."
+        samplePitch = "Aborde o impacto direto nas reservas diretas de hóspedes que pesquisam antes de fechar."
+        break
+      case 'seg_saude':
+        painPoint = "Reclamações sobre atrasos em consultas e mau atendimento na recepção de clínicas e consultórios, espantando clientes de procedimentos particulares de alto ticket."
+        samplePitch = "Foque em blindar o faturamento de consultas particulares de alto valor."
+        break
+      case 'seg_auto':
+        painPoint = "Problemas de pós-venda, demora em peças de reposição e revisões com reclamações ativas que afastam compradores de seminovos."
+        samplePitch = "Aborde o diretor ou gerente de pós-venda ressaltando o custo de atração de novos clientes."
+        break
+      case 'seg_telecom':
+        painPoint = "Quedas de conexão, demora no suporte técnico local e cobranças consideradas indevidas. Provedores sofrem com cancelamento em massa (churn)."
+        samplePitch = "Mostre como as avaliações ruins ajudam os concorrentes a roubarem clientes de fibra óptica."
+        break
+      case 'seg_varejo':
+        painPoint = "Filas nos caixas, mau humor no atendimento físico e produtos indisponíveis que geram avaliações baixas e reduzem o tráfego físico à loja."
+        samplePitch = "Foque em aumentar o fluxo de pedestres e as vendas locais."
+        break
+    }
+
+    const promptText = `Atue como um Especialista em Inteligência Comercial e Outbound SaaS. Seu objetivo é estruturar uma campanha de prospecção fria gerando uma saída estritamente em formato XML válido de acordo com as especificações do sistema do Reputei.
+
+Você deve criar templates de abordagens comerciais e uma lista de 5 leads comerciais altamente qualificados e verossímeis no segmento de "${segmentLabel}".
+
+### 1. REGRAS DO SEGMENTO DE DOR
+- Identificador do Segmento (ID obrigatório): \`${segId}\`
+- Dor principal observada no mercado: ${painPoint}
+- Foco da Abordagem comercial: ${samplePitch}
+
+### 2. VARIÁVEIS DINÂMICAS QUE PODEM SER USADAS NOS TEMPLATES
+Seu texto deve conter placeholders que o nosso sistema preenche em tempo real:
+- [EMPRESA] -> Nome comercial da empresa prospectada.
+- [CIDADE] -> Cidade onde atua.
+- [NOTA_GOOGLE] -> Nota do Google Maps (Ex: 3.8).
+- [QTD_RECLAMACOES] -> Número de reclamações no Reclame Aqui (Ex: 12).
+- [NOME_CONTATO] -> Nome do decisor se houver (Ex: Carlos).
+
+---
+
+### 3. ESTRUTURA XML OBRIGATÓRIA (Siga rigidamente as tags abaixo)
+Gerar a resposta contendo exatamente este formato XML:
+
+<campanha id="outbound_${segId}_maio">
+  <meta>
+    <nome>Outbound Comercial - ${segmentLabel}</nome>
+    <descricao>Campanha fria focada nas principais dores do segmento de ${segmentLabel}.</descricao>
+  </meta>
+  <segmentos>
+    <segmento id="${segId}">
+      <templates>
+        <template canal="whatsapp">
+          <corpo>Oi [NOME_CONTATO], tudo bem? Sou da Reputei. Vi que a [EMPRESA] em [CIDADE] tem nota [NOTA_GOOGLE] no Google Maps. Ajudamos a monitorar e automatizar suas avaliações para atrair mais clientes. Vamos bater um papo rápido de 10 minutos?</corpo>
+        </template>
+        <template canal="email">
+          <assunto>Melhoria de avaliações online para a [EMPRESA]</assunto>
+          <corpo>Olá, [NOME_CONTATO]. Sou consultor da Reputei. Vimos que a [EMPRESA] em [CIDADE] tem nota [NOTA_GOOGLE] no Google. Podemos liberar 30 dias de teste grátis da nossa plataforma para ajudar a gerenciar seus reviews e impulsionar suas vendas locais. Faz sentido conversarmos?</corpo>
+        </template>
+      </templates>
+      <leads>
+        <lead>
+          <empresa>Nome de uma Empresa Real do segmento</empresa>
+          <cidade>Nome da Cidade</cidade>
+          <cargo_alvo>Sócio / Diretor / Gerente</cargo_alvo>
+          <contato>Nome de exemplo do contato</contato>
+          <telefone>11999998888</telefone>
+          <email>contato@empresaexemplo.com.br</email>
+          <nota_google>3.8</nota_google>
+          <qtd_reclamacoes>15</qtd_reclamacoes>
+        </lead>
+        <!-- Forneça mais 4 leads seguindo a mesma estrutura exata acima -->
+      </leads>
+    </segmento>
+  </segmentos>
+</campanha>
+
+---
+
+REQUISITOS ADICIONAIS:
+1. Retorne APENAS o bloco de código XML. Não insira introduções, observações nem comentários extras de markdown fora do bloco de código.
+2. Certifique-se de fechar todas as tags XML corretamente.`
+
+    setGeneratedPromptText(promptText)
+    setCopiedPrompt(false)
+    setShowPromptModal(true)
   }
 
   // Atualizar variáveis de forma inline
@@ -513,13 +694,46 @@ export default function Prospects() {
           <main style={{ minWidth: 0 }}>
             {/* Dicas Operacionais do Segmento */}
             {currentSeg && (
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 10, padding: 16, marginBottom: 20 }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  💡 Dicas Operacionais para {currentSeg.label}
-                </h3>
-                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {currentSeg.tips.map((tip, idx) => <li key={idx}>{tip}</li>)}
-                </ul>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 10, padding: 20, marginBottom: 20, alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 10px 0', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    💡 Dicas Operacionais para {currentSeg.label}
+                  </h3>
+                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    {currentSeg.tips.map((tip, idx) => <li key={idx}>{tip}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <button
+                    onClick={() => handleGeneratePromptForSegment(selectedSegId)}
+                    className="btn btn-primary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '12px 20px',
+                      borderRadius: 8,
+                      background: 'linear-gradient(135deg, #818cf8, #6366f1)',
+                      color: '#fff',
+                      border: 'none',
+                      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
+                      cursor: 'pointer',
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(99, 102, 241, 0.35)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'none'
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.25)'
+                    }}
+                  >
+                    <Target size={16} /> 🪄 Criar Prompt IA para {currentSeg.label}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -788,6 +1002,67 @@ export default function Prospects() {
                 style={{ padding: '8px 16px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 {importing ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Importar e Gerar Leads
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Visualizar / Copiar Prompt da IA */}
+      {showPromptModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 28, width: 700, maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#818cf8' }}>
+                <Target size={22} /> Prompt IA para {SEGMENT_NAMES[selectedSegId]?.label}
+              </h2>
+              <button
+                onClick={() => setShowPromptModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 24, cursor: 'pointer', outline: 'none' }}
+              >
+                &times;
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13.5, margin: '0 0 16px 0', lineHeight: 1.5 }}>
+              Copie o prompt detalhado abaixo e cole no ChatGPT, Claude ou similar para gerar automaticamente um arquivo XML de prospecção completo pronto para importação.
+            </p>
+            <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 10, padding: 16, fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-main)', whiteSpace: 'pre-wrap', marginBottom: 20, maxHeight: 350, textAlign: 'left' }}>
+              {generatedPromptText}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button
+                onClick={() => setShowPromptModal(false)}
+                className="btn btn-ghost"
+                style={{ padding: '10px 20px', borderRadius: 8, fontWeight: 600 }}
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleCopyPrompt}
+                className="btn btn-primary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 24px',
+                  borderRadius: 8,
+                  fontWeight: 600,
+                  background: copiedPrompt ? '#10b981' : 'linear-gradient(135deg, #818cf8, #6366f1)',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {copiedPrompt ? (
+                  <>
+                    <Check size={16} /> Prompt Copiado!
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink size={16} /> Copiar Prompt
+                  </>
+                )}
               </button>
             </div>
           </div>
