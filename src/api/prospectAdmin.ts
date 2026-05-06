@@ -229,13 +229,21 @@ export async function handleProspectAdmin(
         // E-mail real usando nodemailer com credenciais fornecidas
         try {
           const smtpPort = Number(process.env.SMTP_PORT || '587')
+          const smtpHost = process.env.SMTP_HOST || ''
+          const smtpUser = process.env.SMTP_USER || ''
+          const smtpPass = process.env.SMTP_PASS || ''
+
+          if (!smtpHost || !smtpUser || !smtpPass) {
+            throw new Error('Configurações de SMTP ausentes no .env (SMTP_HOST, SMTP_USER, SMTP_PASS)')
+          }
+
           const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST || 'smtp.netservice.net.br',
+            host: smtpHost,
             port: smtpPort,
             secure: smtpPort === 465, // true para 465, false para outras portas
             auth: {
-              user: process.env.SMTP_USER || 'posvenda@netservice.net.br',
-              pass: process.env.SMTP_PASS || 'gauderio036927'
+              user: smtpUser,
+              pass: smtpPass
             },
             connectionTimeout: 8000, // Timeout de 8s caso a nuvem bloqueie a porta de saída
             greetingTimeout: 8000,
@@ -246,7 +254,7 @@ export async function handleProspectAdmin(
           })
 
           const info = await transporter.sendMail({
-            from: `"Reputei" <${process.env.SMTP_USER || 'posvenda@netservice.net.br'}>`,
+            from: `"Reputei" <${smtpUser}>`,
             to: lead.email,
             subject: subject || 'Oportunidade Comercial',
             text: text,
