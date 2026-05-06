@@ -259,9 +259,13 @@ export default function Prospects() {
       }
 
       // Enviar para API
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/import`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
         body: JSON.stringify(payload)
       })
 
@@ -444,9 +448,13 @@ REQUISITOS ADICIONAIS:
   // Atualizar variáveis de forma inline
   async function handleSaveVariables(leadId: string) {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/leads/${leadId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
         body: JSON.stringify({ variables: editVars })
       })
       if (!response.ok) throw new Error('Erro ao salvar')
@@ -460,9 +468,13 @@ REQUISITOS ADICIONAIS:
   // Atualizar status do lead manualmente
   async function handleUpdateStatus(leadId: string, status: string) {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/leads/${leadId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
         body: JSON.stringify({ status })
       })
       if (!response.ok) throw new Error('Erro ao atualizar status')
@@ -475,9 +487,13 @@ REQUISITOS ADICIONAIS:
   // Cancelar followup agendado
   async function handleCancelFollowup(fuId: string) {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/followups/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
         body: JSON.stringify({ id: fuId })
       })
       if (!response.ok) throw new Error('Erro ao cancelar')
@@ -503,9 +519,13 @@ REQUISITOS ADICIONAIS:
         text = `Olá, ${lead.contact_name || 'Gestor'}. Represento a Reputei, plataforma de reputação online. Notamos oportunidades de melhorar suas avaliações no Google. Gostaria de 30 dias grátis de trial?`
       }
 
+      const { data: { session } } = await supabase.auth.getSession()
       const response = await fetch(`${API_URL}/api/admin/prospects/dispatch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
         body: JSON.stringify({
           lead_id: lead.id,
           channel,
