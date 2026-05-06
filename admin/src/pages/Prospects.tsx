@@ -122,6 +122,9 @@ export default function Prospects() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null)
   const [editVars, setEditVars] = useState<Record<string, any>>({})
+  const [editContactName, setEditContactName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editEmail, setEditEmail] = useState('')
   const [activeTab, setActiveTab] = useState<'leads' | 'queue'>('leads')
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [generatedPromptText, setGeneratedPromptText] = useState('')
@@ -455,7 +458,12 @@ REQUISITOS ADICIONAIS:
           'Content-Type': 'application/json',
           'Authorization': session ? `Bearer ${session.access_token}` : ''
         },
-        body: JSON.stringify({ variables: editVars })
+        body: JSON.stringify({
+          contact_name: editContactName,
+          phone: editPhone,
+          email: editEmail,
+          variables: editVars
+        })
       })
       if (!response.ok) throw new Error('Erro ao salvar')
       setEditingLeadId(null)
@@ -776,13 +784,69 @@ REQUISITOS ADICIONAIS:
                     <tr key={lead.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ fontWeight: 600 }}>{lead.company_name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                          {lead.contact_name || 'Decisor pendente'}
-                        </div>
+                        {editingLeadId === lead.id ? (
+                          <input
+                            type="text"
+                            placeholder="Nome do Decisor"
+                            value={editContactName}
+                            onChange={e => setEditContactName(e.target.value)}
+                            style={{
+                              width: '100%',
+                              background: 'var(--bg-main)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: 4,
+                              color: 'var(--text-main)',
+                              padding: '4px 8px',
+                              fontSize: 12,
+                              marginTop: 4
+                            }}
+                          />
+                        ) : (
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {lead.contact_name || 'Decisor pendente'}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        <div>{lead.phone || '—'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{lead.email || '—'}</div>
+                        {editingLeadId === lead.id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <input
+                              type="text"
+                              placeholder="Telefone"
+                              value={editPhone}
+                              onChange={e => setEditPhone(e.target.value)}
+                              style={{
+                                width: '100%',
+                                background: 'var(--bg-main)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 4,
+                                color: 'var(--text-main)',
+                                padding: '4px 8px',
+                                fontSize: 12
+                              }}
+                            />
+                            <input
+                              type="email"
+                              placeholder="E-mail"
+                              value={editEmail}
+                              onChange={e => setEditEmail(e.target.value)}
+                              style={{
+                                width: '100%',
+                                background: 'var(--bg-main)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 4,
+                                color: 'var(--text-main)',
+                                padding: '4px 8px',
+                                fontSize: 12
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div>{lead.phone || '—'}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{lead.email || '—'}</div>
+                          </>
+                        )}
                       </td>
                       <td style={{ padding: '14px 16px' }}>
                         <div>{lead.city || '—'}</div>
@@ -810,20 +874,35 @@ REQUISITOS ADICIONAIS:
                                 style={{ width: 60, background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 4, color: 'var(--text-main)', padding: '2px 4px' }}
                               />
                             </div>
-                            <button
-                              onClick={() => handleSaveVariables(lead.id)}
-                              className="btn btn-sm btn-primary"
-                              style={{ padding: '2px 6px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 2, alignSelf: 'flex-start' }}
-                            >
-                              <Check size={10} /> Salvar
-                            </button>
+                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                              <button
+                                onClick={() => handleSaveVariables(lead.id)}
+                                className="btn btn-sm btn-primary"
+                                style={{ padding: '2px 8px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 2 }}
+                              >
+                                <Check size={10} /> Salvar
+                              </button>
+                              <button
+                                onClick={() => setEditingLeadId(null)}
+                                className="btn btn-sm btn-ghost"
+                                style={{ padding: '2px 8px', fontSize: 11, background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             <div style={{ fontSize: 12 }}>⭐ Google: <strong style={{ color: 'var(--accent)' }}>{lead.variables.nota_google ?? '—'}</strong></div>
                             <div style={{ fontSize: 12 }}>⚠️ RA: <strong style={{ color: '#f43f5e' }}>{lead.variables.qtd_reclamacoes ?? '0'}</strong></div>
                             <button
-                              onClick={() => { setEditingLeadId(lead.id); setEditVars(lead.variables || {}) }}
+                              onClick={() => {
+                                setEditingLeadId(lead.id)
+                                setEditContactName(lead.contact_name || '')
+                                setEditPhone(lead.phone || '')
+                                setEditEmail(lead.email || '')
+                                setEditVars(lead.variables || {})
+                              }}
                               style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, padding: 0, textDecoration: 'underline', cursor: 'pointer', alignSelf: 'flex-start' }}
                             >
                               Editar
