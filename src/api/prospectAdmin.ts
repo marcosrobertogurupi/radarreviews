@@ -227,59 +227,43 @@ export async function handleProspectAdmin(
           responseBody = result.success ? 'WhatsApp enviado via UAZAPI' : (result.error || 'Erro UAZAPI')
         }
       } else {
-        // E-mail real usando nodemailer com credenciais fornecidas
+        // E-mail via n8n webhook (Railway bloqueia SMTP direto)
         try {
-          const smtpPort = Number(process.env.SMTP_PORT || '587')
-          const smtpHost = process.env.SMTP_HOST || ''
-          const smtpUser = process.env.SMTP_USER || ''
-          const smtpPass = process.env.SMTP_PASS || ''
+          const n8nWebhookUrl = process.env.N8N_EMAIL_WEBHOOK_URL || ''
 
-          if (!smtpHost || !smtpUser || !smtpPass) {
-            throw new Error('Configurações de SMTP ausentes no .env (SMTP_HOST, SMTP_USER, SMTP_PASS)')
+          if (!n8nWebhookUrl) {
+            throw new Error('N8N_EMAIL_WEBHOOK_URL não configurado nas variáveis de ambiente do Railway')
           }
 
-          let resolvedHost = smtpHost
-          try {
-            const addresses = await dns.resolve4(smtpHost)
-            if (addresses && addresses.length > 0) {
-              resolvedHost = addresses[0]
-            }
-          } catch (dnsErr) {
-            console.warn('[prospectAdmin] Falha ao resolver DNS para IPv4, usando host original:', dnsErr)
-          }
-
-          const transporter = nodemailer.createTransport({
-            host: resolvedHost,
-            port: smtpPort,
-            secure: false, // Sem SSL/TLS direto
-            ignoreTLS: true, // Força texto puro e ignora negociação de STARTTLS
-            requireTLS: false,
-            auth: {
-              user: smtpUser,
-              pass: smtpPass
-            },
-            connectionTimeout: 8000, // Timeout de 8s caso a nuvem bloqueie a porta de saída
-            greetingTimeout: 8000,
-            socketTimeout: 8000,
-            tls: {
-              rejectUnauthorized: false
-            }
-          } as any)
-
-          const info = await transporter.sendMail({
-            from: `"Reputei" <${smtpUser}>`,
+          const webhookPayload = {
             to: lead.email,
-            subject: subject || 'Oportunidade Comercial',
-            text: text,
-            html: text.replace(/\n/g, '<br />')
+            toName: lead.contact_name || lead.company_name,
+            subject: subject || 'Oportunidade Comercial - Reputei',
+            body: text,
+            bodyHtml: text.replace(/\n/g, '<br />'),
+            leadId: lead_id,
+            companyName: lead.company_name
+          }
+
+          const webhookResponse = await fetch(n8nWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(webhookPayload),
+            signal: AbortSignal.timeout(15000)
           })
 
+          if (!webhookResponse.ok) {
+            const errText = await webhookResponse.text()
+            throw new Error(`n8n retornou status ${webhookResponse.status}: ${errText}`)
+          }
+
+          const webhookResult = await webhookResponse.json() as any
           dispatchSuccess = true
-          responseBody = `E-mail de prospecção enviado com sucesso: ID ${info.messageId}`
+          responseBody = `E-mail enviado via n8n: ${webhookResult?.message || 'OK'}`
         } catch (mailErr: any) {
-          console.error('[prospectAdmin] Erro SMTP:', mailErr)
+          console.error('[prospectAdmin] Erro ao enviar via n8n webhook:', mailErr)
           dispatchSuccess = false
-          responseBody = `Erro SMTP: ${mailErr.message}`
+          responseBody = `Erro no envio de e-mail: ${mailErr.message}`
         }
       }
 
