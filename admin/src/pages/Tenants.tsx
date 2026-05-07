@@ -54,6 +54,12 @@ export default function Tenants() {
   // Edição de empresa específica
   const [editingBusiness, setEditingBusiness] = useState<Business | null>(null)
 
+  // Adição de nova empresa/filial
+  const [showNewBusinessModal, setShowNewBusinessModal] = useState(false)
+  const [newBusiness, setNewBusiness] = useState({ name: '', cnpj: '' })
+  const [newBusinessTenantId, setNewBusinessTenantId] = useState('')
+
+
   const [credentialsTenant, setCredentialsTenant] = useState<Tenant | null>(null)
   const [credentials, setCredentials] = useState({ email: '', password: '' })
   const [savingCreds, setSavingCreds] = useState(false)
@@ -299,6 +305,67 @@ export default function Tenants() {
     }
   }
 
+  async function handleAddBusiness(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newBusinessTenantId || !newBusiness.name) return
+    setSaving(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('monitored_businesses')
+        .insert({
+          tenant_id: newBusinessTenantId,
+          name: newBusiness.name.trim(),
+          cnpj: newBusiness.cnpj.trim() || null
+        })
+        .select()
+
+      if (error) {
+        toast('Erro ao adicionar unidade: ' + error.message, 'error')
+      } else {
+        toast('Nova unidade/filial adicionada com sucesso!', 'success')
+        setShowNewBusinessModal(false)
+        setNewBusiness({ name: '', cnpj: '' })
+        loadAll()
+      }
+    } catch (err: any) {
+      toast('Erro ao conectar: ' + err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleDeleteBusiness(b: Business) {
+    setConfirmDialog({
+      title: 'Excluir Unidade',
+      message: `Deseja realmente excluir a unidade "${b.name}"?\n\nIsso irá remover permanentemente:\n- Todos os Conectores desta unidade\n- Todos os Reviews coletados desta unidade\n\nEsta ação NÃO pode ser desfeita!`,
+      confirmLabel: 'Excluir Permanentemente',
+      dangerous: true,
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        setLoading(true)
+        try {
+          const { error } = await supabase
+            .from('monitored_businesses')
+            .delete()
+            .eq('id', b.id)
+
+          if (error) {
+            toast('Erro ao excluir unidade: ' + error.message, 'error')
+          } else {
+            toast('Unidade excluída com sucesso!', 'success')
+            loadAll()
+          }
+        } catch (err: any) {
+          toast('Erro ao conectar: ' + err.message, 'error')
+        } finally {
+          setLoading(false)
+        }
+      }
+    })
+  }
+
+
   function handleDelete(t: Tenant) {
     setConfirmDialog({
       title: 'Deletar Permanentemente',
@@ -442,20 +509,56 @@ export default function Tenants() {
                         <div>
                           {b.name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{b.cnpj && `(${b.cnpj})`}</span>
                         </div>
-                        <button 
-                          onClick={() => setEditingBusiness(b)} 
-                          className="btn-icon" 
-                          style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
-                          title="Editar CNPJ / Nome"
-                        >
-                          <Edit size={12} color="#60a5fa" />
-                        </button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button 
+                            onClick={() => setEditingBusiness(b)} 
+                            className="btn-icon" 
+                            style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
+                            title="Editar CNPJ / Nome"
+                          >
+                            <Edit size={12} color="#60a5fa" />
+                          </button>
+                          {businesses[t.id]?.length > 1 && (
+                            <button 
+                              onClick={() => handleDeleteBusiness(b)} 
+                              className="btn-icon" 
+                              style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
+                              title="Excluir Unidade"
+                            >
+                              <Trash2 size={12} color="#fca5a5" />
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma empresa conectada.</div>
                 )}
+                
+                <button
+                  onClick={() => {
+                    setNewBusinessTenantId(t.id)
+                    setNewBusiness({ name: '', cnpj: '' })
+                    setShowNewBusinessModal(true)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'rgba(99,102,241,0.08)',
+                    color: '#a5b4fc',
+                    border: '1px dashed rgba(99,102,241,0.3)',
+                    borderRadius: 6,
+                    padding: '4px 8px',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    marginTop: 8,
+                    fontFamily: 'Inter, sans-serif'
+                  }}
+                >
+                  <Plus size={12} /> Adicionar Unidade / Filial
+                </button>
               </div>
             </div>
           )})}
@@ -813,6 +916,48 @@ export default function Tenants() {
           </div>
         </div>
       )}
+
+      {showNewBusinessModal && (
+        <div className="modal-overlay" onClick={() => setShowNewBusinessModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">
+              <span>Nova Unidade / Filial</span>
+              <button className="modal-close" onClick={() => setShowNewBusinessModal(false)}><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={handleAddBusiness}>
+              <div className="modal-section">
+                <label className="modal-label">Nome da Filial / Unidade</label>
+                <input 
+                  autoFocus required
+                  value={newBusiness.name}
+                  onChange={e => setNewBusiness(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Ex: Odontocompany - Centro"
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                />
+              </div>
+
+              <div className="modal-section">
+                <label className="modal-label">CNPJ da Filial (opcional)</label>
+                <input
+                  value={newBusiness.cnpj}
+                  onChange={e => setNewBusiness(prev => ({ ...prev, cnpj: e.target.value }))}
+                  placeholder="Somente números"
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-darker)', border: '1px solid var(--border)', color: 'white', borderRadius: 4 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
+                <button type="button" className="btn" style={{ background: 'transparent' }} onClick={() => setShowNewBusinessModal(false)}>Cancelar</button>
+                <button type="submit" disabled={saving} className="btn" style={{ background: 'var(--accent)', opacity: saving ? 0.6 : 1 }}>
+                  <Save size={16} /> {saving ? 'Adicionando...' : 'Adicionar Unidade'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
 
       {confirmDialog && (
         <ConfirmDialog

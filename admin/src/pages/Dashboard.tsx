@@ -658,7 +658,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
                 <div key={r.id} className="card review-item">
                   <div className="review-header">
                     <span className={`badge badge-${r.sentiment}`}>
-                      {scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}
+                      {scoreToEmoji(r.dissatisfaction_score, r.sentiment)} {SENTIMENT_LABELS[r.sentiment]}
                     </span>
                     <div className="review-meta">
                       <span className="review-channel-tag">

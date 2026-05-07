@@ -250,7 +250,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
             <div key={r.id} className="card review-item" onClick={() => openDetail(r)}>
               <div className="review-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className={`badge badge-${r.sentiment}`}>{scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}</span>
+                  <span className={`badge badge-${r.sentiment}`}>{scoreToEmoji(r.dissatisfaction_score, r.sentiment)} {SENTIMENT_LABELS[r.sentiment]}</span>
                   {r.sentiment === 'unanalyzed' && (
                     <button 
                       className="btn-ghost" 
@@ -322,7 +322,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span>{CHANNEL_ICONS[selected.channel]}</span>
                 <span style={{ fontSize: 16 }}>{CHANNEL_LABELS[selected.channel]}</span>
-                <span className={`badge badge-${selected.sentiment}`}>{scoreToEmoji(selected.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[selected.sentiment]}</span>
+                <span className={`badge badge-${selected.sentiment}`}>{scoreToEmoji(selected.dissatisfaction_score, selected.sentiment)} {SENTIMENT_LABELS[selected.sentiment]}</span>
                 {selected.sentiment === 'unanalyzed' && (
                   <button 
                     className="btn btn-ghost" 

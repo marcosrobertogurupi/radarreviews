@@ -259,7 +259,7 @@ export default function Alerts({ tenants, selectedTenantId, onTenantChange }: Pr
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   {alert.detail?.review_sentiment && (
                     <span className={`badge badge-${alert.detail.review_sentiment}`}>
-                      {scoreToEmoji(score ?? 0)} {SENTIMENT_LABELS[alert.detail.review_sentiment as keyof typeof SENTIMENT_LABELS] || alert.detail.review_sentiment}
+                      {scoreToEmoji(score, alert.detail.review_sentiment as any)} {SENTIMENT_LABELS[alert.detail.review_sentiment as keyof typeof SENTIMENT_LABELS] || alert.detail.review_sentiment}
                     </span>
                   )}
                   {score != null && (

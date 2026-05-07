@@ -82,10 +82,20 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(seconds / 86400)}d atrás`
 }
 
-export function scoreToEmoji(score: number): string {
-  if (score >= 81) return '🚨'
-  if (score >= 56) return '🔴'
-  if (score >= 31) return '🟡'
+export function scoreToEmoji(score: number | null | undefined, sentiment?: SentimentType): string {
+  if (score != null && score > 0) {
+    if (score >= 81) return '🚨'
+    if (score >= 56) return '🔴'
+    if (score >= 31) return '🟡'
+    return '🟢'
+  }
+  if (sentiment) {
+    if (sentiment === 'critical') return '🚨'
+    if (sentiment === 'negative') return '🔴'
+    if (sentiment === 'neutral') return '🟡'
+    if (sentiment === 'unanalyzed') return '⚪'
+    return '🟢'
+  }
   return '🟢'
 }
 

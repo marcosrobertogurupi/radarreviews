@@ -30,7 +30,7 @@ function ReviewModal({ review, onClose }: { review: Review; onClose: () => void 
           <div className="modal-label">Classificação da IA</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
             <span className={`badge badge-${review.sentiment}`} style={{ fontSize: 14, padding: '4px 14px' }}>
-              {scoreToEmoji(score)} {SENTIMENT_LABELS[review.sentiment]}
+              {scoreToEmoji(review.dissatisfaction_score, review.sentiment)} {SENTIMENT_LABELS[review.sentiment]}
             </span>
             {review.satisfaction_level && (
               <span style={{ 
@@ -315,7 +315,7 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
                 <div className="review-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span className={`badge badge-${r.sentiment}`}>
-                      {scoreToEmoji(r.dissatisfaction_score ?? 0)} {SENTIMENT_LABELS[r.sentiment]}
+                      {scoreToEmoji(r.dissatisfaction_score, r.sentiment)} {SENTIMENT_LABELS[r.sentiment]}
                     </span>
                     {r.dissatisfaction_score != null && r.dissatisfaction_score > 0 && (
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
