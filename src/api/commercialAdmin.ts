@@ -415,6 +415,36 @@ export async function handleCommercialAdmin(
     }
   }
 
+  // GET /api/admin/commercial/google-rating/:placeId
+  if (url.startsWith('/api/admin/commercial/google-rating/') && method === 'GET') {
+    try {
+      const placeId = url.split('/').pop()?.split('?')[0]
+      if (!placeId) return json(res, 400, { error: 'placeId é obrigatório' })
+
+      const apiKey = process.env['GOOGLE_MAPS_API_KEY']
+      if (!apiKey) {
+        return json(res, 500, { error: 'Chave do Google Maps não configurada' })
+      }
+
+      const resp = await axios.get(`https://places.googleapis.com/v1/places/${placeId}`, {
+        headers: {
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'id,displayName,rating,userRatingCount'
+        }
+      })
+
+      const data = resp.data
+      const rating = data.rating || null
+      const displayName = data.displayName?.text || null
+      const reviewsCount = data.userRatingCount || null
+
+      return json(res, 200, { rating, displayName, reviewsCount })
+    } catch (err: any) {
+      logger.error('[commercialAdmin] Erro GET /google-rating/:placeId:', err.message)
+      return json(res, 500, { error: `Erro ao buscar dados do Google: ${err.message}` })
+    }
+  }
+
   // 8. POST /api/admin/commercial/generate-argument
   if (url === '/api/admin/commercial/generate-argument' && method === 'POST') {
     try {

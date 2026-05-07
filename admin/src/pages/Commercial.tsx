@@ -299,6 +299,54 @@ export default function Commercial() {
     })
   }
 
+  async function handleFetchGoogleMapsRating(branchId: string, placeId: string) {
+    if (!placeId) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${API_URL}/api/admin/commercial/google-rating/${placeId}`, {
+        headers: {
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        }
+      })
+      if (!resp.ok) throw new Error('Falha ao obter nota do Google')
+      const info = await resp.json()
+      
+      if (info.rating !== null && info.rating !== undefined) {
+        const val = parseFloat(info.rating)
+        setEditingScores(prev => ({
+          ...prev,
+          [`${branchId}-google_maps`]: { score: val, score_max: 5.0 }
+        }))
+
+        const scorePayload = {
+          target_type: 'branch',
+          target_id: branchId,
+          channel: 'google_maps',
+          score: val,
+          score_max: 5.0,
+          reputation_label: `${val}/5.0`,
+          source_url: `https://www.google.com/maps/place/?q=place_id:${placeId}`
+        }
+
+        const scoreResp = await fetch(`${API_URL}/api/admin/commercial/scores`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': session ? `Bearer ${session.access_token}` : ''
+          },
+          body: JSON.stringify(scorePayload)
+        })
+
+        if (scoreResp.ok) {
+          toast(`Nota do Google Maps (${val}) importada e salva automaticamente!`, 'success')
+          if (selectedCompanyId) loadCompanyDetails(selectedCompanyId)
+        }
+      }
+    } catch (err: any) {
+      toast(`Não foi possível obter nota via Place ID: ${err.message}`, 'warning')
+    }
+  }
+
   // Adicionar score/nota de reputação
   async function handleUpsertScore(targetType: 'company' | 'branch', targetId: string, channel: string) {
     const editKey = `${targetId}-${channel}`
@@ -1014,7 +1062,7 @@ export default function Commercial() {
                               </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', color: '#64748b' }}>Telefone</label>
                                 <input
@@ -1039,6 +1087,18 @@ export default function Commercial() {
                                   onBlur={(e) => handleUpdateBranch(branch, { city: e.target.value })}
                                 />
                               </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b' }}>E-mail de Contato</label>
+                                <input
+                                  type="email"
+                                  className="input-premium"
+                                  style={{ padding: '6px', fontSize: '12px' }}
+                                  value={branch.email || ''}
+                                  placeholder="contato@empresa.com"
+                                  onChange={(e) => updateBranchLocalState(branch.id, { email: e.target.value })}
+                                  onBlur={(e) => handleUpdateBranch(branch, { email: e.target.value })}
+                                />
+                              </div>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1053,36 +1113,51 @@ export default function Commercial() {
                               />
                             </div>
 
-                            {/* Editor de Notas por Canal específico da filial (Ex: Google Maps) */}
-                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                              <div style={{ flexGrow: 1 }}>
-                                <label style={{ fontSize: '11px', color: '#64748b' }}>Nota Google Maps desta filial</label>
-                                <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    className="input-premium"
-                                    style={{ width: '70px', padding: '4px', fontSize: '12px' }}
-                                    placeholder="Google"
-                                    value={editingScores[`${branch.id}-google_maps`]?.score !== undefined ? editingScores[`${branch.id}-google_maps`].score : branchGoogleScore || ''}
-                                    onChange={(e) => {
-                                      const val = parseFloat(e.target.value)
-                                      setEditingScores(prev => ({
-                                        ...prev,
-                                        [`${branch.id}-google_maps`]: { score: isNaN(val) ? undefined : val, score_max: 5.0 }
-                                      }))
-                                    }}
-                                  />
-                                  <button
-                                    className="input-premium"
-                                    style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                    onClick={() => handleUpsertScore('branch', branch.id, 'google_maps')}
-                                  >
-                                    Salvar Nota Local
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
+                             {/* Editor de Notas por Canal específico da filial (Ex: Google Maps e Place ID) */}
+                             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px', alignItems: 'flex-end', background: 'rgba(255,255,255,0.01)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                 <label style={{ fontSize: '11px', color: '#64748b' }}>Google Place ID (Gera nota automática)</label>
+                                 <input
+                                   type="text"
+                                   className="input-premium"
+                                   style={{ padding: '6px', fontSize: '12px' }}
+                                   placeholder="Ex: ChIJs089F..."
+                                   value={branch.place_id_google || ''}
+                                   onChange={(e) => updateBranchLocalState(branch.id, { place_id_google: e.target.value })}
+                                   onBlur={(e) => {
+                                     handleUpdateBranch(branch, { place_id_google: e.target.value })
+                                     if (e.target.value) handleFetchGoogleMapsRating(branch.id, e.target.value)
+                                   }}
+                                 />
+                               </div>
+                               <div>
+                                 <label style={{ fontSize: '11px', color: '#64748b' }}>Nota Google Maps desta filial</label>
+                                 <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                                   <input
+                                     type="number"
+                                     step="0.1"
+                                     className="input-premium"
+                                     style={{ width: '70px', padding: '4px', fontSize: '12px' }}
+                                     placeholder="Google"
+                                     value={editingScores[`${branch.id}-google_maps`]?.score !== undefined ? editingScores[`${branch.id}-google_maps`].score : branchGoogleScore || ''}
+                                     onChange={(e) => {
+                                       const val = parseFloat(e.target.value)
+                                       setEditingScores(prev => ({
+                                         ...prev,
+                                         [`${branch.id}-google_maps`]: { score: isNaN(val) ? undefined : val, score_max: 5.0 }
+                                       }))
+                                     }}
+                                   />
+                                   <button
+                                     className="input-premium"
+                                     style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                     onClick={() => handleUpsertScore('branch', branch.id, 'google_maps')}
+                                   >
+                                     Salvar Nota
+                                   </button>
+                                 </div>
+                               </div>
+                             </div>
 
                             {/* Argumento Comercial gerado por IA */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(99,102,241,0.04)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(99,102,241,0.1)' }}>
