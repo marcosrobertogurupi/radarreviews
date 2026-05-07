@@ -68,11 +68,13 @@ const SEGMENT_LABELS: Record<string, string> = {
   seg_edu: 'Educação & IES',
   seg_hotel: 'Hotelaria & Turismo',
   seg_telecom: 'Telecom & Provedores',
-  seg_varejo: 'Varejo & Franquias'
+  seg_varejo: 'Varejo & Franquias',
+  seg_logistica: 'Transporte & Logística',
+  seg_seguros: 'Seguradoras & Corretoras'
 }
 
 export default function Commercial() {
-  const toast = useToast()
+  const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [companies, setCompanies] = useState<Company[]>([])
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([])

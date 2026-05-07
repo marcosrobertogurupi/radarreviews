@@ -446,7 +446,9 @@ export async function handleCommercialAdmin(
         seg_edu: 'Educação / Faculdades / Escolas',
         seg_hotel: 'Hotelaria / Turismo / Booking',
         seg_telecom: 'Telecom / Provedores de Internet',
-        seg_varejo: 'Varejo / Supermercados / iFood'
+        seg_varejo: 'Varejo / Supermercados / iFood',
+        seg_logistica: 'Transporte / Logística / Transportadoras',
+        seg_seguros: 'Seguradoras / Corretoras / Planos de Seguro'
       }
 
       // Montar texto dos scores
