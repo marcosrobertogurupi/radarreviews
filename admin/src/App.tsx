@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
   Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard, LifeBuoy,
-  Target
+  Target, Briefcase
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -17,15 +17,17 @@ import Audit from './pages/Audit'
 import Plans from './pages/Plans'
 import SupportCenter from './pages/SupportCenter'
 import Prospects from './pages/Prospects'
+import Commercial from './pages/Commercial'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects' | 'commercial'
 
 
 export interface TenantOption { id: string; name: string }
 
 const NAV = [
   { id: 'dashboard' as Page,   label: 'Dashboard',   icon: LayoutDashboard },
+  { id: 'commercial' as Page,  label: 'Comercial',   icon: Briefcase },
   { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
   { id: 'alerts' as Page,      label: 'Alertas',     icon: Bell },
@@ -231,6 +233,7 @@ export default function App() {
 
   const pages: Record<Page, ReactElement> = {
     dashboard:  <Dashboard  {...filterProps} />,
+    commercial: <Commercial />,
     prospects:  <Prospects />,
     reviews:    <Reviews    {...filterProps} />,
     alerts:     <Alerts     {...filterProps} />,

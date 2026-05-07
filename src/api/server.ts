@@ -35,6 +35,7 @@ import { AuditoriaService } from '../services/auditoria.js'
 import { handleSupportPortal } from './support.js'
 import { handleSupportAdmin } from './supportAdmin.js'
 import { handleProspectAdmin } from './prospectAdmin.js'
+import { handleCommercialAdmin } from './commercialAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
 
 // ── Clientes ────────────────────────────────────────────────────
@@ -1913,6 +1914,18 @@ const server = http.createServer(async (req, res) => {
     }
     handleProspectAdmin(req, res, auth).catch(err => {
       console.error('[prospect-admin-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/admin/commercial')) {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+      res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+    handleCommercialAdmin(req, res, auth).catch(err => {
+      console.error('[commercial-admin-api] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return
