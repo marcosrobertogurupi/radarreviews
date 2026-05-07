@@ -143,6 +143,22 @@ export async function startScheduler(): Promise<void> {
  * e executa cada um em sequência.
  */
 async function runOnce(): Promise<void> {
+  // 0. Auto-recuperação: destravar conectores presos em status 'running' por mais de 30 minutos
+  try {
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    const { error: resetErr } = await supabase
+      .from('channel_connectors')
+      .update({ status: 'active', next_sync_at: new Date().toISOString() })
+      .eq('status', 'running')
+      .lt('updated_at', thirtyMinutesAgo)
+
+    if (resetErr) {
+      logger.error('[scheduler] Erro na auto-recuperação de conectores presos:', { error: resetErr.message })
+    }
+  } catch (err: any) {
+    logger.error('[scheduler] Falha crítica ao rodar auto-recuperação:', { error: err.message })
+  }
+
   const connectors = await fetchDueConnectors()
 
   if (connectors.length === 0) {
