@@ -906,15 +906,40 @@ export default function Commercial() {
                     const editKey = `${selectedCompany.id}-${channel}`
                     const editVal = editingScores[editKey]
 
+                    let branchAvg: number | null = null
+                    if (channel === 'google_maps' && selectedCompany.branches?.length) {
+                      const scores = selectedCompany.branches
+                        .map(b => b.scores?.find(s => s.channel === 'google_maps')?.score)
+                        .filter((s): s is number => typeof s === 'number' && !isNaN(s))
+                      
+                      if (scores.length > 0) {
+                        branchAvg = parseFloat((scores.reduce((sum, s) => sum + s, 0) / scores.length).toFixed(1))
+                      }
+                    }
+
                     return (
                       <div key={channel} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '8px' }}>
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', color: '#94a3b8' }}>
                             {channel.replace('_', ' ')}
                           </div>
-                          <div style={{ fontSize: '13px', color: sc ? '#22c55e' : '#64748b', fontWeight: 600 }}>
-                            {sc ? `${sc.score} / ${sc.score_max}` : 'Não mapeada'}
+                          <div style={{ fontSize: '13px', color: sc ? '#22c55e' : (branchAvg !== null ? '#818cf8' : '#64748b'), fontWeight: 600 }}>
+                            {sc ? `${sc.score} / ${sc.score_max}` : (branchAvg !== null ? `${branchAvg} / 5.0` : 'Não mapeada')}
                           </div>
+                          {channel === 'google_maps' && branchAvg !== null && (
+                            <div 
+                              style={{ fontSize: '11px', color: '#a5b4fc', cursor: 'pointer', marginTop: '2px', textDecoration: 'underline', display: 'flex', gap: '3px' }}
+                              onClick={() => {
+                                setEditingScores(prev => ({
+                                  ...prev,
+                                  [editKey]: { score: branchAvg, score_max: 5.0 }
+                                }))
+                              }}
+                            >
+                              <span>Média das filiais: <strong>{branchAvg}</strong></span>
+                              <span style={{ color: '#818cf8' }}>(Usar)</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Form em Linha */}
