@@ -1125,8 +1125,9 @@ export default function Commercial() {
                                    value={branch.place_id_google || ''}
                                    onChange={(e) => updateBranchLocalState(branch.id, { place_id_google: e.target.value })}
                                    onBlur={(e) => {
-                                     handleUpdateBranch(branch, { place_id_google: e.target.value })
-                                     if (e.target.value) handleFetchGoogleMapsRating(branch.id, e.target.value)
+                                     const trimmed = e.target.value.trim()
+                                     handleUpdateBranch(branch, { place_id_google: trimmed })
+                                     if (trimmed) handleFetchGoogleMapsRating(branch.id, trimmed)
                                    }}
                                  />
                                </div>

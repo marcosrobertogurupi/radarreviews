@@ -83,7 +83,7 @@ function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeade
   
   res.setHeader('Access-Control-Allow-Origin', isAllowed ? origin : allowed[0])
   res.setHeader('Access-Control-Allow-Headers', extraHeaders + ', x-client-info, x-supabase-auth')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, PATCH, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, PATCH, DELETE, PUT, OPTIONS')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 }
