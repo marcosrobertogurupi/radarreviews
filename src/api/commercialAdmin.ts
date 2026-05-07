@@ -310,6 +310,25 @@ export async function handleCommercialAdmin(
     }
   }
 
+  // DELETE /api/admin/commercial/companies/:id
+  if (url.startsWith('/api/admin/commercial/companies/') && method === 'DELETE') {
+    try {
+      const id = url.split('/').pop()?.split('?')[0]
+      if (!id) return json(res, 400, { error: 'ID é obrigatório' })
+
+      const { error } = await supabaseAdmin
+        .from('commercial_companies')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      return json(res, 200, { success: true })
+    } catch (err: any) {
+      logger.error('[commercialAdmin] Erro DELETE /companies/:id:', err)
+      return json(res, 500, { error: err.message })
+    }
+  }
+
   // 5. POST /api/admin/commercial/branches
   if (url === '/api/admin/commercial/branches' && method === 'POST') {
     try {

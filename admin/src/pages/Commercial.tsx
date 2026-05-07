@@ -109,6 +109,13 @@ export default function Commercial() {
   const [generatingArgumentId, setGeneratingArgumentId] = useState<string | null>(null)
   const [editingScores, setEditingScores] = useState<Record<string, Partial<Score>>>({})
 
+  // Estados de Edição da Empresa Matriz
+  const [isEditingCompany, setIsEditingCompany] = useState(false)
+  const [editCompName, setEditCompName] = useState('')
+  const [editCompCnpj, setEditCompCnpj] = useState('')
+  const [editCompSegment, setEditCompSegment] = useState('')
+  const [editCompNotes, setEditCompNotes] = useState('')
+
   useEffect(() => {
     loadData()
   }, [])
@@ -153,12 +160,60 @@ export default function Commercial() {
       setSelectedCompany(data)
       setSelectedCompanyId(id)
 
+      // Inicializar estados de edição da matriz
+      setEditCompName(data.name)
+      setEditCompCnpj(data.cnpj || '')
+      setEditCompSegment(data.segment_id)
+      setEditCompNotes(data.notes || '')
+      setIsEditingCompany(false)
+
       // Resetar seleção de filiais para exportação
       const initialBranchSelect: Record<string, boolean> = {}
       data.branches.forEach((b: Branch) => { initialBranchSelect[b.id] = true })
       setSelectedBranchIds(initialBranchSelect)
     } catch (err: any) {
       toast(`Erro ao carregar empresa: ${err.message}`, 'error')
+    }
+  }
+
+  async function handleDeleteCompany(id: string) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${API_URL}/api/admin/commercial/companies/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': session ? `Bearer ${session.access_token}` : '' }
+      })
+
+      if (!resp.ok) throw new Error('Erro ao excluir do servidor')
+      toast('Empresa excluída com sucesso!', 'success')
+      setSelectedCompany(null)
+      setSelectedCompanyId(null)
+      loadData()
+    } catch (err: any) {
+      toast(`Falha ao excluir: ${err.message}`, 'error')
+    }
+  }
+
+  async function handleUpdateCompany(updatedFields: { name?: string; cnpj?: string; segment_id?: string; notes?: string }) {
+    if (!selectedCompanyId) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${API_URL}/api/admin/commercial/companies/${selectedCompanyId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
+        body: JSON.stringify(updatedFields)
+      })
+
+      if (!resp.ok) throw new Error('Falha ao atualizar dados da matriz')
+      toast('Informações da empresa matriz salvas!', 'success')
+      setIsEditingCompany(false)
+      loadCompanyDetails(selectedCompanyId)
+      loadData()
+    } catch (err: any) {
+      toast(`Erro ao salvar matriz: ${err.message}`, 'error')
     }
   }
 
@@ -550,6 +605,19 @@ export default function Commercial() {
                     <Megaphone size={14} />
                     <span>Prospectar</span>
                   </button>
+
+                  <button
+                    className="button-premium"
+                    style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', cursor: 'pointer', padding: '8px 12px', fontSize: '13px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                    title="Excluir Empresa"
+                    onClick={() => {
+                      if (confirm(`Tem certeza que deseja excluir a empresa "${c.name}" e todas as suas filiais do sistema comercial?`)) {
+                        handleDeleteCompany(c.id)
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             )
@@ -679,13 +747,81 @@ export default function Commercial() {
             
             {/* Header Detalhes */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '16px' }}>
-              <div>
-                <span style={{ fontSize: '11px', background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 600, padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
-                  {SEGMENT_LABELS[selectedCompany.segment_id] || selectedCompany.segment_id}
-                </span>
-                <h2 style={{ fontSize: '28px', fontWeight: 700, color: 'white', margin: '4px 0 0 0' }}>{selectedCompany.name}</h2>
-                {selectedCompany.cnpj && <p style={{ fontSize: '13px', color: '#64748b', margin: '2px 0 0 0' }}>CNPJ: {selectedCompany.cnpj}</p>}
-              </div>
+              {isEditingCompany ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexGrow: 1, marginRight: '24px' }}>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <div style={{ flex: 2 }}>
+                      <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px' }}>Nome Corporativo</label>
+                      <input
+                        type="text"
+                        className="input-premium"
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                        value={editCompName}
+                        onChange={(e) => setEditCompName(e.target.value)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px' }}>CNPJ (Opcional)</label>
+                      <input
+                        type="text"
+                        className="input-premium"
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                        value={editCompCnpj}
+                        onChange={(e) => setEditCompCnpj(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px' }}>Segmento Comercial</label>
+                    <select
+                      className="input-premium"
+                      style={{ width: '100%', boxSizing: 'border-box', height: '38px', cursor: 'pointer' }}
+                      value={editCompSegment}
+                      onChange={(e) => setEditCompSegment(e.target.value)}
+                    >
+                      {Object.entries(SEGMENT_LABELS).map(([val, lbl]) => (
+                        <option key={val} value={val} style={{ background: '#090a0f' }}>{lbl}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      className="button-premium"
+                      style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                      onClick={() => handleUpdateCompany({ name: editCompName, cnpj: editCompCnpj || undefined, segment_id: editCompSegment, notes: editCompNotes || undefined })}
+                    >
+                      Salvar Matriz
+                    </button>
+                    <button
+                      type="button"
+                      className="input-premium"
+                      style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                      onClick={() => setIsEditingCompany(false)}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '11px', background: 'rgba(99,102,241,0.15)', color: '#818cf8', fontWeight: 600, padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
+                      {SEGMENT_LABELS[selectedCompany.segment_id] || selectedCompany.segment_id}
+                    </span>
+                    <button
+                      type="button"
+                      className="input-premium"
+                      style={{ padding: '2px 8px', fontSize: '11px', cursor: 'pointer', borderColor: 'rgba(99,102,241,0.2)', color: '#818cf8' }}
+                      onClick={() => setIsEditingCompany(true)}
+                    >
+                      Editar Matriz
+                    </button>
+                  </div>
+                  <h2 style={{ fontSize: '28px', fontWeight: 700, color: 'white', margin: '4px 0 0 0' }}>{selectedCompany.name}</h2>
+                  {selectedCompany.cnpj && <p style={{ fontSize: '13px', color: '#64748b', margin: '2px 0 0 0' }}>CNPJ: {selectedCompany.cnpj}</p>}
+                </div>
+              )}
               <button className="input-premium" style={{ cursor: 'pointer' }} onClick={() => { setSelectedCompany(null); setSelectedCompanyId(null) }}>Fechar</button>
             </div>
 
@@ -749,9 +885,19 @@ export default function Commercial() {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '12px', color: '#64748b' }}>Notas do Operador</label>
-                  <p style={{ fontSize: '13px', color: '#94a3b8', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', margin: 0 }}>
-                    {selectedCompany.notes || 'Sem observações corporativas cadastradas.'}
-                  </p>
+                  {isEditingCompany ? (
+                    <textarea
+                      className="input-premium"
+                      style={{ width: '100%', boxSizing: 'border-box', height: '80px', fontSize: '13px', color: '#ffffff', resize: 'vertical' }}
+                      placeholder="Adicione observações corporativas da matriz..."
+                      value={editCompNotes}
+                      onChange={(e) => setEditCompNotes(e.target.value)}
+                    />
+                  ) : (
+                    <p style={{ fontSize: '13px', color: '#94a3b8', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', margin: 0 }}>
+                      {selectedCompany.notes || 'Sem observações corporativas cadastradas.'}
+                    </p>
+                  )}
                 </div>
               </div>
 
