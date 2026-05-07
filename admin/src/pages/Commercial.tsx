@@ -283,6 +283,22 @@ export default function Commercial() {
     }
   }
 
+  function updateBranchLocalState(branchId: string, fields: Partial<Branch>) {
+    if (!selectedCompany) return
+    setSelectedCompany(prev => {
+      if (!prev) return null
+      return {
+        ...prev,
+        branches: prev.branches.map(b => {
+          if (b.id === branchId) {
+            return { ...b, ...fields }
+          }
+          return b
+        })
+      }
+    })
+  }
+
   // Adicionar score/nota de reputação
   async function handleUpsertScore(targetType: 'company' | 'branch', targetId: string, channel: string) {
     const editKey = `${targetId}-${channel}`
@@ -980,7 +996,8 @@ export default function Commercial() {
                                   style={{ padding: '6px', fontSize: '12px' }}
                                   value={branch.contact_name || ''}
                                   placeholder="Nome"
-                                  onChange={(e) => handleUpdateBranch(branch, { contact_name: e.target.value })}
+                                  onChange={(e) => updateBranchLocalState(branch.id, { contact_name: e.target.value })}
+                                  onBlur={(e) => handleUpdateBranch(branch, { contact_name: e.target.value })}
                                 />
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -991,7 +1008,8 @@ export default function Commercial() {
                                   style={{ padding: '6px', fontSize: '12px' }}
                                   value={branch.target_role || ''}
                                   placeholder="Ex: Diretor Técnico"
-                                  onChange={(e) => handleUpdateBranch(branch, { target_role: e.target.value })}
+                                  onChange={(e) => updateBranchLocalState(branch.id, { target_role: e.target.value })}
+                                  onBlur={(e) => handleUpdateBranch(branch, { target_role: e.target.value })}
                                 />
                               </div>
                             </div>
@@ -1005,7 +1023,8 @@ export default function Commercial() {
                                   style={{ padding: '6px', fontSize: '12px' }}
                                   value={branch.phone || ''}
                                   placeholder="Ex: 6399999999"
-                                  onChange={(e) => handleUpdateBranch(branch, { phone: e.target.value })}
+                                  onChange={(e) => updateBranchLocalState(branch.id, { phone: e.target.value })}
+                                  onBlur={(e) => handleUpdateBranch(branch, { phone: e.target.value })}
                                 />
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1016,7 +1035,8 @@ export default function Commercial() {
                                   style={{ padding: '6px', fontSize: '12px' }}
                                   value={branch.city || ''}
                                   placeholder="Palmas"
-                                  onChange={(e) => handleUpdateBranch(branch, { city: e.target.value })}
+                                  onChange={(e) => updateBranchLocalState(branch.id, { city: e.target.value })}
+                                  onBlur={(e) => handleUpdateBranch(branch, { city: e.target.value })}
                                 />
                               </div>
                             </div>
@@ -1028,7 +1048,8 @@ export default function Commercial() {
                                 style={{ height: '50px', fontSize: '12px', resize: 'none' }}
                                 placeholder="Notas de abordagem anteriores, detalhes sobre a concorrência local..."
                                 value={branch.commercial_context || ''}
-                                onChange={(e) => handleUpdateBranch(branch, { commercial_context: e.target.value })}
+                                onChange={(e) => updateBranchLocalState(branch.id, { commercial_context: e.target.value })}
+                                onBlur={(e) => handleUpdateBranch(branch, { commercial_context: e.target.value })}
                               />
                             </div>
 
@@ -1097,7 +1118,8 @@ export default function Commercial() {
                                 style={{ height: '80px', fontSize: '12px', background: 'rgba(10,11,18,0.5)', border: '1px solid rgba(99,102,241,0.15)', color: '#e2e8f0' }}
                                 value={branch.approach_argument || ''}
                                 placeholder="Gere e salve uma abordagem personalizada clicando no botão acima."
-                                onChange={(e) => handleUpdateBranch(branch, { approach_argument: e.target.value })}
+                                onChange={(e) => updateBranchLocalState(branch.id, { approach_argument: e.target.value })}
+                                onBlur={(e) => handleUpdateBranch(branch, { approach_argument: e.target.value })}
                               />
                             </div>
 
