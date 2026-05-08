@@ -725,7 +725,7 @@ Escreva a proposta com um tom extremamente profissional, consultivo, empático, 
         try {
           const response = await axios.post('https://api.anthropic.com/v1/messages', {
             model: 'claude-sonnet-4-6',
-            max_tokens: 2000,
+            max_tokens: 4000,
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }]
           }, {
@@ -752,7 +752,7 @@ Escreva a proposta com um tom extremamente profissional, consultivo, empático, 
           model: AI_CONFIG.model,
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 2048
+            maxOutputTokens: 4096
           }
         })
 
