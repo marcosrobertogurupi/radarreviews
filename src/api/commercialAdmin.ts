@@ -2,6 +2,8 @@ import http from 'node:http'
 import { supabaseAdmin } from '../lib/supabase.js'
 import axios from 'axios'
 import { logger } from '../lib/logger.js'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { AI_CONFIG } from '../lib/ai-config.js'
 
 function json(res: http.ServerResponse, status: number, data: any) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -546,24 +548,51 @@ Gere um argumento de abordagem comercial CURTO e DIRETO (máximo 5 linhas) para 
 
 Retorne APENAS o argumento comercial gerado, sem saudações introdutórias, sem aspas, sem formatações de markdown ou explicações complementares.`
 
-      // Chamar Claude API
-      const apiKey = process.env['ANTHROPIC_API_KEY']
-      if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada no servidor.')
+      // Chamar Claude ou Gemini API
+      let argumentText = ''
+      const anthropicApiKey = process.env['ANTHROPIC_API_KEY']
+      const geminiApiKey = process.env['GEMINI_API_KEY']
 
-      const response = await axios.post('https://api.anthropic.com/v1/messages', {
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      }, {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json'
+      if (anthropicApiKey) {
+        try {
+          const response = await axios.post('https://api.anthropic.com/v1/messages', {
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 1000,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userPrompt }]
+          }, {
+            headers: {
+              'x-api-key': anthropicApiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json'
+            }
+          })
+          argumentText = response.data?.content?.[0]?.text || ''
+        } catch (err: any) {
+          logger.warn('[commercialAdmin] Claude indisponível, tentando Gemini como fallback:', err?.message || err)
         }
-      })
+      }
 
-      const argumentText = response.data?.content?.[0]?.text || ''
+      // Se o Claude falhou ou não está configurado, tenta Gemini
+      if (!argumentText) {
+        if (!geminiApiKey) {
+          throw new Error('Nenhuma chave de API de IA (ANTHROPIC_API_KEY ou GEMINI_API_KEY) está configurada no servidor.')
+        }
+
+        logger.info('[commercialAdmin] Utilizando Gemini para gerar argumento comercial')
+        const genAI = new GoogleGenerativeAI(geminiApiKey)
+        const model = genAI.getGenerativeModel({
+          model: AI_CONFIG.model,
+          generationConfig: {
+            temperature: 0.7, // Um pouco mais criativo para argumentos de vendas
+            maxOutputTokens: 1024
+          }
+        })
+
+        const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`
+        const response = await model.generateContent(combinedPrompt)
+        argumentText = response.response.text().trim()
+      }
 
       // Salvar na filial
       const { data: updatedBranch, error: upErr } = await supabaseAdmin
