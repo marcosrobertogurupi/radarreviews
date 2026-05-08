@@ -47,6 +47,7 @@ interface Company {
   cnpj?: string
   segment_id: string
   notes?: string
+  group_proposal?: string
   total_branches: number
   brand_scores: Score[]
   avg_score_pct: number | null
@@ -107,6 +108,7 @@ export default function Commercial() {
 
   // Geradores de IA e Edições inline
   const [generatingArgumentId, setGeneratingArgumentId] = useState<string | null>(null)
+  const [generatingGroupProposal, setGeneratingGroupProposal] = useState(false)
   const [editingScores, setEditingScores] = useState<Record<string, Partial<Score>>>({})
 
   // Estados de Edição da Empresa Matriz
@@ -115,6 +117,7 @@ export default function Commercial() {
   const [editCompCnpj, setEditCompCnpj] = useState('')
   const [editCompSegment, setEditCompSegment] = useState('')
   const [editCompNotes, setEditCompNotes] = useState('')
+  const [editCompProposal, setEditCompProposal] = useState('')
 
   useEffect(() => {
     loadData()
@@ -165,6 +168,7 @@ export default function Commercial() {
       setEditCompCnpj(data.cnpj || '')
       setEditCompSegment(data.segment_id)
       setEditCompNotes(data.notes || '')
+      setEditCompProposal(data.group_proposal || '')
       setIsEditingCompany(false)
 
       // Resetar seleção de filiais para exportação
@@ -194,7 +198,7 @@ export default function Commercial() {
     }
   }
 
-  async function handleUpdateCompany(updatedFields: { name?: string; cnpj?: string; segment_id?: string; notes?: string }) {
+  async function handleUpdateCompany(updatedFields: { name?: string; cnpj?: string; segment_id?: string; notes?: string; group_proposal?: string }) {
     if (!selectedCompanyId) return
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -416,6 +420,31 @@ export default function Commercial() {
       toast(`Falha na IA: ${err.message}`, 'error')
     } finally {
       setGeneratingArgumentId(null)
+    }
+  }
+
+  // Gerar proposta corporativa consolidada usando Claude IA
+  async function handleGenerateGroupProposal(companyId: string) {
+    setGeneratingGroupProposal(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${API_URL}/api/admin/commercial/generate-group-proposal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': session ? `Bearer ${session.access_token}` : ''
+        },
+        body: JSON.stringify({ company_id: companyId })
+      })
+
+      if (!resp.ok) throw new Error('Erro na resposta do gerador de propostas com IA')
+      const data = await resp.json()
+      toast('Proposta corporativa do grupo gerada com Claude IA com sucesso!', 'success')
+      if (selectedCompanyId) loadCompanyDetails(selectedCompanyId)
+    } catch (err: any) {
+      toast(`Falha na IA corporativa: ${err.message}`, 'error')
+    } finally {
+      setGeneratingGroupProposal(false)
     }
   }
 
@@ -987,6 +1016,47 @@ export default function Commercial() {
                       {selectedCompany.notes || 'Sem observações corporativas cadastradas.'}
                     </p>
                   )}
+                </div>
+
+                {/* Proposta Corporativa do Grupo com IA (Claude) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(99,102,241,0.04)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(99,102,241,0.1)', marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#818cf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Sparkles size={16} />
+                      <span>Proposta Corporativa do Grupo (Claude)</span>
+                    </span>
+
+                    <button
+                      type="button"
+                      className="button-premium"
+                      style={{ padding: '4px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      disabled={generatingGroupProposal}
+                      onClick={() => handleGenerateGroupProposal(selectedCompany.id)}
+                    >
+                      {generatingGroupProposal ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Analisando Rede...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={12} />
+                          <span>Gerar Proposta</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <p style={{ color: '#64748b', fontSize: '11px', margin: '0 0 4px 0' }}>Gere e edite uma proposta comercial em markdown cobrindo o diagnóstico de todas as filiais e os benefícios corporativos da Reputei.</p>
+
+                  <textarea
+                    className="input-premium"
+                    style={{ height: '220px', fontSize: '12px', background: 'rgba(10,11,18,0.5)', border: '1px solid rgba(99,102,241,0.15)', color: '#e2e8f0', resize: 'vertical', fontFamily: 'monospace' }}
+                    value={editCompProposal}
+                    placeholder="Clique no botão acima para formular uma proposta integrada baseada em todas as filiais físicas do grupo..."
+                    onChange={(e) => setEditCompProposal(e.target.value)}
+                    onBlur={() => handleUpdateCompany({ group_proposal: editCompProposal })}
+                  />
                 </div>
               </div>
 

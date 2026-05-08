@@ -611,6 +611,173 @@ Retorne APENAS o argumento comercial gerado, sem saudações introdutórias, sem
     }
   }
 
+  // 8.5. POST /api/admin/commercial/generate-group-proposal
+  if (url === '/api/admin/commercial/generate-group-proposal' && method === 'POST') {
+    try {
+      const body = await readBody(req)
+      const { company_id } = JSON.parse(body)
+
+      if (!company_id) return json(res, 400, { error: 'company_id é obrigatório' })
+
+      // 1. Buscar empresa
+      const { data: company, error: cErr } = await supabaseAdmin
+        .from('commercial_companies')
+        .select('*')
+        .eq('id', company_id)
+        .single()
+
+      if (cErr || !company) return json(res, 404, { error: 'Empresa-mãe não encontrada' })
+
+      // 2. Buscar todas as filiais
+      const { data: branches, error: bErr } = await supabaseAdmin
+        .from('commercial_branches')
+        .select('*')
+        .eq('company_id', company_id)
+        .order('name', { ascending: true })
+
+      if (bErr) throw bErr
+
+      // 3. Buscar scores da marca
+      const { data: brandScores } = await supabaseAdmin
+        .from('commercial_channel_scores')
+        .select('*')
+        .eq('target_type', 'company')
+        .eq('target_id', company_id)
+
+      // Montar resumo das filiais com seus respectivos scores
+      let branchesText = ''
+      if (branches && branches.length > 0) {
+        for (const branch of branches) {
+          const { data: bScores } = await supabaseAdmin
+            .from('commercial_channel_scores')
+            .select('*')
+            .eq('target_type', 'branch')
+            .eq('target_id', branch.id)
+
+          let bScoresStr = ''
+          if (bScores && bScores.length > 0) {
+            bScoresStr = bScores.map(s => `${s.channel.toUpperCase()}: ${s.score}/${s.score_max}`).join(', ')
+          } else {
+            bScoresStr = 'Sem scores mapeados'
+          }
+
+          branchesText += `- ${branch.name} (${branch.city || 'N/A'}/${branch.state || 'N/A'}) — Notas: [${bScoresStr}]\n`
+          if (branch.commercial_context) {
+            branchesText += `  Contexto Comercial: ${branch.commercial_context}\n`
+          }
+        }
+      } else {
+        branchesText = 'Nenhuma filial cadastrada.'
+      }
+
+      // Mapeamento de label do segmento
+      const segmentLabels: Record<string, string> = {
+        seg_saude: 'Clínicas / Hospitais / Odontologia',
+        seg_plano_saude: 'Planos de Saúde / Convênios',
+        seg_imobi: 'Imobiliárias / Construtoras',
+        seg_auto: 'Automotivo / Concessionárias',
+        seg_edu: 'Educação / Faculdades / Escolas',
+        seg_hotel: 'Hotelaria / Turismo / Booking',
+        seg_telecom: 'Telecom / Provedores de Internet',
+        seg_varejo: 'Varejo / Supermercados / iFood',
+        seg_logistica: 'Transporte / Logística / Transportadoras',
+        seg_seguros: 'Seguradoras / Corretoras / Planos de Seguro'
+      }
+
+      let brandScoresText = ''
+      if (brandScores && brandScores.length > 0) {
+        brandScoresText = brandScores.map(s => `${s.channel.toUpperCase()}: ${s.score}/${s.score_max} (${s.reputation_label || ''})`).join(', ')
+      } else {
+        brandScoresText = 'Nenhum score corporativo cadastrado.'
+      }
+
+      // Montar Prompt
+      const systemPrompt = `Você é um Diretor de Vendas Corporativas (Enterprise B2B) especialista em reputação online e blindagem de marcas.`
+      const userPrompt = `EMPRESA MATRIZ:
+Nome: ${company.name}
+Segmento: ${segmentLabels[company.segment_id] || company.segment_id}
+CNPJ: ${company.cnpj || 'Não informado'}
+Website: ${company.website || 'Não informado'}
+Observações Gerais: ${company.notes || 'Nenhuma'}
+
+REPUTAÇÃO CORPORATIVA DA MARCA:
+${brandScoresText}
+
+LISTA DE FILIAIS FISICAS CADASTRADAS (${branches?.length || 0} unidades):
+${branchesText}
+
+TAREFA:
+Crie uma proposta/relatório comercial consolidado direcionado ao Gestor/Diretor decisor do grupo corporativo para convencê-lo a assinar a plataforma Reputei.
+A proposta deve ser estruturada profissionalmente usando Markdown (com tópicos elegantes) e incluir:
+1. **Análise de Diagnóstico Consolidado**: Um resumo analítico do cenário de reputação do grupo, apontando as filiais com notas mais críticas (pontos cegos) e o impacto financeiro de avaliações negativas na perda de clientes para concorrentes locais.
+2. **O Impacto de Não Agir**: Uma argumentação consultiva de como a matriz atualmente carece de visibilidade em tempo real sobre a reputação das filiais, gerando riscos para a imagem nacional da marca.
+3. **A Solução Reputei Enterprise**: Apresentar os benefícios da plataforma para redes e franquias (dashboard multi-unidade unificado, alertas instantâneos de avaliações críticas no WhatsApp, automação de respostas com IA, e relatórios executivos consolidados).
+4. **Próximo Passo Comercial**: Um convite engajador e elegante para ativar um teste gratuito (trial) corporativo de 30 dias para todas as filiais físicas mapeadas ou agendar uma videoconferência de demonstração de 15 minutos com os engenheiros de dados.
+
+Escreva a proposta com um tom extremamente profissional, consultivo, empático, sofisticado e persuasivo em Português do Brasil. Evite termos genéricos, use dados do diagnóstico e personalize para a marca ${company.name}. Retorne APENAS o texto da proposta em markdown, sem comentários externos, sem saudações introdutórias fora da proposta comercial.`
+
+      // Chamar Claude ou Gemini API
+      let proposalText = ''
+      const anthropicApiKey = process.env['ANTHROPIC_API_KEY']
+      const geminiApiKey = process.env['GEMINI_API_KEY']
+
+      if (anthropicApiKey) {
+        try {
+          const response = await axios.post('https://api.anthropic.com/v1/messages', {
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2000,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userPrompt }]
+          }, {
+            headers: {
+              'x-api-key': anthropicApiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json'
+            }
+          })
+          proposalText = response.data?.content?.[0]?.text || ''
+        } catch (err: any) {
+          logger.warn('[commercialAdmin] Claude indisponível para proposta consolidada, tentando Gemini:', err?.message || err)
+        }
+      }
+
+      if (!proposalText) {
+        if (!geminiApiKey) {
+          throw new Error('Nenhuma chave de API de IA (ANTHROPIC_API_KEY ou GEMINI_API_KEY) está configurada no servidor.')
+        }
+
+        logger.info('[commercialAdmin] Utilizando Gemini para gerar proposta corporativa consolidada')
+        const genAI = new GoogleGenerativeAI(geminiApiKey)
+        const model = genAI.getGenerativeModel({
+          model: AI_CONFIG.model,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048
+          }
+        })
+
+        const combinedPrompt = `${systemPrompt}\n\n${userPrompt}`
+        const response = await model.generateContent(combinedPrompt)
+        proposalText = response.response.text().trim()
+      }
+
+      // Salvar na empresa
+      const { data: updatedCompany, error: upErr } = await supabaseAdmin
+        .from('commercial_companies')
+        .update({ group_proposal: proposalText })
+        .eq('id', company_id)
+        .select()
+        .single()
+
+      if (upErr) throw upErr
+
+      return json(res, 200, { proposal: proposalText, company_id })
+    } catch (err: any) {
+      logger.error('[commercialAdmin] Erro no generate-group-proposal:', err?.response?.data || err)
+      return json(res, 500, { error: err.message })
+    }
+  }
+
   // 9. POST /api/admin/commercial/push-to-prospect
   if (url === '/api/admin/commercial/push-to-prospect' && method === 'POST') {
     try {
