@@ -28,6 +28,7 @@ const POLL_INTERVAL_MS = 120_000
 const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
 const MONTHLY_JOB_INTERVAL_MS = 4 * 3600_000 // 4 horas
 const SUPPORT_JOBS_INTERVAL_MS = 15 * 60_000 // 15 minutos
+const RECONCILE_INTERVAL_MS = 60 * 60_000 // 1 hora (reconciliação de assinaturas)
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -103,6 +104,11 @@ export async function startScheduler(): Promise<void> {
   await runKnowledgeLearningJob().catch(err => logger.error('[scheduler] Erro KB learning', { err }))
   await checkSupportInactivity().catch(err => logger.error('[scheduler] Erro checkInactivity', { err }))
 
+  // Jobs de Reconciliação de Assinaturas (Suspender conectores inativos)
+  await reconcileSubscriptionConnectors().catch(err => {
+    logger.error('[scheduler] Erro na reconciliação de assinaturas na inicialização', { error: err })
+  })
+
   // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
   async function runSyncCycle() {
     await runOnce().catch(err => {
@@ -136,6 +142,13 @@ export async function startScheduler(): Promise<void> {
       logger.error('[scheduler] Erro no ciclo de jobs de suporte', { error: err })
     })
   }, SUPPORT_JOBS_INTERVAL_MS)
+
+  // Loop de Reconciliação de Assinaturas — Rodar a cada 1 hora
+  setInterval(async () => {
+    await reconcileSubscriptionConnectors().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de reconciliação de assinaturas', { error: err })
+    })
+  }, RECONCILE_INTERVAL_MS)
 }
 
 /**
@@ -200,7 +213,13 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
         id,
         tenant_id,
         name,
-        is_active
+        is_active,
+        tenants!inner(
+          id,
+          is_active,
+          subscription_status,
+          trial_ends_at
+        )
       )
     `)
     .in('status', ['active', 'error']) // Buscar ativos OU em erro (para tentar a cura)
@@ -215,8 +234,32 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
     return []
   }
 
+  // Filtrar na memória conectores de tenants suspensos, cancelados ou expirados
+  const validRows = (data ?? []).filter(row => {
+    const business = (row as any).monitored_businesses
+    if (!business) return false
+    
+    const tenant = business.tenants
+    if (!tenant) return false
+
+    // Tenant deve estar ativo
+    if (!tenant.is_active) return false
+
+    // Status da assinatura deve ser 'active' ou 'trial'
+    const status = tenant.subscription_status
+    if (status !== 'active' && status !== 'trial') return false
+
+    // Se for trial, não pode ter expirado
+    if (status === 'trial' && tenant.trial_ends_at) {
+      const trialEnd = new Date(tenant.trial_ends_at).getTime()
+      if (trialEnd < Date.now()) return false
+    }
+
+    return true
+  })
+
   // Mapear para ChannelConnector incluindo tenant_id do join
-  return (data ?? []).map(row => {
+  return validRows.map(row => {
     const business = (row as Record<string, unknown>)['monitored_businesses'] as {
       tenant_id: string
     }
@@ -386,6 +429,89 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
         next_sync_at: new Date(Date.now() + 5 * 60_000).toISOString(), // Tentar de novo em 5 min
       })
       .eq('id', connector.id)
+  }
+}
+
+/**
+ * Varre o banco de dados para pausar automaticamente conectores ativos
+ * de inquilinos que cancelaram a assinatura, ficaram suspensos ou expiraram o trial.
+ */
+export async function reconcileSubscriptionConnectors(): Promise<void> {
+  logger.info('[scheduler] Iniciando reconciliação de assinaturas/conectores')
+  try {
+    const now = new Date().toISOString()
+
+    // 1. Suspender automaticamente trials expirados
+    const { error: trialErr } = await supabase
+      .from('tenants')
+      .update({
+        subscription_status: 'suspended',
+        plan_status: 'suspended'
+      })
+      .eq('subscription_status', 'trial')
+      .lt('trial_ends_at', now)
+
+    if (trialErr) {
+      logger.error('[scheduler] Falha ao expirar trials antigos', { error: trialErr.message })
+    }
+
+    // 2. Buscar todos os conectores que poderiam estar consumindo créditos (active, error, running)
+    const { data, error: fetchErr } = await supabase
+      .from('channel_connectors')
+      .select(`
+        id,
+        monitored_businesses!inner(
+          id,
+          tenant_id,
+          tenants!inner(
+            id,
+            is_active,
+            subscription_status
+          )
+        )
+      `)
+      .in('status', ['active', 'error', 'running'])
+
+    if (fetchErr) {
+      logger.error('[scheduler] Falha ao consultar conectores para reconciliação', { error: fetchErr.message })
+      return
+    }
+
+    const toPauseIds: string[] = []
+
+    for (const row of (data ?? [])) {
+      const business = (row as any).monitored_businesses
+      if (!business) continue
+      const tenant = business.tenants
+      if (!tenant) continue
+
+      const isTenantInactive = !tenant.is_active
+      const isSubInvalid = tenant.subscription_status !== 'active' && tenant.subscription_status !== 'trial'
+
+      if (isTenantInactive || isSubInvalid) {
+        toPauseIds.push(row.id)
+      }
+    }
+
+    if (toPauseIds.length > 0) {
+      logger.info(`[scheduler] Pausando ${toPauseIds.length} conectores devido a assinaturas canceladas/inativas`)
+      
+      const { error: updateErr } = await supabase
+        .from('channel_connectors')
+        .update({
+          status: 'paused',
+          error_message: 'Pausado automaticamente: assinatura suspensa ou inativa.'
+        })
+        .in('id', toPauseIds)
+
+      if (updateErr) {
+        logger.error('[scheduler] Falha ao suspender conectores inativos no banco', { error: updateErr.message })
+      } else {
+        logger.info('[scheduler] Conectores expirados suspensos com sucesso.')
+      }
+    }
+  } catch (err: any) {
+    logger.error('[scheduler] Exceção fatal no job de reconciliação', { error: err.message })
   }
 }
 
