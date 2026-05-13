@@ -22,11 +22,7 @@ export function mapReviewToNormalized(
     sentiment: 'unanalyzed',
     url: `https://www.google.com/maps/place/?q=place_id:${raw.place_id}`,
     upvotes: raw.upvotes || 0,
-    raw_data: raw as unknown as Record<string, unknown>,
-    metadata: {
-      date_text: raw.date_text,
-      scraped_at: raw.scraped_at
-    }
+    raw_data: raw as unknown as Record<string, unknown>
   }
 }
 

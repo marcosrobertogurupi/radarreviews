@@ -354,16 +354,35 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
     })
 
   } catch (err) {
+    const errMsg = `Crash crítico: ${err instanceof Error ? err.message : String(err)}`
     logger.error('[scheduler] Falha crítica na execução do conector', {
       connector_id: connector.id,
-      error: err instanceof Error ? err.message : String(err)
+      error: errMsg
     })
+
+    const errorCount = (connector.error_count ?? 0) + 1
+    const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
+
+    // Envia o alerta imediato por ser uma exceção inesperada e grave (Crash)
+    try {
+      const updatedConnector = {
+        ...connector,
+        error_count: errorCount,
+        first_error_at: firstErrorAt
+      }
+      await systemNotifications.notifyError(updatedConnector, errMsg, false)
+    } catch (notifyErr) {
+      logger.error('[scheduler] Falha ao disparar notificação de crash', { error: notifyErr })
+    }
+
     // Em caso de erro catastrófico (ex: crash do runner), volta para status error para não travar em 'running'
     await supabase
       .from('channel_connectors')
       .update({
         status: 'error',
-        error_message: `Crash crítico: ${err instanceof Error ? err.message : String(err)}`,
+        error_message: errMsg,
+        error_count: errorCount,
+        first_error_at: firstErrorAt,
         next_sync_at: new Date(Date.now() + 5 * 60_000).toISOString(), // Tentar de novo em 5 min
       })
       .eq('id', connector.id)
