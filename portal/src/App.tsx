@@ -55,6 +55,7 @@ export default function App() {
     plan: string; plan_status: string; trial_ends_at: string | null
   } | null>(null)
   const [managedTenants, setManagedTenants] = useState<any[]>([])
+  const [userRole, setUserRole] = useState<string>('')
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -97,6 +98,7 @@ export default function App() {
       .then(async ({ data: userProfile }) => {
         if (!userProfile) return
         setUserName(userProfile.nome || '')
+        setUserRole(userProfile.perfil || '')
 
         if (userProfile.perfil === 'parceiro') {
           // Buscar assinantes vinculados a este parceiro
@@ -403,6 +405,18 @@ export default function App() {
             <LogOut size={14} style={{ flexShrink: 0 }} />
             <span className="btn-sidebar-label">Sair</span>
           </button>
+          {(userRole === 'admin' || userRole === 'operador') && (
+            <a
+              href="https://admin.reputei.com.br"
+              target="_blank"
+              rel="noreferrer"
+              className="btn"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 8, background: 'rgba(99,102,241,0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)', textDecoration: 'none' }}
+            >
+              <LayoutDashboard size={14} style={{ flexShrink: 0 }} />
+              <span className="btn-sidebar-label">Painel Operacional</span>
+            </a>
+          )}
           <p className="sidebar-footer-text" style={{ marginTop: 12 }}>Reputei · v1.0.1</p>
         </div>
       </aside>

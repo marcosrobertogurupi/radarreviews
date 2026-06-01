@@ -103,4 +103,4 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating))
 }
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api-production-24e1.up.railway.app'
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'

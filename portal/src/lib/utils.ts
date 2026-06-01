@@ -135,7 +135,7 @@ export function getReviewResponseUrl(review: { channel: string; url?: string; ex
   return review.url
 }
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api-production-24e1.up.railway.app'
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
 
 /**
  * Utilitário para baixar dados como CSV (Excel compatível)
