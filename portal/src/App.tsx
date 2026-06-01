@@ -218,8 +218,8 @@ export default function App() {
     return <Login onSignup={() => setAuthView('signup')} />
   }
 
-  // Sessão estabelecida mas ainda verificando tenant
-  if (hasTenant === null) {
+  // Sessão estabelecida mas ainda verificando tenant ou plano
+  if (hasTenant === null || (hasTenant === true && !tenantTrial)) {
     return (
       <div style={{
         height: '100vh',
