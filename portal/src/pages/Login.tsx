@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { LogIn, Eye, EyeOff } from 'lucide-react'
 
@@ -10,6 +10,10 @@ export default function Login({ onSignup }: Props) {
   const [showPass, setShowPass]   = useState(false)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState('')
+
+  useEffect(() => {
+    supabase.auth.signOut().catch(console.error)
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

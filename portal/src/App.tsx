@@ -52,7 +52,7 @@ export default function App() {
   const [businessName, setBusinessName] = useState<string>('')
   const [userName, setUserName] = useState<string>('')
   const [tenantTrial, setTenantTrial] = useState<{
-    plan: string; plan_status: string; trial_ends_at: string | null
+    plan: string; subscription_status: string; trial_ends_at: string | null
   } | null>(null)
   const [managedTenants, setManagedTenants] = useState<any[]>([])
   const [userRole, setUserRole] = useState<string>('')
@@ -149,7 +149,7 @@ export default function App() {
       .then(({ data }) => { if (data?.name) setBusinessName(data.name) })
 
     supabase.from('tenants')
-      .select('plan, plan_status, trial_ends_at')
+      .select('plan, subscription_status, trial_ends_at')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => { if (data) setTenantTrial(data) })
@@ -279,7 +279,7 @@ export default function App() {
     return <Onboarding onBackToLogin={() => supabase.auth.signOut()} onComplete={() => setHasTenant(true)} />
 
   // Bloqueia se trial expirou e plano não está ativo
-  const trialExpired = tenantTrial?.plan_status === 'trial' &&
+  const trialExpired = tenantTrial?.subscription_status === 'trial' &&
     tenantTrial?.trial_ends_at != null &&
     new Date(tenantTrial.trial_ends_at) < new Date()
 
@@ -287,7 +287,7 @@ export default function App() {
     return <TrialExpired plan={tenantTrial!.plan} onLogout={() => supabase.auth.signOut()} />
 
   // Dias restantes do trial
-  const trialDaysLeft = tenantTrial?.plan_status === 'trial' && tenantTrial?.trial_ends_at
+  const trialDaysLeft = tenantTrial?.subscription_status === 'trial' && tenantTrial?.trial_ends_at
     ? Math.max(0, Math.ceil((new Date(tenantTrial.trial_ends_at).getTime() - Date.now()) / 86_400_000))
     : null
 
