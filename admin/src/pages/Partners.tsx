@@ -189,33 +189,33 @@ export default function Partners() {
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Nome Completo *</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Nome Completo *</label>
                   <input required type="text" className="input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Empresa</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Empresa</label>
                   <input type="text" className="input" value={form.company_name} onChange={e => setForm({...form, company_name: e.target.value})} style={{ width: '100%' }} />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>E-mail (Login) *</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>E-mail (Login) *</label>
                   <input required type="email" className="input" value={form.email} onChange={e => setForm({...form, email: e.target.value})} style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Senha *</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Senha *</label>
                   <input required type="password" className="input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} style={{ width: '100%' }} />
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Telefone</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Telefone</label>
                 <input type="text" className="input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} style={{ width: '100%' }} />
               </div>
 
               <div style={{ padding: 16, background: 'var(--bg-darkest)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Perfil e Comissionamento</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 12 }}>Perfil e Comissionamento</label>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginBottom: 16 }}>
                   <select className="input" value={form.partner_type} onChange={e => handlePartnerTypeChange(e.target.value)} style={{ width: '100%', cursor: 'pointer' }}>
@@ -227,11 +227,11 @@ export default function Partners() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>% Comissão Inicial (Setup)</label>
+                    <label style={{ display: 'block', fontSize: 11, color: '#fff', marginBottom: 4 }}>% Comissão Inicial (Setup)</label>
                     <input type="number" className="input" value={form.commission_setup_rate} onChange={e => setForm({...form, commission_setup_rate: Number(e.target.value)})} style={{ width: '100%' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>% Comissão Mensal (Recorrente)</label>
+                    <label style={{ display: 'block', fontSize: 11, color: '#fff', marginBottom: 4 }}>% Comissão Mensal (Recorrente)</label>
                     <input type="number" className="input" value={form.commission_recurring_rate} onChange={e => setForm({...form, commission_recurring_rate: Number(e.target.value)})} style={{ width: '100%' }} />
                   </div>
                 </div>
