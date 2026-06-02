@@ -7,6 +7,7 @@ export default function Partners() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [isModalOpen, setModalOpen] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   
   // Form para cadastro
   const [form, setForm] = useState({
@@ -56,6 +57,7 @@ export default function Partners() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
@@ -77,7 +79,10 @@ export default function Partners() {
         partner_type: 'agency', commission_setup_rate: 20, commission_recurring_rate: 10, status: 'active'
       })
     } catch (err: any) {
-      alert(`Erro: ${err.message}`)
+      let msg = err.message
+      if (msg === 'Failed to fetch') msg = 'Erro de conexão com o servidor. Tente novamente.'
+      if (msg.includes('already been registered')) msg = 'Este e-mail já está em uso por outro parceiro ou usuário.'
+      setFormError(msg)
     }
   }
 
@@ -95,7 +100,7 @@ export default function Partners() {
             Cadastre e gerencie as contas de parceiros, agências e representantes.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+        <button className="btn btn-primary" onClick={() => { setFormError(null); setModalOpen(true) }}>
           <Plus size={16} /> Novo Parceiro
         </button>
       </div>
@@ -186,6 +191,13 @@ export default function Partners() {
           <div className="card" style={{ width: '100%', maxWidth: 600, padding: 32 }}>
             <h2 style={{ marginTop: 0, marginBottom: 24, fontSize: 20 }}>Novo Parceiro</h2>
             
+            {formError && (
+              <div style={{ padding: 12, background: 'rgba(239,68,68,0.1)', color: '#fca5a5', borderRadius: 8, marginBottom: 16, border: '1px solid rgba(239,68,68,0.2)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <XCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{formError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div>
