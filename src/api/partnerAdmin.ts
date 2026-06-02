@@ -97,19 +97,18 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
 
       if (partnerErr) throw partnerErr;
 
-      // 3. Criar na tabela usuarios para que o parceiro consiga logar no portal
+      // 3. Atualizar na tabela usuarios para que o parceiro consiga logar no portal (já criado por trigger)
       const { error: userErr } = await supabaseAdmin
         .from('usuarios')
-        .insert({
-          id: authData.user.id,
+        .update({
           nome: name,
-          email,
           perfil: 'parceiro',
           ativo: true
-        });
+        })
+        .eq('id', authData.user.id);
 
       if (userErr) {
-        console.error('Erro ao criar usuario no schema public:', userErr);
+        console.error('Erro ao atualizar usuario no schema public:', userErr);
       }
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
