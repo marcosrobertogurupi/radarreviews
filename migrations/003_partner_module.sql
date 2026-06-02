@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS commissions (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   partner_id       uuid NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
   tenant_id        uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  reference_month  date NOT NULL COMMENT 'Primeiro dia do mês de referência (ex: 2024-04-01)',
+  reference_month  date NOT NULL,
   plan_name        text NOT NULL,
   plan_value       numeric(10,2) NOT NULL,
   is_setup         boolean NOT NULL DEFAULT false,
@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS commissions (
 
   CONSTRAINT commissions_uq UNIQUE (partner_id, tenant_id, reference_month, is_setup)
 );
+
+COMMENT ON COLUMN commissions.reference_month IS 'Primeiro dia do mês de referência (ex: 2024-04-01)';
 
 ALTER TABLE commissions ENABLE ROW LEVEL SECURITY;
 
