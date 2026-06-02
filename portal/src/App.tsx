@@ -25,10 +25,13 @@ import PartnerDashboard from './pages/PartnerDashboard'
 import { ToastProvider } from './components/Toast'
 import SupportFloatingButton from './components/SupportFloatingButton'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'benchmarking' | 'widget' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support' | 'partner_dashboard'
+import MyClients from './pages/MyClients'
+import MyCommissions from './pages/MyCommissions'
+
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'benchmarking' | 'widget' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support' | 'partner_dashboard' | 'my_clients' | 'my_commissions'
 type AuthView = 'login' | 'signup'
 
-const NAV = [
+const NAV_CLIENTE = [
   { id: 'dashboard' as Page, label: 'Visão Geral',  icon: LayoutDashboard },
   { id: 'reviews'   as Page, label: 'Reviews',      icon: MessageSquare },
   { id: 'alerts'    as Page, label: 'Alertas',      icon: Bell },
@@ -40,6 +43,14 @@ const NAV = [
   { id: 'pricing'   as Page, label: 'Planos',        icon: CreditCard },
   { id: 'support'   as Page, label: 'Suporte',       icon: LifeBuoy },
   { id: 'settings'  as Page, label: 'Meu Perfil',    icon: User },
+]
+
+const NAV_PARCEIRO = [
+  { id: 'partner_dashboard' as Page, label: 'Painel do Parceiro', icon: LayoutDashboard },
+  { id: 'my_clients'        as Page, label: 'Meus Clientes',      icon: Building2 },
+  { id: 'my_commissions'    as Page, label: 'Minhas Comissões',   icon: DollarSign },
+  { id: 'support'           as Page, label: 'Suporte',            icon: LifeBuoy },
+  { id: 'settings'          as Page, label: 'Meu Perfil',         icon: User },
 ]
 
 export default function App() {
@@ -57,6 +68,9 @@ export default function App() {
   } | null>(null)
   const [managedTenants, setManagedTenants] = useState<any[]>([])
   const [userRole, setUserRole] = useState<string>('')
+  
+  // Controle para saber se o parceiro está visualizando a própria conta ou a de um cliente
+  const [partnerViewingClient, setPartnerViewingClient] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -117,12 +131,11 @@ export default function App() {
             
             const list = tList || []
             setManagedTenants(list)
-            if (list.length > 0) {
-              setTenantId(list[0].id)
-            }
-            // Parceiros nunca passam pelo onboarding de assinante
+            // Parceiros nunca passam pelo onboarding de assinante e iniciam no seu próprio painel sem tenantId preenchido
+            setTenantId('')
             setHasTenant(true)
             setPage('partner_dashboard')
+            setPartnerViewingClient(false)
           } else {
             // Se por algum motivo o perfil for parceiro mas não tiver na tabela partners
             setHasTenant(false)
@@ -333,6 +346,12 @@ export default function App() {
     settings:  <Settings />,
     support:   <Support tenantId={tenantId} />,
     partner_dashboard: <PartnerDashboard />,
+    my_clients: <MyClients onSelectTenant={(id) => {
+      setTenantId(id)
+      setPartnerViewingClient(true)
+      setPage('dashboard')
+    }} />,
+    my_commissions: <MyCommissions />
   }
 
   return (
@@ -378,6 +397,21 @@ export default function App() {
             </div>
           )}
 
+          {/* Opção para parceiro sair da visão do cliente */}
+          {userRole === 'parceiro' && partnerViewingClient && (
+            <button 
+              className="btn btn-primary" 
+              style={{ width: '100%', marginTop: 12, padding: '6px', fontSize: 11, justifyContent: 'center' }}
+              onClick={() => {
+                setTenantId('')
+                setPartnerViewingClient(false)
+                setPage('my_clients')
+              }}
+            >
+              ⬅ Voltar para Meus Clientes
+            </button>
+          )}
+
           {/* Switcher de Tenant (Agência) */}
           {managedTenants.length > 1 && (
             <div style={{ marginTop: 12 }}>
@@ -408,28 +442,33 @@ export default function App() {
         </div>
 
         <div className="sidebar-section">
-          <div className="sidebar-label">Menu</div>
-          {userRole === 'parceiro' && (
-            <button
-              className={`nav-item ${page === 'partner_dashboard' ? 'active' : ''}`}
-              onClick={() => setPage('partner_dashboard')}
-            >
-              <LayoutDashboard size={16} />
-              <span className="nav-label">Painel do Parceiro</span>
-              {page === 'partner_dashboard' && <ChevronRight size={12} className="nav-chevron" style={{ marginLeft: 'auto' }} />}
-            </button>
+          <div className="sidebar-label">{partnerViewingClient ? 'Menu do Cliente' : 'Menu'}</div>
+          
+          {userRole === 'parceiro' && !partnerViewingClient ? (
+            NAV_PARCEIRO.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                className={`nav-item ${page === id ? 'active' : ''}`}
+                onClick={() => setPage(id)}
+              >
+                <Icon size={16} />
+                <span className="nav-label">{label}</span>
+                {page === id && <ChevronRight size={12} className="nav-chevron" style={{ marginLeft: 'auto' }} />}
+              </button>
+            ))
+          ) : (
+            NAV_CLIENTE.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                className={`nav-item ${page === id ? 'active' : ''}`}
+                onClick={() => setPage(id)}
+              >
+                <Icon size={16} />
+                <span className="nav-label">{label}</span>
+                {page === id && <ChevronRight size={12} className="nav-chevron" style={{ marginLeft: 'auto' }} />}
+              </button>
+            ))
           )}
-          {NAV.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              className={`nav-item ${page === id ? 'active' : ''}`}
-              onClick={() => setPage(id)}
-            >
-              <Icon size={16} />
-              <span className="nav-label">{label}</span>
-              {page === id && <ChevronRight size={12} className="nav-chevron" style={{ marginLeft: 'auto' }} />}
-            </button>
-          ))}
         </div>
 
         <div className="sidebar-footer">
