@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell,
   Bot, ChevronRight, LogOut, RefreshCw, CreditCard, Send, FileText, User, LifeBuoy,
-  BarChart2, Layout
+  BarChart2, Layout, Building2, DollarSign
 } from 'lucide-react'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
