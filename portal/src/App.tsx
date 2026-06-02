@@ -231,7 +231,7 @@ export default function App() {
   }
 
   // Sessão estabelecida mas ainda verificando tenant ou plano
-  if (hasTenant === null || (hasTenant === true && !tenantTrial)) {
+  if (hasTenant === null || (hasTenant === true && !tenantTrial && tenantId !== '')) {
     return (
       <div style={{
         height: '100vh',
