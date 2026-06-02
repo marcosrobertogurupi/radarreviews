@@ -57,7 +57,7 @@ export default function App() {
   const [session, setSession]        = useState<Session | null>(null)
   const [loadingSession, setLoading] = useState(true)
   const [page, setPage]              = useState<Page>('dashboard')
-  const [authView, setAuthView]      = useState<AuthView>('login')
+  // authView movido para baixo para poder inicializar com base em ?ref=
   // null = verificando; false = sem tenant; true = tem tenant
   const [hasTenant, setHasTenant]    = useState<boolean | null>(null)
   const [tenantId, setTenantId]      = useState<string>('')
@@ -71,6 +71,18 @@ export default function App() {
   
   // Controle para saber se o parceiro está visualizando a própria conta ou a de um cliente
   const [partnerViewingClient, setPartnerViewingClient] = useState(false)
+  
+  // Captura ?ref= do link de indicação do parceiro
+  const [partnerRef] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('ref') || ''
+  })
+
+  // Se veio com ?ref=, já abre o cadastro diretamente
+  const [authView, setAuthView] = useState<AuthView>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('ref') ? 'signup' : 'login'
+  })
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -239,7 +251,7 @@ export default function App() {
 
   if (!session) {
     if (authView === 'signup')
-      return <Onboarding onBackToLogin={() => setAuthView('login')} onComplete={() => setHasTenant(true)} />
+      return <Onboarding partnerRef={partnerRef} onBackToLogin={() => setAuthView('login')} onComplete={() => setHasTenant(true)} />
     return <Login onSignup={() => setAuthView('signup')} />
   }
 

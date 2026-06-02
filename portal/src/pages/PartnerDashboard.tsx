@@ -32,12 +32,37 @@ export default function PartnerDashboard() {
     return <div style={{ padding: 40, color: '#fff' }}>Perfil de parceiro não localizado.</div>
   }
 
-  const referralLink = `https://reputei.com.br/trial?ref=${stats.partner_id}`
+  const referralLink = `https://reputei.com.br/portalcliente?ref=${stats.partner_id}`
 
   function copyLink() {
-    navigator.clipboard.writeText(referralLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    // Tenta a Clipboard API moderna primeiro
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(referralLink)
+        .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500) })
+        .catch(() => fallbackCopy())
+    } else {
+      fallbackCopy()
+    }
+  }
+
+  function fallbackCopy() {
+    // Fallback para iframes e contextos sem permissão de clipboard
+    const el = document.createElement('textarea')
+    el.value = referralLink
+    el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0'
+    document.body.appendChild(el)
+    el.focus()
+    el.select()
+    try {
+      document.execCommand('copy')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      // Último recurso: mostrar o link para o usuário copiar manualmente
+      alert('Copie o link manualmente:\n\n' + referralLink)
+    } finally {
+      document.body.removeChild(el)
+    }
   }
 
   return (

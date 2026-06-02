@@ -40,11 +40,12 @@ const CATEGORIES = [
 interface Props {
   onBackToLogin: () => void
   onComplete: () => void
+  partnerRef?: string
 }
 
 // ── Componente ───────────────────────────────────────────────────
 
-export default function Onboarding({ onBackToLogin, onComplete }: Props) {
+export default function Onboarding({ onBackToLogin, onComplete, partnerRef }: Props) {
   const [step,      setStep]     = useState(0)   // 0=conta 1=negócio 2=plano 3=canais 4=sucesso
   const [loading,   setLoading]  = useState(false)
   const [error,     setError]    = useState('')
@@ -210,7 +211,8 @@ export default function Onboarding({ onBackToLogin, onComplete }: Props) {
           channels,
           instagramUsername: igUser,
           hashtags: igHashtags,
-          fbUrl: fbUrl
+          fbUrl: fbUrl,
+          ...(partnerRef ? { partnerRef } : {}),
         }),
       })
 
