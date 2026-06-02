@@ -226,39 +226,43 @@ export default function Settings() {
             </div>
           </div>
 
-          <hr style={{ border: '0', borderTop: '1px solid var(--border)', margin: '10px 0' }} />
-          <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 700 }}>Notificações de Alertas Críticos</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-            Defina quem será avisado caso ocorra algum review crítico não respondido.
-          </p>
+          {profile !== 'parceiro' && (
+            <>
+              <hr style={{ border: '0', borderTop: '1px solid var(--border)', margin: '10px 0' }} />
+              <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 700 }}>Notificações de Alertas Críticos</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+                Defina quem será avisado caso ocorra algum review crítico não respondido.
+              </p>
 
-          <div className="form-group">
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>WhatsApp do Admin</label>
-            <div className="input-with-icon">
-              <Phone size={16} className="icon" />
-              <input 
-                type="tel" 
-                value={adminWhatsapp} 
-                onChange={e => setAdminWhatsapp(e.target.value)} 
-                placeholder="+5511999999999"
-                className="input"
-              />
-            </div>
-          </div>
+              <div className="form-group">
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>WhatsApp do Admin</label>
+                <div className="input-with-icon">
+                  <Phone size={16} className="icon" />
+                  <input 
+                    type="tel" 
+                    value={adminWhatsapp} 
+                    onChange={e => setAdminWhatsapp(e.target.value)} 
+                    placeholder="+5511999999999"
+                    className="input"
+                  />
+                </div>
+              </div>
 
-          <div className="form-group">
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>E-mail do Admin</label>
-            <div className="input-with-icon">
-              <Mail size={16} className="icon" />
-              <input 
-                type="email" 
-                value={adminEmail} 
-                onChange={e => setAdminEmail(e.target.value)} 
-                placeholder="adm@empresa.com"
-                className="input"
-              />
-            </div>
-          </div>
+              <div className="form-group">
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>E-mail do Admin</label>
+                <div className="input-with-icon">
+                  <Mail size={16} className="icon" />
+                  <input 
+                    type="email" 
+                    value={adminEmail} 
+                    onChange={e => setAdminEmail(e.target.value)} 
+                    placeholder="adm@empresa.com"
+                    className="input"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
 
           <button 
@@ -273,42 +277,45 @@ export default function Settings() {
 
         </form>
 
-        <div className="card p-6 mt-8" style={{ background: 'rgba(99,102,241,0.03)', border: '1px solid rgba(99,102,241,0.1)' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-            🔗 Conexões Sociais
-          </h3>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-            Conecte sua conta oficial do Facebook ou Instagram para obter métricas mais precisas e automações avançadas.
-          </p>
+        {profile !== 'parceiro' && (
+          <div className="card p-6 mt-8" style={{ background: 'rgba(99,102,241,0.03)', border: '1px solid rgba(99,102,241,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              🔗 Conexões Sociais
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Conecte sua conta oficial do Facebook ou Instagram para obter métricas mais precisas e automações avançadas.
+            </p>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'var(--bg-darker)', borderRadius: 12, border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 20 }}>
-                f
-              </div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>Meta (Facebook & Instagram)</div>
-                <div style={{ fontSize: 12, color: hasMeta ? '#10b981' : 'var(--text-muted)' }}>
-                  {hasMeta ? `● Conectado oficialmente ${metaAccountName ? `(${metaAccountName})` : ''}` : '○ Não conectado'}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 12, padding: 16
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 20, fontWeight: 800 }}>
+                  f
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>Meta (Facebook & Instagram)</div>
+                  {hasMeta ? (
+                    <div style={{ fontSize: 12, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <ShieldCheck size={12} /> Conectado como {metaAccountName || 'sua conta'}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>○ Não conectado</div>
+                  )}
                 </div>
               </div>
+
+              <button 
+                onClick={handleMetaConnect}
+                className="btn btn-primary"
+                style={{ background: hasMeta ? 'var(--bg-lighter)' : undefined, color: hasMeta ? 'var(--text-primary)' : undefined, border: hasMeta ? '1px solid var(--border)' : undefined }}
+              >
+                {hasMeta ? 'Refazer Conexão' : 'Conectar Agora'}
+              </button>
             </div>
-            <button 
-              type="button"
-              onClick={handleMetaConnect}
-              className="btn"
-              style={{ 
-                background: hasMeta ? 'rgba(16,185,129,0.1)' : 'var(--accent)',
-                color: hasMeta ? '#10b981' : 'white',
-                border: hasMeta ? '1px solid rgba(16,185,129,0.2)' : 'none',
-                padding: '8px 16px',
-                fontSize: 13
-              }}
-            >
-              {hasMeta ? 'Reconectar' : 'Conectar Agora'}
-            </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
