@@ -24,9 +24,9 @@ export default function Navbar() {
             <Link href="/parceiros" className="text-gray-300 hover:text-white transition-colors">Parceiros</Link>
             <Link
               href="/portalcliente"
-              className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full transition-all border border-gray-700 font-medium"
+              className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full transition-all border border-gray-700 font-medium whitespace-nowrap"
             >
-              Portal do Cliente
+              Portal (Cliente/Parceiro)
             </Link>
             <Link
               href="/admin"
