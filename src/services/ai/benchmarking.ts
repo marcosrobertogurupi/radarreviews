@@ -49,10 +49,10 @@ export async function updateCompetitorStats(): Promise<void> {
 
         logger.info(`[benchmarking] Stats atualizadas para concorrente: ${comp.name}`)
       } catch (err) {
-        logger.error(`[benchmarking] Erro ao buscar stats para ${comp.name}:`, err)
+        logger.error(`[benchmarking] Erro ao buscar stats para ${comp.name}:`, { error: err })
       }
     }
   } catch (err) {
-    logger.error('[benchmarking] Erro geral:', err)
+    logger.error('[benchmarking] Erro geral:', { error: err })
   }
 }

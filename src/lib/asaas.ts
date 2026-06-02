@@ -71,18 +71,6 @@ export async function createAsaasSubscription(data: AsaasSubscription) {
   }
 }
 
-/**
- * Obtém o link de pagamento da assinatura
- */
-export async function getAsaasPaymentLink(subscriptionId: string) {
-  try {
-    const response = await asaas.get(`/subscriptions/${subscriptionId}/paymentLinks`);
-    return response.data;
-  } catch (error: any) {
-    console.error('[Asaas] Erro ao buscar link de pagamento:', error.response?.data || error.message);
-    return null;
-  }
-}
 
 /**
  * Busca detalhes de uma assinatura no Asaas
@@ -97,18 +85,6 @@ export async function getAsaasSubscription(subscriptionId: string) {
   }
 }
 
-/**
- * Cancela uma assinatura no Asaas
- */
-export async function cancelAsaasSubscription(subscriptionId: string) {
-  try {
-    const response = await asaas.delete(`/subscriptions/${subscriptionId}`);
-    return response.data;
-  } catch (error: any) {
-    console.error('[Asaas] Erro ao cancelar assinatura:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.errors?.[0]?.description || 'Erro ao cancelar assinatura');
-  }
-}
 
 /**
  * Busca cobranças (payments) de uma assinatura

@@ -220,7 +220,7 @@ describe('TripAdvisor connector', () => {
           sentiment: expect.stringMatching(/^(positive|neutral|negative|critical|unanalyzed)$/),
         }),
       ]),
-      expect.objectContaining({ onConflict: 'channel,external_id' })
+        expect.objectContaining({ onConflict: expect.stringContaining('tenant_id') })
     )
   })
 

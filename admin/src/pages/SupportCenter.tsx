@@ -2,9 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { API_URL, timeAgo } from '../lib/utils'
 import { 
-  LifeBuoy, MessageSquare, BookOpen, BarChart2, 
-  CheckCircle, AlertCircle, Clock, ChevronRight,
-  Shield, User, Bot, Search, Filter, ArrowUpRight
+  LifeBuoy, MessageSquare, BookOpen, BarChart2, ArrowUpRight
 } from 'lucide-react'
 
 interface SupportStats {
@@ -21,14 +19,12 @@ export default function SupportCenter() {
   const [stats, setStats] = useState<SupportStats | null>(null)
   const [tickets, setTickets] = useState<any[]>([])
   const [kbDocs, setKbDocs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadAll()
   }, [tab])
 
   async function loadAll() {
-    setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const headers = { Authorization: `Bearer ${session?.access_token}` }
@@ -45,8 +41,6 @@ export default function SupportCenter() {
       }
     } catch (err) {
       console.error(err)
-    } finally {
-      setLoading(false)
     }
   }
 

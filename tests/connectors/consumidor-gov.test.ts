@@ -78,7 +78,7 @@ describe('Consumidor.gov connector', () => {
             result: {
               resources: [
                 {
-                  name: 'Base Completa 03-2026',
+                  name: `Base Completa ${String(new Date().getMonth() === 0 ? 12 : new Date().getMonth()).padStart(2, '0')}-${new Date().getMonth() === 0 ? new Date().getFullYear() - 1 : new Date().getFullYear()}`,
                   format: 'csv',
                   url: 'https://dados.mj.gov.br/mock-resource-id/download.csv'
                 }

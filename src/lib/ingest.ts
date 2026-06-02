@@ -11,6 +11,33 @@ import { logger } from './logger.js'
 import { checkAlerts } from './alerts.js'
 import { analyzeBatch } from './sentiment.js'
 import type { NormalizedReview, SourceChannel } from '../types/review.js'
+import DOMPurify from 'isomorphic-dompurify'
+import { z } from 'zod'
+
+// [APPSEC] C9 — Schema Zod para validação e sanitização XSS
+export const RawReviewSchema = z.object({
+  external_id:        z.string().max(255),
+  rating:             z.number().min(0).max(5).nullable().optional(),
+  title:              z.string().max(255).nullable().optional()
+                        .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
+  body:               z.string().max(10_000).nullable().optional()
+                        .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
+  author_name:        z.string().max(255).nullable().optional()
+                        .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
+  author_external_id: z.string().max(255).nullable().optional(),
+  url:                z.string().url().max(1000).nullable().optional(),
+  language:           z.string().max(10).nullable().optional(),
+  tags:               z.array(z.string()).nullable().optional(),
+  upvotes:            z.number().nullable().optional(),
+  comment_count:      z.number().nullable().optional(),
+  is_resolved:        z.boolean().nullable().optional(),
+  response_time_days: z.number().nullable().optional(),
+  sentiment:          z.string().nullable().optional(),
+  sentiment_score:    z.number().nullable().optional(),
+  published_at:       z.string().datetime({ offset: true }).or(z.string().datetime()),
+  collected_at:       z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
+  raw_data:           z.record(z.unknown()).optional()
+}).passthrough()
 
 const BATCH_SIZE = 50
 
@@ -137,7 +164,19 @@ export async function ingestReviews(
   // ------------------------------------------------------------------
   // 4. Fazer upsert apenas de novos + alterados
   // ------------------------------------------------------------------
-  const toWrite = [...newReviews, ...changedReviews]
+  // [APPSEC] C9 — Sanitização antes de escrever
+  const toWriteRaw = [...newReviews, ...changedReviews]
+  const toWrite: NormalizedReview[] = []
+
+  for (const item of toWriteRaw) {
+    const result = RawReviewSchema.safeParse(item)
+    if (!result.success) {
+      logger.warn('[ingest] Review rejeitado pela validação Zod', { error: result.error, external_id: item.external_id })
+      continue
+    }
+    // Garante que o tenant_id é o que foi injetado pelo wrapper/contexto
+    toWrite.push({ ...result.data, tenant_id: reviews[0]?.tenant_id } as NormalizedReview)
+  }
 
   if (toWrite.length > 0) {
     await upsertBatch(toWrite)
@@ -192,10 +231,11 @@ async function upsertBatch(reviews: NormalizedReview[]): Promise<void> {
 
     while (retryCount < maxRetries && !success) {
       try {
+        // [APPSEC] C9 — Upsert com chave única correta incluindo tenant_id
         const { error } = await supabase
           .from('reviews')
           .upsert(batch, {
-            onConflict: 'channel,external_id',
+            onConflict: 'external_id,channel,tenant_id',
             ignoreDuplicates: false,
           })
 

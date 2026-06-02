@@ -30,6 +30,10 @@ vi.mock('../../src/lib/supabase.js', () => ({
   },
 }))
 
+vi.mock('../../src/lib/apify.js', () => ({
+  fetchTrustpilotReviews: vi.fn().mockResolvedValue([])
+}))
+
 vi.mock('axios', async importOriginal => {
   const actual = await importOriginal<typeof import('axios')>()
   return {
@@ -52,7 +56,7 @@ const makeReview = (id: string, stars = 5, withNextPage = false) => ({
   title: `Ótimo serviço ${id}`,
   text: `Review de teste ${id}`,
   language: 'pt',
-  createdAt: '2024-11-10T10:00:00Z',
+  createdAt: '2026-05-15T10:00:00Z',
   consumer: {
     id: `consumer_${id}`,
     displayName: `Usuário ${id}`,
@@ -77,6 +81,7 @@ describe('Trustpilot connector', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     vi.stubEnv('TRUSTPILOT_API_KEY', 'TEST_KEY_123')
+    vi.stubEnv('APIFY_TOKEN', '') // Força o fallback para testar a API Oficial
 
     const axiosModule = await import('axios')
     axiosMock = axiosModule.default.get
@@ -138,13 +143,13 @@ describe('Trustpilot connector', () => {
     expect(result.error).toBeUndefined()
   })
 
-  it('retorna error quando TRUSTPILOT_API_KEY não está definida', async () => {
+  it('retorna error quando APIFY_TOKEN não está definida', async () => {
     vi.unstubAllEnvs()
 
     const connector = mockConnector('trustpilot')
     const result = await run(connector)
 
-    expect(result.error).toContain('TRUSTPILOT_API_KEY')
+    expect(result.error).toContain('APIFY_TOKEN')
   })
 
   it('retorna error quando connector.external_id está vazio', async () => {
@@ -179,7 +184,7 @@ describe('Trustpilot connector', () => {
           title: 'Bom serviço',
           text: 'Atendimento rápido.',
           language: 'pt',
-          createdAt: '2024-11-08T09:15:00Z',
+          createdAt: '2026-05-15T10:00:00Z',
           consumer: { id: 'user456', displayName: 'Maria Oliveira' },
           links: [{ rel: 'self', href: 'https://www.trustpilot.com/reviews/abc123' }],
         },

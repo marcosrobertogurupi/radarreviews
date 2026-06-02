@@ -1,11 +1,11 @@
 {
-  "updatedAt": "2026-04-17T14:24:41.697Z",
+  "updatedAt": "2026-04-18T00:37:37.000Z",
   "createdAt": "2026-04-17T14:24:41.697Z",
   "id": "VpNC39G3nt4RUZRC",
   "name": "Untitled-1776435875559",
   "description": null,
   "active": false,
-  "isArchived": false,
+  "isArchived": true,
   "nodes": [],
   "connections": {},
   "settings": {
@@ -15,9 +15,9 @@
   "staticData": null,
   "meta": null,
   "pinData": null,
-  "versionId": "0ddc0de5-e4ae-4c59-8eaa-7d833accb1d1",
+  "versionId": "385e7fc3-92dd-4791-a49c-32fdbf63f985",
   "activeVersionId": null,
-  "versionCounter": 1,
+  "versionCounter": 2,
   "triggerCount": 0,
   "shared": [
     {

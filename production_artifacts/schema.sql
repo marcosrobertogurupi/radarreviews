@@ -181,7 +181,8 @@ CREATE TABLE reviews (
   collected_at        timestamptz NOT NULL DEFAULT now(),
   raw_data            jsonb NOT NULL DEFAULT '{}',
 
-  CONSTRAINT reviews_channel_external_uq UNIQUE (channel, external_id)
+  -- Substituido por reviews_external_unique
+  -- CONSTRAINT reviews_channel_external_uq UNIQUE (channel, external_id)
 );
 
 COMMENT ON TABLE reviews IS 'Tabela central — todos os canais normalizados aqui.';
@@ -519,4 +520,49 @@ LEFT JOIN LATERAL (
 ) sj ON true;
 
 COMMENT ON VIEW v_connector_status IS 'Estado atual de cada conector com info do último job.';
+
+
+-- ============================================================
+-- MIGRATION: appsec_hardening_2026_06_01
+-- ============================================================
+
+-- [APPSEC] C9 — UNIQUE CONSTRAINT para deduplicação segura de reviews por tenant
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_channel_external_uq;
+ALTER TABLE reviews ADD CONSTRAINT reviews_external_unique
+  UNIQUE (external_id, channel, tenant_id);
+
+-- [APPSEC] C8 — Função SQL claim_review_jobs com FOR UPDATE SKIP LOCKED
+CREATE OR REPLACE FUNCTION claim_review_jobs(
+  p_batch_size  int     DEFAULT 10,
+  p_worker_id   text    DEFAULT gen_random_uuid()::text,
+  p_timeout_min int     DEFAULT 15
+)
+RETURNS SETOF sync_jobs
+LANGUAGE sql
+AS $$
+  -- Requeue jobs travados há mais de p_timeout_min minutos (crash recovery)
+  UPDATE sync_jobs
+    SET status = 'pending'
+  WHERE status = 'running'
+    AND started_at < now() - (p_timeout_min || ' minutes')::interval;
+
+  -- Claim atômico: apenas um worker por linha
+  UPDATE sync_jobs
+    SET status     = 'running',
+        started_at = now()
+  WHERE id IN (
+    SELECT id FROM sync_jobs
+    WHERE  status = 'pending'
+    ORDER  BY created_at
+    LIMIT  p_batch_size
+    FOR UPDATE SKIP LOCKED   -- coração do lock distribuído
+  )
+  RETURNING *;
+$$;
+
+-- [APPSEC] C1 — Script de auditoria de RLS
+-- AUDIT: SELECT tablename FROM pg_tables
+--   WHERE schemaname = 'public'
+--   AND tablename NOT IN (
+--     SELECT relname FROM pg_class WHERE relrowsecurity = true);
 

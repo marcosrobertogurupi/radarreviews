@@ -69,7 +69,7 @@ export default function Plans() {
       if (!session) throw new Error('Não autenticado')
 
       const method = isNew ? 'POST' : 'PATCH'
-      const url = isNew ? `${baseUrl}/api/admin/plans` : `${baseUrl}/api/admin/plans/${editing.id}`
+      const url = isNew ? `${API_URL}/api/admin/plans` : `${API_URL}/api/admin/plans/${editing.id}`
 
       const res = await fetch(url, {
         method,
@@ -106,7 +106,7 @@ export default function Plans() {
           const { data: { session } } = await supabase.auth.getSession()
           if (!session) throw new Error('Não autenticado')
 
-          const res = await fetch(`${baseUrl}/api/admin/plans/${plan.id}`, {
+          const res = await fetch(`${API_URL}/api/admin/plans/${plan.id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${session.access_token}` }
           })

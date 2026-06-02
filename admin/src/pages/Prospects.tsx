@@ -118,7 +118,6 @@ export default function Prospects() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [followups, setFollowups] = useState<Followup[]>([])
   const [selectedSegId, setSelectedSegId] = useState('seg_plano_saude')
-  const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [xmlText, setXmlText] = useState('')
   const [showImportModal, setShowImportModal] = useState(false)
@@ -162,13 +161,10 @@ export default function Prospects() {
       }
     } catch (err) {
       console.error('Erro ao carregar campanhas:', err)
-    } finally {
-      setLoading(false)
     }
   }
 
   async function loadLeadsAndFollowups() {
-    setLoading(true)
     try {
       // Buscar leads
       const { data: leadsData, error: lErr } = await supabase
@@ -197,8 +193,6 @@ export default function Prospects() {
       setTemplates(templatesData ?? [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -613,46 +607,6 @@ REQUISITOS ADICIONAIS:
     }
   }
  
-  // Disparar passo comercial (retrocompatível)
-  async function handleDispatch(lead: Lead, step: number, channel: 'email' | 'whatsapp') {
-    try {
-      let text = ''
-      let subject = ''
- 
-      if (channel === 'whatsapp') {
-        text = step === 1 
-          ? `Oi, ${lead.contact_name || 'Gestor'}! Sou Consultor da Reputei. Vi que a ${lead.company_name} tem nota ${lead.variables.nota_google || 'N/A'} no Google Maps. Oferecemos 30 dias grátis pra monitorar e evitar reclamações. Quer conhecer em 10 min?`
-          : `Oi, ${lead.contact_name || 'Gestor'}! Só passando pra retomar nosso papo sobre a reputação da ${lead.company_name}.`
-      } else {
-        subject = `Reputação online da ${lead.company_name}`
-        text = `Olá, ${lead.contact_name || 'Gestor'}. Represento a Reputei, plataforma de reputação online. Notamos oportunidades de melhorar suas avaliações no Google. Gostaria de 30 dias grátis de trial?`
-      }
- 
-      const { data: { session } } = await supabase.auth.getSession()
-      const response = await fetch(`${API_URL}/api/admin/prospects/dispatch`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': session ? `Bearer ${session.access_token}` : ''
-        },
-        body: JSON.stringify({
-          lead_id: lead.id,
-          channel,
-          step,
-          text,
-          subject
-        })
-      })
- 
-      const resData = await response.json()
-      if (resData.error) throw new Error(resData.error)
- 
-      toast(resData.message || 'Disparado com sucesso!', 'success')
-      loadLeadsAndFollowups()
-    } catch (err: any) {
-      toast(`Falha no envio: ${err.message}`, 'error')
-    }
-  }
 
   // Filtrar leads do segmento ativo
   const filteredLeads = leads.filter(l => l.segment_id === selectedSegId)

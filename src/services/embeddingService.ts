@@ -30,10 +30,10 @@ export class EmbeddingService {
       const result = await model.embedContent({
         content: { parts: [{ text }], role: 'user' },
         outputDimensionality: 768
-      })
+      } as any)
       return result.embedding.values
     } catch (error) {
-      logger.error('Erro ao gerar embedding', error)
+      logger.error('Erro ao gerar embedding', { error })
       throw error
     }
   }
@@ -65,7 +65,7 @@ export class EmbeddingService {
         resolutionCount: r.resolution_count
       }))
     } catch (error) {
-      logger.error('Erro na busca semântica na KB', error)
+      logger.error('Erro na busca semântica na KB', { error })
       return []
     }
   }

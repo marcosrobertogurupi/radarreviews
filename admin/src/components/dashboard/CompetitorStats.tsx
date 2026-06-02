@@ -13,13 +13,12 @@ interface CompetitorStat {
 }
 
 interface Props {
-  tenantId: string
   businessId: string
   myRating: number
   myReviews: number
 }
 
-export function CompetitorStats({ tenantId, businessId, myRating, myReviews }: Props) {
+export function CompetitorStats({ businessId, myRating, myReviews }: Props) {
   const [competitors, setCompetitors] = useState<CompetitorStat[]>([])
   const [loading, setLoading] = useState(true)
 

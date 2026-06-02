@@ -74,6 +74,10 @@ export async function handleSupportAdmin(
       .select('status, assigned_to, priority')
       .eq('id', id)
       .single()
+    
+    if (!oldTicket) {
+      return json(res, 404, { error: 'Ticket original não encontrado' })
+    }
 
     const { data: ticket, error } = await supabaseAdmin
       .from('support_tickets')

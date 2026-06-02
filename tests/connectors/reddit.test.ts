@@ -97,7 +97,7 @@ describe('Reddit connector — modo público', () => {
     mockFetch([makeListing([makePost('abc1'), makePost('abc2')])])
 
     const connector = mockConnector('reddit', {
-      config: { search_terms: ['Empresa Teste'], delay_ms: 0 },
+      config: { search_terms: ['Empresa'], delay_ms: 0 },
     })
     const result = await run(connector)
 
@@ -106,7 +106,9 @@ describe('Reddit connector — modo público', () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('search.json'),
       expect.objectContaining({
-        headers: expect.objectContaining({ 'User-Agent': expect.stringContaining('Reputei') }),
+        headers: expect.objectContaining({
+          'User-Agent': expect.stringContaining('Mozilla'),
+        }),
       })
     )
   })
@@ -116,7 +118,7 @@ describe('Reddit connector — modo público', () => {
     mockFetch([makeListing([makePost('k1')])])
 
     const connector = mockConnector('reddit', {
-      config: { keywords: ['Nubank', 'Nu Pagamentos'], delay_ms: 0 },
+      config: { keywords: ['empresa', 'k1'], delay_ms: 0 },
     })
     const result = await run(connector)
 
@@ -140,7 +142,7 @@ describe('Reddit connector — modo público', () => {
       makePost('ok1'),
     ])])
 
-    const connector = mockConnector('reddit', { config: { search_terms: ['X'], delay_ms: 0 } })
+    const connector = mockConnector('reddit', { config: { search_terms: ['Empresa'], delay_ms: 0 } })
     const result = await run(connector)
 
     expect(result.reviews_fetched).toBe(1)
@@ -154,7 +156,7 @@ describe('Reddit connector — modo público', () => {
     ])])
 
     const connector = mockConnector('reddit', {
-      config: { search_terms: ['X'], since_days: 30, delay_ms: 0 },
+      config: { search_terms: ['Empresa'], since_days: 30, delay_ms: 0 },
     })
     const result = await run(connector)
 
@@ -169,7 +171,7 @@ describe('Reddit connector — modo público', () => {
     ])
 
     const connector = mockConnector('reddit', {
-      config: { search_terms: ['X'], delay_ms: 0 },
+      config: { search_terms: ['Empresa'], delay_ms: 0 },
     })
     const result = await run(connector)
 
@@ -182,7 +184,7 @@ describe('Reddit connector — modo público', () => {
     mockFetch([makeListing([makePost('p1'), makePost('p2')], null)])
 
     const connector = mockConnector('reddit', {
-      config: { search_terms: ['X'], limit_per_request: 2, delay_ms: 0 },
+      config: { search_terms: ['Empresa'], limit_per_request: 2, delay_ms: 0 },
     })
     await run(connector)
 
@@ -193,7 +195,7 @@ describe('Reddit connector — modo público', () => {
   it('body usa título + corpo quando selftext existe', async () => {
     mockFetch([makeListing([makePost('b1', { selftext: 'Corpo do post' })])])
 
-    const connector = mockConnector('reddit', { config: { search_terms: ['X'], delay_ms: 0 } })
+    const connector = mockConnector('reddit', { config: { search_terms: ['Empresa'], delay_ms: 0 } })
     await run(connector)
 
     const upsertCall = mockSupabaseMethods.upsert.mock.calls[0]
@@ -208,7 +210,7 @@ describe('Reddit connector — modo público', () => {
   it('body usa só o título quando selftext está vazio', async () => {
     mockFetch([makeListing([makePost('b2', { selftext: '' })])])
 
-    const connector = mockConnector('reddit', { config: { search_terms: ['X'], delay_ms: 0 } })
+    const connector = mockConnector('reddit', { config: { search_terms: ['Empresa'], delay_ms: 0 } })
     const result = await run(connector)
 
     expect(result.reviews_fetched).toBe(1)
@@ -216,10 +218,10 @@ describe('Reddit connector — modo público', () => {
 
   // 9. created_utc (segundos) → ISO 8601
   it('converte created_utc (Unix segundos) para ISO 8601', async () => {
-    const utc = 1704067200  // 2024-01-01T00:00:00Z
+    const utc = 1704067200  // 2026-05-15T10:00:00Z
     mockFetch([makeListing([makePost('ts1', { created_utc: utc })])])
 
-    const connector = mockConnector('reddit', { config: { search_terms: ['X'], delay_ms: 0 } })
+    const connector = mockConnector('reddit', { config: { search_terms: ['Empresa'], delay_ms: 0 } })
     await run(connector)
 
     const upsertCall = mockSupabaseMethods.upsert.mock.calls[0]
@@ -262,7 +264,7 @@ describe('Reddit connector — modo público', () => {
     }))
 
     const connector = mockConnector('reddit', {
-      config: { search_terms: ['X'], delay_ms: 0 },
+      config: { search_terms: ['Empresa'], delay_ms: 0 },
     })
     const result = await run(connector)
 
@@ -278,7 +280,7 @@ describe('Reddit connector — modo público', () => {
 
     const connector = mockConnector('reddit', {
       config: {
-        search_terms: ['X'],
+        search_terms: ['Empresa'],
         subreddits: ['brasil', 'investimentos'],
         delay_ms: 0,
       },
@@ -295,7 +297,7 @@ describe('Reddit connector — modo público', () => {
   it('retorna reviews_fetched=0 quando Reddit não retorna posts', async () => {
     mockFetch([makeListing([])])
 
-    const connector = mockConnector('reddit', { config: { search_terms: ['X'], delay_ms: 0 } })
+    const connector = mockConnector('reddit', { config: { search_terms: ['Empresa'], delay_ms: 0 } })
     const result = await run(connector)
 
     expect(result.reviews_fetched).toBe(0)

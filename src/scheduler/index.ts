@@ -18,10 +18,16 @@ import { logger } from '../lib/logger.js'
 import { systemNotifications } from '../lib/system-notifications.js'
 import type { ChannelConnector } from '../types/connector.js'
 import type { JobResult } from '../types/connector.js'
+import crypto from 'crypto'
+
+// [APPSEC] C8 — Identificador único por worker
+const workerId = process.env.WORKER_ID ?? crypto.randomUUID()
 
 import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
 import { runMonthlyReportsJob } from '../lib/monthly-reports-job.js'
+import { checkSystemHealth } from '../lib/system-health-job.js'
 import { checkSLA, runKnowledgeLearningJob, checkSupportInactivity } from '../lib/support-jobs.js'
+import { runBenchmarkingJob, runTopicsAnalysisJob } from '../lib/ai-jobs.js'
 
 // Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
 const POLL_INTERVAL_MS = 120_000
@@ -29,6 +35,7 @@ const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
 const MONTHLY_JOB_INTERVAL_MS = 4 * 3600_000 // 4 horas
 const SUPPORT_JOBS_INTERVAL_MS = 15 * 60_000 // 15 minutos
 const RECONCILE_INTERVAL_MS = 60 * 60_000 // 1 hora (reconciliação de assinaturas)
+const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Temas)
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -95,6 +102,9 @@ export async function startScheduler(): Promise<void> {
   await checkCriticalAlerts().catch(err => {
     logger.error('[scheduler] Erro ao verificar alertas críticos na inicialização', { error: err })
   })
+  await checkSystemHealth().catch(err => {
+    logger.error('[scheduler] Erro ao verificar saúde do sistema na inicialização', { error: err })
+  })
   await runMonthlyReportsJob().catch(err => {
     logger.error('[scheduler] Erro no job mensal na inicialização', { error: err })
   })
@@ -109,6 +119,14 @@ export async function startScheduler(): Promise<void> {
     logger.error('[scheduler] Erro na reconciliação de assinaturas na inicialização', { error: err })
   })
 
+  // Jobs de Inteligência Artificial (Concorrentes e Análise de Sentimento/Temas)
+  runBenchmarkingJob().catch(err => {
+    logger.error('[scheduler] Erro no job de benchmarking inicial', { error: err })
+  })
+  runTopicsAnalysisJob().catch(err => {
+    logger.error('[scheduler] Erro no job de análise de temas inicial', { error: err })
+  })
+
   // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
   async function runSyncCycle() {
     await runOnce().catch(err => {
@@ -118,10 +136,13 @@ export async function startScheduler(): Promise<void> {
   }
   runSyncCycle()
 
-  // Loop de Alertas (Assinantes) — Rodar a cada 1 hora
+  // Loop de Alertas (Assinantes e Sistema) — Rodar a cada 1 hora
   setInterval(async () => {
     await checkCriticalAlerts().catch(err => {
       logger.error('[scheduler] Erro no ciclo de alertas críticos', { error: err })
+    })
+    await checkSystemHealth().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de saúde do sistema', { error: err })
     })
   }, ALERT_CHECK_INTERVAL_MS)
 
@@ -149,47 +170,74 @@ export async function startScheduler(): Promise<void> {
       logger.error('[scheduler] Erro no ciclo de reconciliação de assinaturas', { error: err })
     })
   }, RECONCILE_INTERVAL_MS)
+
+  // Loop de Inteligência Artificial — Rodar a cada 24 horas
+  setInterval(async () => {
+    try {
+      await runBenchmarkingJob()
+      await runTopicsAnalysisJob()
+    } catch (err) {
+      logger.error('[scheduler] Erro no ciclo de jobs de IA', { error: err })
+    }
+  }, AI_JOBS_INTERVAL_MS)
 }
 
 /**
- * Executa um ciclo de coleta: busca todos os conectores com next_sync_at vencido
- * e executa cada um em sequência.
+ * Executa um ciclo de coleta usando RPC atômica (FOR UPDATE SKIP LOCKED)
+ * [APPSEC] C8 — Previne Race Conditions no Scheduler
  */
-async function runOnce(): Promise<void> {
-  // 0. Auto-recuperação: destravar conectores presos em status 'running' por mais de 30 minutos
-  try {
-    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-    const { error: resetErr } = await supabase
-      .from('channel_connectors')
-      .update({ status: 'active', next_sync_at: new Date().toISOString() })
-      .eq('status', 'running')
-      .lt('updated_at', thirtyMinutesAgo)
-
-    if (resetErr) {
-      logger.error('[scheduler] Erro na auto-recuperação de conectores presos:', { error: resetErr.message })
-    }
-  } catch (err: any) {
-    logger.error('[scheduler] Falha crítica ao rodar auto-recuperação:', { error: err.message })
+export async function runOnce(): Promise<void> {
+  // 1. Enfileirar conectores vencidos como pendentes (se não estiverem já na fila)
+  const connectors = await fetchDueConnectors()
+  
+  for (const connector of connectors) {
+    // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
+    await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
+    
+    // Insere job pendente
+    await supabase.from('sync_jobs').insert({
+      connector_id: connector.id,
+      status: 'pending',
+      started_at: null
+    })
   }
 
-  const connectors = await fetchDueConnectors()
+  // 2. Claim atômico usando a RPC
+  const { data: jobs, error } = await supabase
+    .rpc('claim_review_jobs', {
+      p_batch_size: 10,
+      p_worker_id: workerId,
+      p_timeout_min: 15,
+    })
 
-  if (connectors.length === 0) {
-    logger.debug('[scheduler] Nenhum conector com sync vencido')
+  if (error) {
+    logger.error('[scheduler] claim_review_jobs error:', { error })
     return
   }
 
-  logger.info(`[scheduler] ${connectors.length} conector(es) para sincronizar`)
+  if (!jobs?.length) {
+    return // Nada a processar
+  }
 
-  // Executar em sequência para não sobrecarregar APIs externas
-  for (const connector of connectors) {
-    await runConnector(connector).catch(err => {
-      logger.error('[scheduler] Erro inesperado ao executar conector', {
-        connector_id: connector.id,
-        channel: connector.channel,
-        error: err,
+  logger.info(`[scheduler] ${jobs.length} job(s) bloqueado(s) para este worker (${workerId})`)
+
+  for (const job of jobs) {
+    // Busca o connector associado
+    const { data: connectorData } = await supabase
+      .from('channel_connectors')
+      .select('*')
+      .eq('id', job.connector_id)
+      .single()
+    
+    if (connectorData) {
+      await runConnector(connectorData as ChannelConnector, job.id).catch(err => {
+        logger.error('[scheduler] Erro inesperado ao executar conector', {
+          connector_id: connectorData.id,
+          channel: connectorData.channel,
+          error: err,
+        })
       })
-    })
+    }
   }
 }
 
@@ -275,10 +323,9 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
 // -----------------------------------------------------------------------------
 
 /**
- * Executa o conector de um canal, registra em sync_jobs e
- * atualiza o status do channel_connector ao final.
+ * Executa o conector de um canal e atualiza o sync_job pré-existente
  */
-async function runConnector(connector: ChannelConnector): Promise<void> {
+async function runConnector(connector: ChannelConnector, jobId: string): Promise<void> {
   const runner = await loadConnector(connector.channel)
 
   if (!runner) {
@@ -289,33 +336,7 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
     return
   }
 
-  // 1. Bloquear conector (status 'running') para evitar coletas duplicadas por reentrância
-  await supabase
-    .from('channel_connectors')
-    .update({ status: 'running' })
-    .eq('id', connector.id)
-
   try {
-    // Registrar início do job no histórico
-    const { data: jobData, error: jobError } = await supabase
-      .from('sync_jobs')
-      .insert({
-        connector_id: connector.id,
-        status: 'running',
-        started_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single()
-
-    if (jobError || !jobData) {
-      logger.error('[scheduler] Falha ao criar sync_job', { error: jobError?.message })
-      // Reverter status para não ficar travado se falhar a criação do job
-      await supabase.from('channel_connectors').update({ status: connector.status }).eq('id', connector.id)
-      return
-    }
-
-    const jobId = (jobData as Record<string, unknown>)['id'] as string
-
     logger.info(`[scheduler] Iniciando sync`, {
       connector_id: connector.id,
       channel: connector.channel,
@@ -361,6 +382,8 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
           error_message: null,
           error_count: 0,
           first_error_at: null,
+          alert_6h_sent: false,
+          alert_24h_sent: false,
         })
         .eq('id', connector.id)
 
@@ -371,9 +394,14 @@ async function runConnector(connector: ChannelConnector): Promise<void> {
       const isWithin24h = (Date.now() - new Date(firstErrorAt).getTime()) < 24 * 60 * 60 * 1000
 
       const backoffMinutes = Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
-      const shouldAlert = isAuth || !isWithin24h
+      
+      // Alertas síncronos (imediatos) apenas para erros fatais ou de autenticação.
+      // Erros transientes serão monitorados pelo system-health-job (6h e 24h).
+      const shouldAlert = isAuth
 
       if (shouldAlert) {
+        // Envia notificação imediata. Opcionalmente, poderíamos adicionar flags para evitar spam,
+        // mas erros auth são graves o suficiente para alertar.
         await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
       }
 

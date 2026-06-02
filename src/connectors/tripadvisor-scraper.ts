@@ -130,7 +130,7 @@ export async function scrapeTripAdvisorReviews(
 // TripAdvisor usa padrão -Reviews-orN- para paginação
 // Ex: Hotel_Review-g123-d456-Reviews-Hotel_Name.html
 //  → Hotel_Review-g123-d456-Reviews-or10-Hotel_Name.html (offset 10)
-export function buildPageUrl(baseUrl: string, offset: number): string {
+function buildPageUrl(baseUrl: string, offset: number): string {
   if (offset === 0) return baseUrl
   // Remove offset existente se houver
   const cleaned = baseUrl.replace(/-or\d+-/, '-')
@@ -231,7 +231,7 @@ async function extractFromJsonLd(
       text: string
     }> = []
 
-    const scripts = document.querySelectorAll('script[type="application/ld+json"]')
+    const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
 
     for (const script of scripts) {
       try {
@@ -298,9 +298,9 @@ async function extractFromDom(
       'section[class*="review"]',
     ]
 
-    let containers: NodeListOf<Element> | null = null
+    let containers: Element[] | null = null
     for (const sel of containerSelectors) {
-      const found = document.querySelectorAll(sel)
+      const found = Array.from(document.querySelectorAll(sel))
       if (found.length > 0) { containers = found; break }
     }
 
@@ -323,12 +323,12 @@ async function extractFromDom(
         const label = ratingEl.getAttribute('aria-label') || ''
         const m = label.match(/(\d)/)
         if (m) {
-          rating = parseInt(m[1])
+          rating = parseInt(m[1]!)
         } else {
           // Padrão class bubble_50 = 5 estrelas, bubble_40 = 4, etc.
           const cls = ratingEl.className || ''
           const bm = cls.match(/bubble_(\d+)/)
-          if (bm) rating = Math.round(parseInt(bm[1]) / 10)
+          if (bm) rating = Math.round(parseInt(bm[1]!) / 10)
         }
       }
 

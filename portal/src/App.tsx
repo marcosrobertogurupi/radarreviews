@@ -278,13 +278,30 @@ export default function App() {
   if (!hasTenant)
     return <Onboarding onBackToLogin={() => supabase.auth.signOut()} onComplete={() => setHasTenant(true)} />
 
-  // Bloqueia se trial expirou e plano não está ativo
-  const trialExpired = tenantTrial?.subscription_status === 'trial' &&
+  // [APPSEC] C5 — Proteção Global de Acesso (Trial Expirado e Inadimplência)
+  const isSuspended = tenantTrial?.subscription_status === 'suspended' || tenantTrial?.subscription_status === 'cancelled'
+  const isTrialExpired = tenantTrial?.subscription_status === 'trial' &&
     tenantTrial?.trial_ends_at != null &&
     new Date(tenantTrial.trial_ends_at) < new Date()
 
-  if (trialExpired)
+  if (isSuspended) {
+    // Permite apenas acessar a página de suporte ou perfil, o resto bloqueia
+    if (page !== 'support' && page !== 'settings') {
+      return (
+        <div style={{ height: '100vh', background: '#090a0f', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#fff', gap: 16 }}>
+          <div style={{ fontSize: 48 }}>🔒</div>
+          <h2>Conta Suspensa</h2>
+          <p style={{ color: '#94a3b8' }}>Sua assinatura encontra-se suspensa ou cancelada.</p>
+          <button className="btn btn-primary" onClick={() => setPage('support')}>Falar com Suporte</button>
+          <button className="btn" onClick={() => supabase.auth.signOut()}>Sair</button>
+        </div>
+      )
+    }
+  }
+
+  if (isTrialExpired && page !== 'pricing' && page !== 'support') {
     return <TrialExpired plan={tenantTrial!.plan} onLogout={() => supabase.auth.signOut()} />
+  }
 
   // Dias restantes do trial
   const trialDaysLeft = tenantTrial?.subscription_status === 'trial' && tenantTrial?.trial_ends_at

@@ -6,7 +6,7 @@ import type { NormalizedReview } from '../types/review.js'
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
   const { business_id, id: connector_id, config } = connector
-  const username = config?.instagram_username || config?.username
+  const username = (config?.instagram_username || config?.username || '') as string
   const hashtags = (config?.hashtags as string || '').split(',').map(h => h.trim()).filter(Boolean)
 
   if (!username) {

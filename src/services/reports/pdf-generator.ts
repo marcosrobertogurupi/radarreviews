@@ -248,7 +248,7 @@ export async function processMonthlyReport(tenantId: string, monthYear: string, 
 
     return publicUrl
   } catch (err) {
-    logger.error('[reports] Falha ao processar relatório:', err)
+    logger.error('[reports] Falha ao processar relatório:', { error: err })
     throw err
   }
 }

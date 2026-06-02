@@ -81,7 +81,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   try {
     let externalId = connector.external_id || ''
     // Sanitização para o Trustpilot (remover www. e https:// para garantir compatibilidade)
-    externalId = externalId.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+    externalId = externalId.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]!
     
     // --- ESTRATÉGIA PRINCIPAL: APIFY (Mais estável e não exige API Key oficial) ---
     const apifyToken = process.env['APIFY_TOKEN']

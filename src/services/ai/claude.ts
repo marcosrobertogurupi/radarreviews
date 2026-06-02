@@ -43,7 +43,7 @@ export async function askClaude(systemPrompt: string, message: string, history: 
     const reply = response.data.content[0].text
     return reply
   } catch (err) {
-    logger.error('[claude] Erro na chamada API Anthropic:', err)
+    logger.error('[claude] Erro na chamada API Anthropic:', { error: err })
     throw err
   }
 }

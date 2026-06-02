@@ -69,6 +69,6 @@ Temas aceitáveis (use estes se possível): atendimento, limpeza, preço, locali
 
     logger.info(`[topics] Temas atualizados para empresa ${businessId}`)
   } catch (err) {
-    logger.error(`[topics] Erro ao processar temas para ${businessId}:`, err)
+    logger.error(`[topics] Erro ao processar temas para ${businessId}:`, { error: err })
   }
 }

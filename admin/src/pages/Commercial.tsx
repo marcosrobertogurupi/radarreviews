@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 import {
-  Briefcase, Search, Plus, MapPin, Phone, Mail, Award,
-  Sparkles, Check, ChevronDown, ChevronUp, Trash2, ArrowRight,
-  Loader2, Star, Megaphone, FileText, Globe, Building, CheckSquare, Square
+  Briefcase, Search, Plus, MapPin, Award,
+  Sparkles, ChevronDown, ChevronUp, Trash2, ArrowRight,
+  Loader2, Star, Megaphone, Building, CheckSquare, Square
 } from 'lucide-react'
 
 const API_URL = (import.meta.env.VITE_API_URL ?? 'https://reputei-api-production.up.railway.app').replace(/\/+$/, '')

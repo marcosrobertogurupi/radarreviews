@@ -30,7 +30,7 @@ export function mapReviewToNormalized(
  * Converte strings de data relativa do Google Maps (PT-BR e EN) para ISO string aproximada.
  * Ex: "há 2 dias", "há 1 semana", "a month ago"
  */
-export function parseRelativeDate(dateText: string): string | null {
+function parseRelativeDate(dateText: string): string | null {
   if (!dateText) return null
   const text = dateText.toLowerCase().trim()
   const now = new Date()

@@ -14,8 +14,10 @@ const mocks = vi.hoisted(() => {
 
   const mockPage = {
     goto: vi.fn().mockResolvedValue(undefined),
+    url: vi.fn().mockReturnValue('https://www.reclameaqui.com.br/empresa/empresa-teste/lista-reclamacoes/'),
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
     setDefaultTimeout: vi.fn(),
+    setDefaultNavigationTimeout: vi.fn(),
     locator: vi.fn(() => ({ count: vi.fn().mockResolvedValue(_linkCount) })),
     evaluate: vi.fn(async (fn: Function) => {
       const fnStr = fn.toString()
@@ -46,9 +48,10 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('playwright-core', () => ({
+vi.mock('playwright-extra', () => ({
   chromium: {
     launch: vi.fn().mockResolvedValue(mocks.mockBrowser),
+    use: vi.fn(),
   },
 }))
 
@@ -98,7 +101,7 @@ function makeComplaint(id: string, title: string, status = 'Resolvido') {
     description: `Descrição detalhada: ${title}`,
     status,
     demanderName: `Cliente ${id}`,
-    createdDate: '2024-11-10T10:00:00.000Z',
+    createdDate: '2026-05-15T10:00:00Z',
     isResolved: status === 'Resolvido',
   }
 }
@@ -152,7 +155,7 @@ describe('Reclame Aqui connector', () => {
 
     expect(result.error).toContain('external_id')
     // Browser não deve ter sido aberto
-    const { chromium } = await import('playwright-core')
+    const { chromium } = await import('playwright-extra')
     expect(chromium.launch).not.toHaveBeenCalled()
   })
 

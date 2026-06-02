@@ -28,3 +28,5 @@ logs/
 
 # TypeScript cache
 tsconfig.tsbuildinfo
+
+testsprite_tests\tmp\config.json

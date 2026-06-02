@@ -89,10 +89,3 @@ export async function tripadvisorReviewsTaskGet(taskId: string) {
   return result as DataForSEOTaskResponse;
 }
 
-/**
- * Lista tarefas prontas (alternativa ao webhook)
- */
-export async function tripadvisorTasksReady() {
-  const result = await dfFetch('/business_data/tripadvisor/reviews/tasks_ready');
-  return result as DataForSEOTaskResponse;
-}

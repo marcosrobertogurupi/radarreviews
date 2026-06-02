@@ -55,6 +55,10 @@ export interface ChannelConnector {
   error_count: number
   /** Timestamp do primeiro erro consecutivo */
   first_error_at: string | null
+  /** Flag para alerta de 6h enviado */
+  alert_6h_sent?: boolean
+  /** Flag para alerta de 24h enviado */
+  alert_24h_sent?: boolean
   /** Timestamp de criação do conector */
   created_at: string
   /** Timestamp da última atualização */

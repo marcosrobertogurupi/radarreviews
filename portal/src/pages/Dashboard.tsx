@@ -3,13 +3,13 @@ import { supabase } from '../lib/supabase'
 import type { Review, AlertEvent } from '../lib/supabase'
 import {
   CHANNEL_LABELS, CHANNEL_ICONS, SENTIMENT_LABELS, SENTIMENT_COLORS,
-  SENTIMENT_BG, TOPIC_LABELS, timeAgo, scoreToEmoji, ratingStars,
+  timeAgo, scoreToEmoji, ratingStars,
 } from '../lib/utils'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts'
-import { MessageSquare, Bell, TrendingDown, Star, AlertTriangle, FileText } from 'lucide-react'
+import { MessageSquare, TrendingDown, Star, AlertTriangle, FileText } from 'lucide-react'
 
 interface KPI {
   total: number       // últimos 30 dias
@@ -31,16 +31,13 @@ export default function Dashboard({ tenantId }: Props) {
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
   const [competitors, setCompetitors] = useState<any[]>([])
   const [loading, setLoading]     = useState(true)
-  const [, setRefreshing]         = useState(false)
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
-    else setRefreshing(true)
 
     // Sem tenant ainda carregado, não buscar nada
     if (!tenantId) {
       setLoading(false)
-      setRefreshing(false)
       return
     }
 
@@ -139,7 +136,6 @@ export default function Dashboard({ tenantId }: Props) {
       console.error('Erro ao carregar dashboard do portal:', err)
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }
 

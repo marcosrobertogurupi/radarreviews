@@ -11,7 +11,6 @@ interface QuietFailure {
 
 export default function Audit() {
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [errorConnectors, setErrorConnectors] = useState<Connector[]>([])
   const [healingConnectors, setHealingConnectors] = useState<Connector[]>([])
   const [recentJobs, setRecentJobs] = useState<SyncJob[]>([])
@@ -21,7 +20,6 @@ export default function Audit() {
   const [filters, setFilters] = useState({ from: '', to: '', usuario: '', operacao: '', status: '' })
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [totalActiveCount, setTotalActiveCount] = useState(0)
-  const [totalErrorCount, setTotalErrorCount] = useState(0)
 
   useEffect(() => {
     loadAuditData()
@@ -61,7 +59,6 @@ export default function Audit() {
 
   async function loadAuditData(silent = false) {
     if (!silent) setLoading(true)
-    else setRefreshing(true)
 
     const { data: allErrors } = await supabase
       .from('channel_connectors')
@@ -110,9 +107,7 @@ export default function Audit() {
     setRecentJobs((jobs || []) as SyncJob[])
     setQuietFailures(qFailures)
     setTotalActiveCount(allActive?.length || 0)
-    setTotalErrorCount(allErrors?.length || 0)
     setLoading(false)
-    setRefreshing(false)
   }
 
   return (

@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
-  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, BarChart2, Layout, CreditCard, LifeBuoy,
+  Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, CreditCard, LifeBuoy,
   Target, Briefcase
 } from 'lucide-react'
 import Login from './pages/Login'
@@ -18,9 +18,11 @@ import Plans from './pages/Plans'
 import SupportCenter from './pages/SupportCenter'
 import Prospects from './pages/Prospects'
 import Commercial from './pages/Commercial'
+import Partners from './pages/Partners'
+import PartnerCommissions from './pages/PartnerCommissions'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects' | 'commercial'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects' | 'commercial' | 'partners' | 'partner_commissions'
 
 
 export interface TenantOption { id: string; name: string }
@@ -29,6 +31,8 @@ const NAV = [
   { id: 'dashboard' as Page,   label: 'Dashboard',   icon: LayoutDashboard },
   { id: 'commercial' as Page,  label: 'Comercial',   icon: Briefcase },
   { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
+  { id: 'partners' as Page,    label: 'Parceiros',   icon: Building2 },
+  { id: 'partner_commissions' as Page, label: 'Comissões', icon: CreditCard },
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
   { id: 'alerts' as Page,      label: 'Alertas',     icon: Bell },
   { id: 'connectors' as Page,  label: 'Conectores',  icon: Radio },
@@ -240,6 +244,8 @@ export default function App() {
     connectors: <Connectors />,
     tenants:    <Tenants />,
     plans:      <Plans />,
+    partners:   <Partners />,
+    partner_commissions: <PartnerCommissions />,
     audit:      <Audit />,
     support:    <SupportCenter />,
   }

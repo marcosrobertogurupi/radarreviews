@@ -53,7 +53,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return result
   }
 
-  const config = (connector.config ?? {}) as GoogleMapsConfig
+  const config = (connector.config ?? {}) as unknown as GoogleMapsConfig
   const useScraper = config.mode === 'scraping' || config.use_scraper !== false
   
   let reviews: NormalizedReview[] = []

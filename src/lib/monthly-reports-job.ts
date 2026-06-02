@@ -46,12 +46,12 @@ export async function runMonthlyReportsJob(): Promise<void> {
         logger.info(`[monthly-job] Relatório gerado com sucesso: ${tenant.name}`)
 
       } catch (err) {
-        logger.error(`[monthly-job] Falha ao gerar relatório para ${tenant.name}:`, err)
+        logger.error(`[monthly-job] Falha ao gerar relatório para ${tenant.name}:`, { error: err })
       }
     }
 
     logger.info(`[monthly-job] Ciclo concluído para ${monthYear}`)
   } catch (err) {
-    logger.error('[monthly-job] Erro geral no job de relatórios:', err)
+    logger.error('[monthly-job] Erro geral no job de relatórios:', { error: err })
   }
 }

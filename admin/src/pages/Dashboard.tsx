@@ -491,7 +491,6 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       {/* ── Fase 2: Benchmarking e Tópicos ────────────────── */}
       <div className="grid-2" style={{ marginBottom: 24 }}>
         <CompetitorStats 
-          tenantId={selectedTenantId}
           businessId={business?.id || ''}
           myRating={business?.google_rating || 0}
           myReviews={business?.google_reviews_count || 0}

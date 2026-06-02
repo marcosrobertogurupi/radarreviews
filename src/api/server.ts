@@ -36,6 +36,8 @@ import { handleSupportPortal } from './support.js'
 import { handleSupportAdmin } from './supportAdmin.js'
 import { handleProspectAdmin } from './prospectAdmin.js'
 import { handleCommercialAdmin } from './commercialAdmin.js'
+import { handlePartnerRoutes } from './partner.js'
+import { handlePartnerAdminRoutes } from './partnerAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
 
 // ── Clientes ────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
 
 // ── CORS helper ──────────────────────────────────────────────────
 
-function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeaders = 'Content-Type, Authorization') {
+export function setCors(req: http.IncomingMessage, res: http.ServerResponse, extraHeaders = 'Content-Type, Authorization') {
   const originHeader = req.headers.origin
   const origin = Array.isArray(originHeader) ? originHeader[0] : (originHeader || '')
   // Whitelist de produção
@@ -475,11 +477,16 @@ async function handleOnboarding(
 
 // ── Autenticação JWT ──────────────────────────────────────────────
 
-async function getAuthUser(authHeader: string | undefined): Promise<{ userId: string; tenantId: string; perfil: string; nome: string; email: string } | null> {
+// [APPSEC] C3 — Validação segura de token via Auth GoTrue
+export async function getAuthUser(authHeader: string | undefined): Promise<{ userId: string; tenantId: string; perfil: string; nome: string; email: string } | null> {
   if (!authHeader?.startsWith('Bearer ')) return null
   const token = authHeader.slice(7)
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user) return null
+
+  // O tenant_id em app_metadata tem prioridade por ser imutável
+  const appTenantId = user.app_metadata?.tenant_id
+
 
   // Buscar perfil e dados do usuário na tabela public.usuarios
   const { data: userData } = await supabaseAdmin
@@ -499,6 +506,9 @@ async function getAuthUser(authHeader: string | undefined): Promise<{ userId: st
 
   // Fallback para E2E tests: se não tem na tabela usuarios, mas tem tenant_id, assume como assinante
   if (!userData && !tenantId) return null
+  
+  // Preferir app_metadata, depois fallback para a tabela tenant_users
+  const finalTenantId = appTenantId || tenantId || ''
 
   return { 
     userId: user.id, 
@@ -515,6 +525,35 @@ async function getAuthUser(authHeader: string | undefined): Promise<{ userId: st
 function checkPermission(userPerfil: string, allowedPerfis: string[]): boolean {
   if (userPerfil === 'admin') return true // Superusuário
   return allowedPerfis.includes(userPerfil)
+}
+
+// [APPSEC] C2 — Helper para injeção segura de tenant_id em todas as queries
+export function tenantQuery(table: string, tenantId: string) {
+  return supabaseAdmin.from(table).eq('tenant_id', tenantId);
+}
+
+// [APPSEC] C5 — Helper para checar status da assinatura no back-end
+export async function checkTenantStatus(tenantId: string): Promise<boolean> {
+  if (!tenantId) return false;
+  const { data: t } = await supabaseAdmin.from('tenants').select('is_active, subscription_status, trial_ends_at').eq('id', tenantId).single();
+  if (!t || !t.is_active || ['suspended', 'cancelled'].includes(t.subscription_status)) return false;
+  if (t.subscription_status === 'trial' && t.trial_ends_at && new Date(t.trial_ends_at) < new Date()) return false;
+  return true;
+}
+
+// [APPSEC] C7 — In-memory Rate Limiting para rotas de custo (WhatsApp, Copilot)
+const rateLimits = new Map<string, { count: number, resetAt: number }>();
+export function checkRateLimit(key: string, maxReqs: number, windowMs: number): boolean {
+  const now = Date.now();
+  let entry = rateLimits.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 1, resetAt: now + windowMs };
+    rateLimits.set(key, entry);
+    return true;
+  }
+  if (entry.count >= maxReqs) return false;
+  entry.count++;
+  return true;
 }
 
 // ── Handler principal ─────────────────────────────────────────────
@@ -542,6 +581,14 @@ async function handleCopilot(
     res.writeHead(401)
     res.end(JSON.stringify({ error: 'Não autenticado. Faça login novamente.' }))
     return
+  }
+
+  // [APPSEC] C5 e C7 — Verificação de assinatura e de Rate Limit
+  if (!(await checkTenantStatus(auth.tenantId))) {
+    res.writeHead(402); res.end(JSON.stringify({ error: 'Assinatura suspensa ou trial expirado.' })); return;
+  }
+  if (!checkRateLimit(`copilot:${auth.tenantId}`, 30, 60000)) {
+    res.writeHead(429); res.end(JSON.stringify({ error: 'Muitas requisições (Rate limit exceeded).' })); return;
   }
 
   try {
@@ -1545,6 +1592,24 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Rotas de Parceiros
+  if (url.startsWith('/api/partner/')) {
+    handlePartnerRoutes(req, res).catch(err => {
+      console.error('[partner] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  // Rotas de Admin para Parceiros
+  if (url.startsWith('/api/admin/partners') || url.startsWith('/api/admin/commissions')) {
+    handlePartnerAdminRoutes(req, res).catch(err => {
+      console.error('[partner-admin] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
   if (url === '/api/subscription/status' && req.method === 'GET') {
     handleSubscriptionStatus(req, res).catch(err => {
       console.error('[subscription-status] Erro:', err)
@@ -1749,6 +1814,14 @@ const server = http.createServer(async (req, res) => {
     const auth = await getAuthUser(req.headers.authorization)
     if (!auth) {
       res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+    }
+
+    // [APPSEC] C5 e C7 — Rate Limiting e Checagem de Assinatura
+    if (!(await checkTenantStatus(auth.tenantId))) {
+      res.writeHead(402); res.end(JSON.stringify({ error: 'Assinatura suspensa.' })); return;
+    }
+    if (!checkRateLimit(`whatsapp:${auth.tenantId}`, 20, 60000)) {
+      res.writeHead(429); res.end(JSON.stringify({ error: 'Limite de envios excedido por minuto.' })); return;
     }
 
     const body = await readBody(req) as { number?: string; text?: string; tenantId?: string }
@@ -2121,28 +2194,30 @@ async function processProspectFollowups(): Promise<void> {
 const ESCALATION_INTERVAL_MS = 15 * 60 * 1000
 const PROSPECT_INTERVAL_MS = 5 * 60 * 1000
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[api] Servidor Copilot rodando em http://localhost:${PORT}`)
-  console.log(`[api] Gemini API Key: ${process.env['GEMINI_API_KEY'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
-  console.log(`[api] Supabase URL:   ${process.env['SUPABASE_URL'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
-  console.log(`[api] n8n Webhook:    ${process.env['N8N_WEBHOOK_URL'] ? 'configurada ✓' : 'não configurada'}`)
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[api] Servidor Copilot rodando em http://localhost:${PORT}`)
+    console.log(`[api] Gemini API Key: ${process.env['GEMINI_API_KEY'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
+    console.log(`[api] Supabase URL:   ${process.env['SUPABASE_URL'] ? 'configurada ✓' : 'AUSENTE ✗'}`)
+    console.log(`[api] n8n Webhook:    ${process.env['N8N_WEBHOOK_URL'] ? 'configurada ✓' : 'não configurada'}`)
 
-  // Iniciar o scheduler de coleta de reviews no mesmo processo
-  startScheduler().catch(err => {
-    console.error('[scheduler] Falha ao iniciar:', err)
+    // Iniciar o scheduler de coleta de reviews no mesmo processo
+    startScheduler().catch(err => {
+      console.error('[scheduler] Falha ao iniciar:', err)
+    })
+
+    // Primeira verificação após 1 min de warm-up, depois a cada 15 min
+    setTimeout(() => {
+      checkConnectorsHealth()
+      setInterval(checkConnectorsHealth, ESCALATION_INTERVAL_MS)
+    }, 60_000)
+
+    // Worker de prospecção rodando a cada 5 minutos
+    setTimeout(() => {
+      processProspectFollowups()
+      setInterval(processProspectFollowups, PROSPECT_INTERVAL_MS)
+    }, 10_000)
   })
-
-  // Primeira verificação após 1 min de warm-up, depois a cada 15 min
-  setTimeout(() => {
-    checkConnectorsHealth()
-    setInterval(checkConnectorsHealth, ESCALATION_INTERVAL_MS)
-  }, 60_000)
-
-  // Worker de prospecção rodando a cada 5 minutos
-  setTimeout(() => {
-    processProspectFollowups()
-    setInterval(processProspectFollowups, PROSPECT_INTERVAL_MS)
-  }, 10_000)
-})
+}
 
 export {}

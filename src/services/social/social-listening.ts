@@ -1,8 +1,8 @@
-import { supabase } from '../lib/supabase.js'
-import { fetchInstagramMentions, fetchInstagramHashtags } from '../lib/apify.js'
-import { ingestReviews } from '../lib/ingest.js'
-import { analyzeMetaSentiment } from '../services/ai/metaSentiment.js'
-import type { NormalizedReview } from '../types/review.js'
+import { supabase } from '../../lib/supabase.js'
+import { fetchInstagramMentions, fetchInstagramHashtags } from '../../lib/apify.js'
+import { ingestReviews } from '../../lib/ingest.js'
+import { analyzeMetaSentiment } from '../ai/metaSentiment.js'
+import type { NormalizedReview } from '../../types/review.js'
 
 /**
  * Executa a coleta de Social Listening para um conector específico
@@ -24,7 +24,7 @@ export async function runSocialListening(connector: any): Promise<{ fetched: num
   for (const m of mentions) {
     try {
       const items = await fetchInstagramMentions(m, 10)
-      allItems.push(...items.map(i => ({ ...i, type: 'mention', source: m })))
+      allItems.push(...items.map((i: any) => ({ ...i, type: 'mention', source: m })))
     } catch (err) {
       console.error(`[SocialListening] Erro em menção ${m}:`, err)
     }
@@ -34,7 +34,7 @@ export async function runSocialListening(connector: any): Promise<{ fetched: num
   for (const h of hashtags) {
     try {
       const items = await fetchInstagramHashtags(h, 10)
-      allItems.push(...items.map(i => ({ ...i, type: 'hashtag', source: h })))
+      allItems.push(...items.map((i: any) => ({ ...i, type: 'hashtag', source: h })))
     } catch (err) {
       console.error(`[SocialListening] Erro em hashtag ${h}:`, err)
     }

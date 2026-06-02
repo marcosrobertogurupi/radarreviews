@@ -60,7 +60,7 @@ export async function sendDirectResponse(reviewId: string, message: string, user
     }
 
   } catch (err) {
-    logger.error('[responder] Erro ao enviar resposta:', err)
+    logger.error('[responder] Erro ao enviar resposta:', { error: err })
     return { success: false, error: err instanceof Error ? err.message : 'Erro interno ao processar resposta.' }
   }
 }
@@ -84,7 +84,7 @@ async function respondToMeta(connector: any, commentId: string, message: string)
 
     return !!res.data.id
   } catch (err) {
-    logger.error('[responder] Erro Meta API:', err instanceof axios.AxiosError ? err.response?.data : err)
+    logger.error('[responder] Erro Meta API:', { error: err instanceof axios.AxiosError ? err.response?.data : err })
     return false
   }
 }

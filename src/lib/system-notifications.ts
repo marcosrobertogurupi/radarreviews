@@ -18,14 +18,16 @@ export type SystemNotificationType =
 export const systemNotifications = {
   /**
    * Registra uma falha crítica e notifica via canais externos.
+   * @param delayHours Se informado, indica que o erro já persiste por X horas.
    */
-  async notifyError(connector: ChannelConnector, error: string, isAuth = false) {
+  async notifyError(connector: ChannelConnector, error: string, isAuth = false, delayHours?: 6 | 24) {
     const type: SystemNotificationType = isAuth ? 'auth_failure' : 'sync_error'
     
     logger.error(`[system-notifications] Notificando erro no canal ${connector.channel}`, {
       connector_id: connector.id,
       error,
-      isAuth
+      isAuth,
+      delayHours
     })
 
     // 1. Salvar no banco para o "sininho" do Admin
@@ -50,7 +52,7 @@ export const systemNotifications = {
     }
 
     // 2. Disparar para N8N (se configurado)
-    await this.fireExternalAlert(connector, 'FALHA', error, isAuth)
+    await this.fireExternalAlert(connector, 'FALHA', error, isAuth, delayHours)
   },
 
   /**
@@ -90,7 +92,7 @@ export const systemNotifications = {
   /**
    * Envia o alerta para o webhook do N8N para disparo de WhatsApp/Email.
    */
-  async fireExternalAlert(connector: ChannelConnector, status: 'FALHA' | 'RESOLVIDO', message: string, isAuth: boolean) {
+  async fireExternalAlert(connector: ChannelConnector, status: 'FALHA' | 'RESOLVIDO', message: string, isAuth: boolean, delayHours?: 6 | 24) {
     const webhookUrl = process.env['N8N_SYSTEM_ALERTS_WEBHOOK'] || process.env['N8N_WEBHOOK_URL']
     
     if (!webhookUrl) {
@@ -116,9 +118,16 @@ export const systemNotifications = {
     const businessName = bizRes.data?.name || 'Desconhecido'
 
     // Mensagem rica alinhada com o fluxo de escalonamento
-    const formatted_message = status === 'FALHA'
-      ? `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Crítica:* O canal *${connector.channel.toUpperCase()}* da empresa *${businessName}* apresentou uma falha inesperada.\n\n*Erro:* ${message}\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`
-      : `✅ *ALERTA DE SAÚDE DO SISTEMA*\n\n👍 *Auto-Recuperação:* O canal *${connector.channel.toUpperCase()}* da empresa *${businessName}* voltou a operar normalmente.`
+    let formatted_message = '';
+    if (status === 'FALHA') {
+      if (delayHours) {
+        formatted_message = `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Crítica (${delayHours}h sem solução):* O canal *${connector.channel.toUpperCase()}* da empresa *${businessName}* está fora do ar há mais de ${delayHours} horas e requer intervenção.\n\n*Último Erro:* ${message}\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`;
+      } else {
+        formatted_message = `⚠️ *ALERTA DE SAÚDE DO SISTEMA*\n\n🚨 *Falha Crítica:* O canal *${connector.channel.toUpperCase()}* da empresa *${businessName}* apresentou uma falha inesperada.\n\n*Erro:* ${message}\n\nFavor verificar as credenciais ou logs de sincronização no painel admin.`;
+      }
+    } else {
+      formatted_message = `✅ *ALERTA DE SAÚDE DO SISTEMA*\n\n👍 *Auto-Recuperação:* O canal *${connector.channel.toUpperCase()}* da empresa *${businessName}* voltou a operar normalmente.`;
+    }
 
     const payload = {
       event: 'system_health_alert',
@@ -129,6 +138,7 @@ export const systemNotifications = {
       connector_id: connector.id,
       message,
       is_auth_error: isAuth,
+      delay_hours: delayHours,
       timestamp: new Date().toISOString(),
       admin_url: `https://reputei-admin.vercel.app/connectors/${connector.id}`,
       // Contatos para o n8n saber para quem disparar

@@ -57,7 +57,7 @@ Critérios de Score:
     const parsed = JSON.parse(rawResponse) as MetaSentimentResult
     return parsed
   } catch (err) {
-    logger.error('[meta-sentiment] Erro na análise de IA:', err)
+    logger.error('[meta-sentiment] Erro na análise de IA:', { error: err })
     // Fallback conservador
     return {
       label: 'neutral',
