@@ -217,7 +217,7 @@ export default function App() {
         `}</style>
         <div className="premium-spinner" />
         <div className="premium-loading-text">
-          Acessando painel do assinante. Aguarde...
+          Acessando seu painel. Aguarde...
         </div>
         <div className="premium-loading-subtext">📡 Carregando sua reputação inteligente...</div>
       </div>
@@ -279,7 +279,7 @@ export default function App() {
         `}</style>
         <div className="premium-spinner" />
         <div className="premium-loading-text">
-          Acessando painel do assinante. Aguarde...
+          Acessando seu painel. Aguarde...
         </div>
         <div className="premium-loading-subtext">📡 Carregando sua reputação inteligente...</div>
       </div>
@@ -351,7 +351,7 @@ export default function App() {
             borderRadius: 6, padding: '4px 8px', marginBottom: businessName ? 8 : 0,
             display: 'inline-block'
           }}>
-            Portal do Assinante
+            {userRole === 'parceiro' ? 'Portal do Parceiro' : 'Portal do Assinante'}
           </div>
           {userName || session?.user?.email ? (
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4, marginBottom: 4 }}>

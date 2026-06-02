@@ -64,7 +64,7 @@ export default function Login({ onSignup }: Props) {
             Reputei
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 4 }}>
-            Painel do Assinante
+            Acesso ao Portal
           </p>
         </div>
 
