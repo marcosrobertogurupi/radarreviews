@@ -4,6 +4,13 @@
 -- ============================================================
 
 -- ------------------------------------------------------------
+-- FIX DE PERMISSÕES DO SUPABASE (Garante que o painel consiga rodar)
+-- ------------------------------------------------------------
+GRANT ALL ON SCHEMA public TO postgres;
+GRANT ALL ON SCHEMA public TO authenticated;
+GRANT ALL ON SCHEMA public TO service_role;
+
+-- ------------------------------------------------------------
 -- 1. ENUMS
 -- ------------------------------------------------------------
 DO $$ BEGIN
