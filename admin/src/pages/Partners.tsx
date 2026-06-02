@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Building2, MoreVertical, ShieldCheck, Mail, Phone, Edit, Trash2 } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 export default function Partners() {
   const [partners, setPartners] = useState<any[]>([])
@@ -24,17 +25,20 @@ export default function Partners() {
     fetchPartners()
   }, [])
 
-  const fetchPartners = () => {
+  const fetchPartners = async () => {
     setLoading(true)
-    fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token') || ''}` }
-    })
-    .then(r => r.json())
-    .then(data => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const r = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
+      })
+      const data = await r.json()
       if (data.ok) setPartners(data.partners)
+    } catch (err) {
+      console.error(err)
+    } finally {
       setLoading(false)
-    })
-    .catch(() => setLoading(false))
+    }
   }
 
   const handlePartnerTypeChange = (type: string) => {
@@ -53,11 +57,12 @@ export default function Partners() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token') || ''}`
+          'Authorization': `Bearer ${session?.access_token || ''}`
         },
         body: JSON.stringify(form)
       })
