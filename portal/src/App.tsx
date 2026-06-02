@@ -21,10 +21,11 @@ import Settings from './pages/Settings'
 import Support from './pages/Support'
 import Benchmarking from './pages/Benchmarking'
 import Widget from './pages/Widget'
+import PartnerDashboard from './pages/PartnerDashboard'
 import { ToastProvider } from './components/Toast'
 import SupportFloatingButton from './components/SupportFloatingButton'
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'benchmarking' | 'widget' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'copilot' | 'benchmarking' | 'widget' | 'generate' | 'reports' | 'pricing' | 'settings' | 'support' | 'partner_dashboard'
 type AuthView = 'login' | 'signup'
 
 const NAV = [
@@ -101,18 +102,29 @@ export default function App() {
         setUserRole(userProfile.perfil || '')
 
         if (userProfile.perfil === 'parceiro') {
-          // Buscar assinantes vinculados a este parceiro
-          const { data: indicated } = await supabase
-            .from('assinantes')
-            .select('id, tenants(id, name)')
-            .eq('parceiro_id', userProfile.id)
-          
-          const tList = (indicated || []).map(i => (i as any).tenants).filter(Boolean)
-          setManagedTenants(tList)
-          if (tList.length > 0) {
-            setTenantId(tList[0].id)
+          // Buscar tenants vinculados a este parceiro
+          const { data: partner } = await supabase
+            .from('partners')
+            .select('id')
+            .eq('user_id', userProfile.id)
+            .single()
+
+          if (partner) {
+            const { data: tList } = await supabase
+              .from('tenants')
+              .select('id, name')
+              .eq('partner_id', partner.id)
+            
+            const list = tList || []
+            setManagedTenants(list)
+            if (list.length > 0) {
+              setTenantId(list[0].id)
+            }
+            // Parceiros nunca passam pelo onboarding de assinante
             setHasTenant(true)
+            setPage('partner_dashboard')
           } else {
+            // Se por algum motivo o perfil for parceiro mas não tiver na tabela partners
             setHasTenant(false)
           }
         } else {
@@ -275,7 +287,7 @@ export default function App() {
   }
 
   // Usuário logado mas sem tenant (onboarding interrompido)
-  if (!hasTenant)
+  if (!hasTenant && userRole !== 'parceiro')
     return <Onboarding onBackToLogin={() => supabase.auth.signOut()} onComplete={() => setHasTenant(true)} />
 
   // [APPSEC] C5 — Proteção Global de Acesso (Trial Expirado e Inadimplência)
@@ -320,6 +332,7 @@ export default function App() {
     pricing:   <Pricing tenantTrial={tenantTrial} session={session} />,
     settings:  <Settings />,
     support:   <Support tenantId={tenantId} />,
+    partner_dashboard: <PartnerDashboard />,
   }
 
   return (
@@ -396,6 +409,16 @@ export default function App() {
 
         <div className="sidebar-section">
           <div className="sidebar-label">Menu</div>
+          {userRole === 'parceiro' && (
+            <button
+              className={`nav-item ${page === 'partner_dashboard' ? 'active' : ''}`}
+              onClick={() => setPage('partner_dashboard')}
+            >
+              <LayoutDashboard size={16} />
+              <span className="nav-label">Painel do Parceiro</span>
+              {page === 'partner_dashboard' && <ChevronRight size={12} className="nav-chevron" style={{ marginLeft: 'auto' }} />}
+            </button>
+          )}
           {NAV.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
