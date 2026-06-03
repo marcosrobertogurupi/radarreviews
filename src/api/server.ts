@@ -243,12 +243,13 @@ async function handleOnboarding(
     channels?: string[]; plan?: string; billingMethod?: 'pix' | 'credit_card';
     periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual';
     instagramUsername?: string; hashtags?: string;
+    partnerRef?: string;  // UUID do parceiro — vem do link ?ref=
   }
   try { body = JSON.parse(raw) } catch {
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
   }
 
-  const { email, password, businessName, channels = [], plan: requestedPlan = 'trial', billingMethod = 'pix', periodicity = 'trimestral' } = body
+  const { email, password, businessName, channels = [], plan: requestedPlan = 'trial', billingMethod = 'pix', periodicity = 'trimestral', partnerRef } = body
   if (!email?.trim() || !password || !businessName?.trim()) {
     res.writeHead(400)
     res.end(JSON.stringify({ error: 'email, password e businessName são obrigatórios' }))
@@ -288,9 +289,30 @@ async function handleOnboarding(
 
     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
+    // Resolver partner_id a partir do partnerRef (UUID do parceiro enviado pelo link ?ref=)
+    let resolvedPartnerId: string | null = null
+    if (partnerRef?.trim()) {
+      const { data: partner } = await supabaseAdmin
+        .from('partners')
+        .select('id')
+        .eq('id', partnerRef.trim())
+        .eq('status', 'active')
+        .maybeSingle()
+      if (partner) {
+        resolvedPartnerId = partner.id
+        console.log(`[onboarding] Vinculando ao parceiro: ${resolvedPartnerId}`)
+      } else {
+        console.warn(`[onboarding] partnerRef '${partnerRef}' não encontrado ou inativo — cadastro sem parceiro`)
+      }
+    }
+
     const { data: tenant, error: tenantErr } = await supabaseAdmin
       .from('tenants')
-      .insert({ name: businessName.trim(), slug, plan, plan_status: 'trial', trial_ends_at: trialEndsAt })
+      .insert({
+        name: businessName.trim(), slug, plan,
+        plan_status: 'trial', trial_ends_at: trialEndsAt,
+        ...(resolvedPartnerId ? { partner_id: resolvedPartnerId } : {}),
+      })
       .select('id').single()
     if (tenantErr || !tenant) throw new Error(tenantErr?.message ?? 'Erro ao criar tenant')
 
