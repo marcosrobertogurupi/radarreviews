@@ -249,6 +249,28 @@ export default function App() {
     )
   }
 
+  // ── Link de indicação: ?ref= na URL → sempre mostra o cadastro de cliente ──
+  // Isso funciona mesmo para o parceiro logado que clica no próprio link
+  if (partnerRef && authView === 'signup') {
+    return (
+      <Onboarding
+        partnerRef={partnerRef}
+        onBackToLogin={() => {
+          // Limpa o ?ref= da URL e volta ao login
+          window.history.replaceState({}, '', window.location.pathname)
+          setAuthView('login')
+        }}
+        onComplete={() => {
+          // Limpa o ?ref= da URL após cadastro concluído
+          window.history.replaceState({}, '', window.location.pathname)
+          // Se não há sessão ativa, apenas muda para login
+          // Se há sessão (parceiro), mantém onde estava
+          if (!session) setHasTenant(true)
+        }}
+      />
+    )
+  }
+
   if (!session) {
     if (authView === 'signup')
       return <Onboarding partnerRef={partnerRef} onBackToLogin={() => setAuthView('login')} onComplete={() => setHasTenant(true)} />
