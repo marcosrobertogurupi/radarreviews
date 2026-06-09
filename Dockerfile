@@ -1,23 +1,23 @@
-# Imagem oficial do Playwright com Chromium e dependências instaladas
-FROM mcr.microsoft.com/playwright:v1.59.1-jammy
+# Imagem base: Node.js 20 LTS + Playwright/Chromium (necessário para conectores que usam scraping)
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy
 
 WORKDIR /app
 
-# Copia arquivos de dependências
+# Copia arquivos de dependências primeiro (melhor cache do Docker)
 COPY package*.json ./
 
-# Instala dependências (incluindo dev para o build)
-RUN npm ci
+# Instala dependências de produção + dev (precisamos do tsx para executar TypeScript)
+RUN npm ci --include=dev
 
 # Copia o restante do código
 COPY . .
 
-# Configurações de tempo de execução
+# Playwright: usa o Chromium da imagem base (evita download de ~400MB no build)
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV NODE_ENV=production
 
-# A porta será definida pelo Railway via variável de ambiente PORT
+# Porta padrão — Railway sobrescreve via variável $PORT
 EXPOSE 3001
 
-# Executa o servidor TypeScript diretamente via tsx
+# Inicia o servidor HTTP que já inclui o scheduler interno
 CMD ["npx", "tsx", "src/api/server.ts"]

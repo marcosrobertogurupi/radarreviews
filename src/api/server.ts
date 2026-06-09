@@ -2009,6 +2009,13 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // ── Healthcheck — Railway usa para verificar se o serviço está vivo ──
+  if (url === '/health' || url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), service: 'reputei-api' }))
+    return
+  }
+
   res.writeHead(404); res.end('Not found')
 })
 
