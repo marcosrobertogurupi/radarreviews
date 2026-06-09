@@ -24,7 +24,10 @@ export function CompetitorStats({ businessId, myRating, myReviews }: Props) {
 
   useEffect(() => {
     async function load() {
-      if (!businessId) return
+      if (!businessId) {
+        setLoading(false)
+        return
+      }
       setLoading(true)
       const { data } = await supabase
         .from('competitor_businesses')
@@ -38,7 +41,17 @@ export function CompetitorStats({ businessId, myRating, myReviews }: Props) {
   }, [businessId])
 
   if (loading) return <div className="skeleton" style={{ height: 200 }} />
-  if (competitors.length === 0) return null
+  
+  // Modificado: em vez de retornar null e quebrar o grid, retorna um empty state
+  if (competitors.length === 0) {
+    return (
+      <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+        <TrendingUp size={24} color="var(--text-muted)" style={{ marginBottom: 12 }} />
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Benchmarking Local</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>Nenhum concorrente monitorado para esta empresa ainda.</div>
+      </div>
+    )
+  }
 
   // Ordenar: primeiro nós, depois concorrentes por nota
   const all = [
