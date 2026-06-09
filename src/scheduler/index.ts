@@ -222,15 +222,27 @@ export async function runOnce(): Promise<void> {
   logger.info(`[scheduler] ${jobs.length} job(s) bloqueado(s) para este worker (${workerId})`)
 
   for (const job of jobs) {
-    // Busca o connector associado
+    // Busca o connector associado com o tenant_id
     const { data: connectorData } = await supabase
       .from('channel_connectors')
-      .select('*')
+      .select(`
+        *,
+        monitored_businesses (
+          tenant_id
+        )
+      `)
       .eq('id', job.connector_id)
       .single()
     
     if (connectorData) {
-      await runConnector(connectorData as ChannelConnector, job.id).catch(err => {
+      // Injeta o tenant_id no objeto do conector
+      const businessInfo = (connectorData as any).monitored_businesses
+      const connectorWithTenant = {
+        ...connectorData,
+        tenant_id: businessInfo?.tenant_id
+      } as ChannelConnector
+
+      await runConnector(connectorWithTenant, job.id).catch(err => {
         logger.error('[scheduler] Erro inesperado ao executar conector', {
           connector_id: connectorData.id,
           channel: connectorData.channel,
