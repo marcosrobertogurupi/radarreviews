@@ -154,19 +154,6 @@ export default function Connectors() {
     }
   }
 
-  async function forceSync() {
-    if (!selected) return
-    try {
-      await fetch(`${API_URL}/api/admin/connector/${selected.id}/force-sync`, { method: 'PATCH' })
-      const now = new Date().toISOString()
-      toast('Busca forçada enviada! Os dados serão atualizados em alguns instantes.', 'info')
-      setSelected({ ...selected, next_sync_at: now, status: 'active' })
-      loadAll()
-    } catch {
-      toast('Não foi possível conectar à API.', 'error')
-    }
-  }
-
   async function deleteConnector(id: string, _businessId: string, channel: string) {
     const confirmed = window.confirm(
       `ATENÇÃO CRÍTICA:\n\nDeseja realmente excluir este conector?\n\nIsso irá apagar permanentemente o conector e TODOS os reviews coletados deste canal (${CHANNEL_LABELS[channel as SourceChannel]}) para esta empresa.`
@@ -579,9 +566,6 @@ export default function Connectors() {
                   {STATUS_DOT[selected.status]} {STATUS_LABEL[selected.status]}
                 </div>
               </div>
-              <button className="btn" style={{ background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.2)' }} onClick={forceSync}>
-                Forçar Busca
-              </button>
             </div>
 
             {businesses[selected.business_id] && (
