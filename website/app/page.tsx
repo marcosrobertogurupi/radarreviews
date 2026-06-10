@@ -26,19 +26,19 @@ interface Plan {
 const FALLBACK_PLANS: Plan[] = [
   {
     id: '1', slug: 'basico', name: 'Básico',
-    description: 'Para pequenos negócios locais.', price_monthly: 139,
+    description: 'Para pequenos negócios locais.', price_monthly: 289,
     max_channels: 3, color: '#10b981', is_popular: false,
     benefits: ['3 canais monitorados','500 reviews/mês','Google Maps & TripAdvisor','Alertas por e-mail','Relatórios semanais','Suporte por e-mail'],
   },
   {
     id: '2', slug: 'completo', name: 'Completo',
-    description: 'Monitoramento total + IA.', price_monthly: 199,
+    description: 'Monitoramento total + IA.', price_monthly: 459,
     max_channels: 8, color: '#6366f1', is_popular: true,
     benefits: ['8 canais monitorados','Reviews ilimitados','Todos os canais disponíveis','IA Copilot incluso','Alertas via WhatsApp/SMS','Suporte prioritário'],
   },
   {
     id: '3', slug: 'custom', name: 'Custom',
-    description: 'Flexibilidade para sua marca.', price_monthly: 149,
+    description: 'Flexibilidade para sua marca.', price_monthly: 389,
     max_channels: 5, color: '#f59e0b', is_popular: false,
     benefits: ['Canais sob demanda','Reviews ilimitados','IA Copilot incluso','Relatórios personalizados','Multi-unidades','Gerente de conta'],
   },
