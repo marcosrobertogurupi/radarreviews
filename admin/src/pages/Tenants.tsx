@@ -9,7 +9,8 @@ const PLAN_CONFIG: Record<string, { label: string; color: string; max_channels: 
   trial:      { label: 'Trial',      color: '#6b7280', max_channels: 3  },
   basico:     { label: 'Básico',     color: '#06b6d4', max_channels: 3  },
   completo:   { label: 'Completo',   color: '#6366f1', max_channels: 8  },
-  enterprise: { label: 'Enterprise', color: '#f59e0b', max_channels: 99 },
+  custom:     { label: 'Custom',     color: '#f59e0b', max_channels: 4  },
+  enterprise: { label: 'Enterprise', color: '#ef4444', max_channels: 999 },
 }
 
 interface Tenant {
