@@ -294,7 +294,7 @@ export default function RegisterClient({ onClose, onSuccess }: Props) {
           {/* ── Passo 1: Plano ── */}
           {step === 1 && (
             <div>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20, padding: '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, color: '#fbbf24' }}>
+              <p style={{ fontSize: 13, marginBottom: 20, padding: '8px 12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, color: '#fbbf24' }}>
                 ⚠️ O plano escolhido aqui inicia em trial de 7 dias. Somente o administrador Reputei pode alterar ou cancelar o plano após a criação.
               </p>
 

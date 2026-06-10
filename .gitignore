@@ -30,3 +30,5 @@ logs/
 tsconfig.tsbuildinfo
 
 testsprite_tests\tmp\config.json
+
+.vercel

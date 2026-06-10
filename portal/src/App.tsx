@@ -93,7 +93,17 @@ export default function App() {
       .catch(() => setLoading(false))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (!s) setHasTenant(null)   // logout → reset
+      if (!s) {
+        setHasTenant(null)   // logout → reset
+        setPage('dashboard')
+        setTenantId('')
+        setBusinessName('')
+        setUserName('')
+        setTenantTrial(null)
+        setManagedTenants([])
+        setUserRole('')
+        setPartnerViewingClient(false)
+      }
     })
 
     let timer: ReturnType<typeof setTimeout>
@@ -172,6 +182,7 @@ export default function App() {
               .in('id', allowedIds)
             
             setManagedTenants(tList || [])
+            setPage('dashboard') // Garante que assinantes vão para a visão geral
           } else {
             setHasTenant(false)
           }

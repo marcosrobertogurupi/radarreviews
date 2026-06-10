@@ -159,6 +159,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       connector.business_id
     )
 
+    result.reviews_fetched = rawItems.length
     result.reviews_new = ingest.reviews_new
     result.reviews_updated = ingest.reviews_updated
 

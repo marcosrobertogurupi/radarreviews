@@ -41,7 +41,7 @@ function fmt(n: number) {
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan: string; plan_status: string; trial_ends_at: string | null } | null; session?: Session | null }) {
+export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan: string; plan_status?: string; subscription_status?: string; trial_ends_at: string | null } | null; session?: Session | null }) {
   const [period,   setPeriod]   = useState<Period>('anual')
   const [pix,      setPix]      = useState(false)
   const [customCh, setCustomCh] = useState(3)
@@ -82,7 +82,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
   const customBase = 149 + (customCh - 3) * 49
   const custom   = calcPrice(customBase, period, pix)
 
-  const inTrial = tenantTrial?.plan_status === 'trial'
+  const inTrial = tenantTrial?.plan_status === 'trial' || tenantTrial?.subscription_status === 'trial'
   const currentPlan = tenantTrial?.plan
 
 
