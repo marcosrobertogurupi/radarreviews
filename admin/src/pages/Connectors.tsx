@@ -238,7 +238,7 @@ export default function Connectors() {
 
     setConnectors(data ?? [])
 
-    const { data: bData } = await supabase.from('monitored_businesses').select('id, name')
+    const { data: bData } = await supabase.from('monitored_businesses').select('id, name, tenant_id')
     setAllBusinesses(bData || [])
     if (bData && bData.length > 0 && !newConn.business_id) {
       setNewConn(prev => ({ ...prev, business_id: bData[0].id }))
@@ -779,7 +779,7 @@ export default function Connectors() {
                 <div style={{ textAlign: 'center', marginBottom: 20 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>— OU CONECTE VIA API OFICIAL —</div>
                   <MetaConnectButton 
-                    tenantId={allBusinesses.find(b => b.id === newConn.business_id)?.id || ''} 
+                    tenantId={allBusinesses.find(b => b.id === newConn.business_id)?.tenant_id || ''} 
                     businessId={newConn.business_id} 
                   />
                 </div>

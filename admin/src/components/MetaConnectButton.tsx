@@ -15,7 +15,17 @@ export function MetaConnectButton({ tenantId, businessId }: MetaConnectButtonPro
     const cleanApiBase = apiBase.replace(/\/$/, '')
     
     const connectUrl = `${cleanApiBase}/api/auth/meta/connect?tenant_id=${tenantId}&business_id=${businessId}`
-    window.location.href = connectUrl
+    
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = connectUrl
+      } else {
+        window.location.href = connectUrl
+      }
+    } catch (e) {
+      // Caso haja bloqueio de segurança/CORS ao tentar acessar window.top, abre em uma nova aba como fallback
+      window.open(connectUrl, '_blank')
+    }
   }
 
   return (
