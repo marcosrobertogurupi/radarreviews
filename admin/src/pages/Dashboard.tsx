@@ -327,7 +327,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       count: g.negCount,
     }))
 
-    setRankingData(ranking.sort((a, b) => b.count - a.count).slice(0, 5))
+    setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore || b.count - a.count).slice(0, 5))
   }
 
   async function loadReputation() {
