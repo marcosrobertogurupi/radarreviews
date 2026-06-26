@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { User, Mail, Lock, ShieldCheck, Save, Loader2, Phone } from 'lucide-react'
+import { User, Mail, Lock, ShieldCheck, Save, Loader2, Phone, CheckCircle2, XCircle } from 'lucide-react'
 import { useToast } from '../components/Toast'
 import { API_URL } from '../lib/utils'
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [connectingGoogle, setConnectingGoogle] = useState(false)
   const { toast } = useToast()
-  
+
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -20,8 +21,24 @@ export default function Settings() {
   const [adminWhatsapp, setAdminWhatsapp] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
 
+  // Google Business Profile
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [googleConnectedAt, setGoogleConnectedAt] = useState<string | null>(null)
+  const [googleScope, setGoogleScope] = useState<string | null>(null)
+
   useEffect(() => {
     loadProfile()
+
+    // Retorno do OAuth Google — mostrar toast com resultado
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('google_connected') === '1') {
+      toast('Google Business Profile conectado com sucesso!', 'success')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (params.get('google_error')) {
+      const err = params.get('google_error')
+      toast(`Erro ao conectar Google: ${err}`, 'error')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }, [])
 
   async function loadProfile() {
@@ -88,7 +105,66 @@ export default function Settings() {
       }
     }
 
+    // Carregar status do Google Business Profile
+    const { data: { session: sess } } = await supabase.auth.getSession()
+    if (sess) {
+      try {
+        const gRes = await fetch(`${API_URL}/api/auth/google/status`, {
+          headers: { Authorization: `Bearer ${sess.access_token}` }
+        })
+        if (gRes.ok) {
+          const gData = await gRes.json() as { connected: boolean; connected_at: string | null; scope: string | null }
+          setGoogleConnected(gData.connected)
+          setGoogleConnectedAt(gData.connected_at)
+          setGoogleScope(gData.scope)
+        }
+      } catch { /* ignora falha de rede silenciosamente */ }
+    }
+
     setLoading(false)
+  }
+
+  async function handleGoogleConnect() {
+    setConnectingGoogle(true)
+    try {
+      const { data: { session: sess } } = await supabase.auth.getSession()
+      if (!sess) { toast('Sessão expirada. Faça login novamente.', 'error'); return }
+
+      const res = await fetch(`${API_URL}/api/auth/google/connect`, {
+        headers: { Authorization: `Bearer ${sess.access_token}` }
+      })
+      const data = await res.json() as { auth_url?: string; error?: string }
+
+      if (!res.ok || !data.auth_url) {
+        toast(data.error || 'Erro ao iniciar conexão com Google', 'error')
+        return
+      }
+
+      // Redireciona para a tela de autorização do Google
+      window.location.href = data.auth_url
+    } catch {
+      toast('Erro de conexão com o servidor', 'error')
+    } finally {
+      setConnectingGoogle(false)
+    }
+  }
+
+  async function handleGoogleDisconnect() {
+    try {
+      const { data: { session: sess } } = await supabase.auth.getSession()
+      if (!sess) return
+
+      await fetch(`${API_URL}/api/auth/google/disconnect`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${sess.access_token}` }
+      })
+      setGoogleConnected(false)
+      setGoogleConnectedAt(null)
+      setGoogleScope(null)
+      toast('Conexão com Google removida.', 'success')
+    } catch {
+      toast('Erro ao desconectar Google.', 'error')
+    }
   }
 
   function handleMetaConnect() {
@@ -306,13 +382,55 @@ export default function Settings() {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={handleMetaConnect}
                 className="btn btn-primary"
                 style={{ background: hasMeta ? 'var(--bg-lighter)' : undefined, color: hasMeta ? 'var(--text-primary)' : undefined, border: hasMeta ? '1px solid var(--border)' : undefined }}
               >
                 {hasMeta ? 'Refazer Conexão' : 'Conectar Agora'}
               </button>
+            </div>
+
+            {/* Google Business Profile */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginTop: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }}>
+                  G
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>Google Business Profile</div>
+                  {googleConnected ? (
+                    <div style={{ fontSize: 12, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <CheckCircle2 size={12} />
+                      Conectado{googleConnectedAt ? ` em ${new Date(googleConnectedAt).toLocaleDateString('pt-BR')}` : ''}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <XCircle size={12} /> Não conectado — necessário para importar avaliações do Google
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                {googleConnected && (
+                  <button onClick={handleGoogleDisconnect} className="btn" style={{ fontSize: 12, color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}>
+                    Desconectar
+                  </button>
+                )}
+                <button
+                  onClick={handleGoogleConnect}
+                  className="btn btn-primary"
+                  disabled={connectingGoogle}
+                  style={{ background: googleConnected ? 'var(--bg-lighter)' : undefined, color: googleConnected ? 'var(--text-primary)' : undefined, border: googleConnected ? '1px solid var(--border)' : undefined }}
+                >
+                  {connectingGoogle ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {googleConnected ? 'Refazer Conexão' : 'Conectar Agora'}
+                </button>
+              </div>
             </div>
           </div>
         )}
