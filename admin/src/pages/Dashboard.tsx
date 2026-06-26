@@ -16,7 +16,6 @@ import type { TenantOption } from '../App'
 import ReputationScore from '../components/dashboard/ReputationScore'
 import ReputationTimeline from '../components/dashboard/ReputationTimeline'
 import TopicsCloud from '../components/dashboard/TopicsCloud'
-import { CompetitorStats } from '../components/dashboard/CompetitorStats'
 import { getReputationData } from '../services/reputation'
 import type { ReputationScoreData, TimelinePoint } from '../services/reputation'
 import type { TopicData } from '../components/dashboard/TopicsCloud'
@@ -483,13 +482,36 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         </div>
       </div>
 
-      {/* ── Fase 2: Benchmarking e Tópicos ────────────────── */}
+      {/* ── Ranking + Tópicos ────────────────── */}
       <div className="grid-2" style={{ marginBottom: 24 }}>
-        <CompetitorStats 
-          businessId={business?.id || ''}
-          myRating={business?.google_rating || 0}
-          myReviews={business?.google_reviews_count || 0}
-        />
+        <div className="card" style={{ padding: 20 }}>
+          <div className="section-title">🏆 Ranking de Insatisfação (Top 5)</div>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>Assinantes com maior score médio de insatisfação nos últimos 30 dias</p>
+          {rankingData.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🏆</div>
+              <div className="empty-state-text">Dados insuficientes para o ranking</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {rankingData.map((item, idx) => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: idx === 0 ? '#dc2626' : idx === 1 ? '#ef4444' : '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                    {idx + 1}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.count} reviews negativos</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor(item.avgScore) }}>{item.avgScore}</div>
+                    <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Score Médio</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <TopicsCloud topics={topics} />
       </div>
 
@@ -559,50 +581,18 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         </div>
       </div>
 
-      <div className="grid-2">
-        {/* Ranking de Insatisfação */}
-        <div className="card" style={{ padding: 20 }}>
-          <div className="section-title">🏆 Ranking de Insatisfação (Top 5)</div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>Assinantes com maior score médio de insatisfação nos últimos 30 dias</p>
-          {rankingData.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">🏆</div>
-              <div className="empty-state-text">Dados insuficientes para o ranking</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {rankingData.map((item, idx) => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: idx === 0 ? '#dc2626' : idx === 1 ? '#ef4444' : '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                    {idx + 1}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.count} reviews analisados</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor(item.avgScore) }}>{item.avgScore}</div>
-                    <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Score Médio</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Reviews por canal */}
-        <div className="card" style={{ padding: 20 }}>
-          <div className="section-title">📊 Distribuição por Canal</div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={channelData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" name="Reviews" fill="#6366f1" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Reviews por canal — largura total */}
+      <div className="card" style={{ padding: 20, marginBottom: 24 }}>
+        <div className="section-title">📊 Distribuição por Canal</div>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={channelData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey="count" name="Reviews" fill="#6366f1" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Reviews recentes + Alertas */}
