@@ -217,7 +217,7 @@ export async function handleGoogleCallback(
     if (!tokenRes.ok) {
       const errText = await tokenRes.text()
       logger.error('[googleAuth] Falha ao trocar code por token', { errText })
-      res.writeHead(302, { Location: `${portalUrl}/settings?google_error=token_exchange_failed` })
+      res.writeHead(302, { Location: `${portalUrl}?google_error=token_exchange_failed` })
       res.end()
       return
     }
@@ -243,13 +243,13 @@ export async function handleGoogleCallback(
     logger.info('[googleAuth] Tokens salvos com sucesso', { tenant_id: tenantId })
 
     // Redirecionar de volta para o portal com sucesso
-    res.writeHead(302, { Location: `${portalUrl}/settings?google_connected=1` })
+    res.writeHead(302, { Location: `${portalUrl}?google_connected=1` })
     res.end()
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     logger.error('[googleAuth] Erro no callback', { err: msg })
-    res.writeHead(302, { Location: `${portalUrl}/settings?google_error=${encodeURIComponent(msg)}` })
+    res.writeHead(302, { Location: `${portalUrl}?google_error=${encodeURIComponent(msg)}` })
     res.end()
   }
 }
