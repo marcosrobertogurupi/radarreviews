@@ -73,13 +73,14 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
   const totalDiscount = activePeriod.discount + (pix ? PIX_EXTRA : 0)
 
   // Preços calculados conforme API
-  const baseBasico   = plans.find(p => p.slug === 'basico')?.price_monthly ?? 139
-  const baseCompleto = plans.find(p => p.slug === 'completo')?.price_monthly ?? 199
+  const baseBasico   = plans.find(p => p.slug === 'basico')?.price_monthly ?? 289
+  const baseCompleto = plans.find(p => p.slug === 'completo')?.price_monthly ?? 459
   const baseEnterprise = plans.find(p => p.slug === 'enterprise')?.price_monthly ?? 1500
+  const baseCustom     = plans.find(p => p.slug === 'custom')?.price_monthly ?? 389
 
   const basic    = calcPrice(baseBasico, period, pix)
   const complete = calcPrice(baseCompleto, period, pix)
-  const customBase = 149 + (customCh - 3) * 49
+  const customBase = baseCustom + (customCh - 3) * 50
   const custom   = calcPrice(customBase, period, pix)
 
   const inTrial = tenantTrial?.plan_status === 'trial' || tenantTrial?.subscription_status === 'trial'
@@ -256,7 +257,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
               Canais: <strong>{customCh}</strong>
               {customCh > 3 && (
                 <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                  {' '}(base + {customCh - 3} ×R$39)
+                  {' '}(base + {customCh - 3} ×R$50)
                 </span>
               )}
             </div>
@@ -533,6 +534,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
           plan: planSlug,
           billingMethod: pix ? 'pix' : 'credit_card',
           periodicity: period,
+          ...(planSlug === 'custom' ? { customCh } : {}),
         }),
       })
 

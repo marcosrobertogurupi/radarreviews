@@ -1656,6 +1656,7 @@ async function handleSubscriptionCheckout(
     plan?: string
     billingMethod?: 'pix' | 'credit_card'
     periodicity?: 'monthly' | 'trimestral' | 'semestral' | 'anual'
+    customCh?: number
   }
   try {
     let raw = ''
@@ -1665,7 +1666,7 @@ async function handleSubscriptionCheckout(
     res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return
   }
 
-  const { plan = 'completo', billingMethod = 'pix', periodicity = 'trimestral' } = body
+  const { plan = 'completo', billingMethod = 'pix', periodicity = 'trimestral', customCh } = body
 
   try {
     // 1. Buscar dados do tenant
@@ -1686,7 +1687,11 @@ async function handleSubscriptionCheckout(
       .eq('slug', plan)
       .maybeSingle()
 
-    const basePrice = planData?.price_monthly ?? 139
+    let basePrice = planData?.price_monthly ?? 139
+    if (plan === 'custom') {
+      const ch = Math.max(3, customCh ?? 3)
+      basePrice = basePrice + (ch - 3) * 50
+    }
 
     // Descontos por periodicidade
     const periodDiscounts: Record<string, number> = { monthly: 0, trimestral: 0.05, semestral: 0.10, anual: 0.20 }

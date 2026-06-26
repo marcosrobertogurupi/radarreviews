@@ -89,7 +89,8 @@ export default function Onboarding({ onBackToLogin, onComplete, partnerRef }: Pr
   // Preço dinâmico para o Custom
   const getPlanPrice = (plan: PlanData) => {
     if (plan.slug === 'custom') {
-      return 149 + (customCh - 3) * 49
+      const baseCustom = plan.price_monthly ?? 389
+      return baseCustom + (customCh - 3) * 50
     }
     return plan.price_monthly
   }
@@ -445,7 +446,7 @@ export default function Onboarding({ onBackToLogin, onComplete, partnerRef }: Pr
                                 <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
                                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
                                     <span>Canais: <strong>{customCh}</strong></span>
-                                    <span>Base + {(customCh-3)}x R$49</span>
+                                    <span>Base + {(customCh-3)}x R$50</span>
                                   </div>
                                   <input 
                                     type="range" min={3} max={10} value={customCh} 
