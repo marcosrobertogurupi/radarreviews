@@ -141,7 +141,12 @@ export default function Settings() {
       }
 
       // Redireciona para a tela de autorização do Google
-      window.location.href = data.auth_url
+      // Usa window.top para sair do iframe (Google bloqueia OAuth em iframes)
+      if (window.top) {
+        window.top.location.href = data.auth_url
+      } else {
+        window.location.href = data.auth_url
+      }
     } catch {
       toast('Erro de conexão com o servidor', 'error')
     } finally {
