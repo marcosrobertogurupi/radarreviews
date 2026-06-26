@@ -445,7 +445,7 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
             {suggestion && (
               <div style={{ marginTop: 16, background: 'rgba(6,182,212,0.07)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: 10, padding: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-2)', marginBottom: 10 }}>
-                  💬 Resposta Sugerida pela IA (Claude)
+                  💬 Resposta Sugerida pela Reputei IA
                 </div>
                 <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{suggestion}</div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
