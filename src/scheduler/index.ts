@@ -582,6 +582,64 @@ export async function reconcileSubscriptionConnectors(): Promise<void> {
         logger.info('[scheduler] Conectores expirados suspensos com sucesso.')
       }
     }
+
+    // 3. Buscar todos os conectores pausados que poderiam ser reativados (status = 'paused' e error_message contendo a string de pause automático)
+    const { data: pausedData, error: fetchPausedErr } = await supabase
+      .from('channel_connectors')
+      .select(`
+        id,
+        error_message,
+        monitored_businesses!inner(
+          id,
+          tenant_id,
+          tenants!inner(
+            id,
+            is_active,
+            subscription_status
+          )
+        )
+      `)
+      .eq('status', 'paused')
+      .eq('error_message', 'Pausado automaticamente: assinatura suspensa ou inativa.')
+
+    if (fetchPausedErr) {
+      logger.error('[scheduler] Falha ao consultar conectores pausados para reconciliação', { error: fetchPausedErr.message })
+    } else {
+      const toResumeIds: string[] = []
+
+      for (const row of (pausedData ?? [])) {
+        const business = (row as any).monitored_businesses
+        if (!business) continue
+        const tenant = business.tenants
+        if (!tenant) continue
+
+        const isTenantActive = tenant.is_active
+        const isSubValid = tenant.subscription_status === 'active' || tenant.subscription_status === 'trial'
+
+        if (isTenantActive && isSubValid) {
+          toResumeIds.push(row.id)
+        }
+      }
+
+      if (toResumeIds.length > 0) {
+        logger.info(`[scheduler] Reativando ${toResumeIds.length} conectores devido a assinaturas reativadas/renovadas`)
+        
+        const { error: updateResumeErr } = await supabase
+          .from('channel_connectors')
+          .update({
+            status: 'active',
+            error_message: null,
+            next_sync_at: new Date().toISOString()
+          })
+          .in('id', toResumeIds)
+
+        if (updateResumeErr) {
+          logger.error('[scheduler] Falha ao reativar conectores no banco', { error: updateResumeErr.message })
+        } else {
+          logger.info('[scheduler] Conectores reativados com sucesso.')
+        }
+      }
+    }
   } catch (err: any) {
     logger.error('[scheduler] Exceção fatal no job de reconciliação', { error: err.message })
   }

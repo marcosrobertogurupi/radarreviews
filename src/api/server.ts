@@ -17,7 +17,7 @@ import http from 'node:http'
 import { createClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { startScheduler, runOnce } from '../scheduler/index.js'
+import { startScheduler, runOnce, reconcileSubscriptionConnectors } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
 import { createAsaasCustomer, createAsaasSubscription, getAsaasSubscriptionPayments, getAsaasPixQrCode, getAsaasSubscription } from '../lib/asaas.js'
@@ -1267,6 +1267,13 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
       }
     }
 
+    // Se mudou o plano ou trial ou status, roda a reconciliação assincronamente para reativar/suspender conectores
+    if (isChangingPlan) {
+      reconcileSubscriptionConnectors().catch(err => {
+        console.error('[api-tenant] Erro na reconciliação pós update de plano/trial:', err)
+      })
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))
   } catch (err) {
@@ -1297,6 +1304,11 @@ async function handleToggleTenantActive(req: http.IncomingMessage, res: http.Ser
         { tipo: 'assinante', id: tenantId! }
       )
     }
+
+    // Executa reconciliação de conectores em segundo plano pós ativação/desativação do tenant
+    reconcileSubscriptionConnectors().catch(err => {
+      console.error('[api-tenant] Erro na reconciliação pós ativação/desativação de tenant:', err)
+    })
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true }))
