@@ -1,11 +1,7 @@
 import http from 'node:http';
-import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
 import { getAuthUser, setCors } from './server.js';
-
-const supabaseAdmin = createClient(
-  process.env['SUPABASE_URL']!,
-  process.env['SUPABASE_SERVICE_ROLE_KEY']!
-);
+import { supabaseAdmin } from '../lib/supabase.js';
 
 async function readBody(req: http.IncomingMessage): Promise<any> {
   let raw = '';
@@ -36,8 +32,51 @@ export async function getPartnerAuth(authHeader: string | undefined) {
     ...auth,
     partnerId: partner.id,
     partnerStatus: partner.status,
-    partnerType: partner.partner_type
+    partnerType: partner.partner_type,
+    commissionSetupRate: partner.commission_setup_rate,
+    commissionRecurringRate: partner.commission_recurring_rate
   };
+}
+
+// Helper para criar comissão de setup
+async function createSetupCommission(
+  partnerId: string,
+  tenantId: string,
+  planSlug: string,
+  setupRate: number
+) {
+  try {
+    const { data: planData } = await supabaseAdmin
+      .from('plans')
+      .select('name, price_monthly')
+      .eq('slug', planSlug)
+      .maybeSingle();
+
+    const planName = planData?.name || planSlug;
+    const planValue = planData?.price_monthly ? Number(planData.price_monthly) : 0;
+
+    const now = new Date();
+    const referenceMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+    const { error } = await supabaseAdmin
+      .from('commissions')
+      .insert({
+        partner_id: partnerId,
+        tenant_id: tenantId,
+        reference_month: referenceMonth,
+        plan_name: planName,
+        plan_value: planValue,
+        is_setup: true,
+        commission_rate: setupRate || 10.00,
+        status: 'pending'
+      });
+
+    if (error) {
+      console.error('[createSetupCommission] Erro ao criar comissão de setup:', error);
+    }
+  } catch (err) {
+    console.error('[createSetupCommission] Erro ao buscar dados do plano:', err);
+  }
 }
 
 export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -115,6 +154,9 @@ export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.S
       });
 
       if (error) throw error;
+
+      // Criar comissão de setup
+      await createSetupCommission(auth.partnerId, data, plan_slug || 'starter', auth.commissionSetupRate);
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, tenantId: data }));
@@ -210,6 +252,9 @@ export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.S
         return;
       }
 
+      // Criar comissão de setup
+      await createSetupCommission(auth.partnerId, tenant.id, plan, auth.commissionSetupRate);
+
       // 4. Vincular usuário ao tenant como owner
       await supabaseAdmin.from('tenant_users').insert({
         tenant_id: tenant.id, user_id: userId, role: 'owner',
@@ -256,6 +301,129 @@ export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.S
       console.log(`[partner-register] Tenant criado: ${slug} (${tenant.id}) por parceiro ${auth.partnerId}`);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, tenantId: tenant.id, businessId: biz.id, clientEmail: clientEmail.trim() }));
+      return;
+    }
+
+    // GET /api/partner/profile
+    if (url === '/api/partner/profile' && req.method === 'GET') {
+      const { data, error } = await supabaseAdmin
+        .from('partners')
+        .select('*')
+        .eq('id', auth.partnerId)
+        .single();
+
+      if (error) throw error;
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, partner: data }));
+      return;
+    }
+
+    // PUT /api/partner/profile
+    if (url === '/api/partner/profile' && req.method === 'PUT') {
+      const body = await readBody(req);
+      const { phone, company_name, pix_key } = body;
+
+      const updates: any = {};
+      if (phone !== undefined) updates.phone = phone;
+      if (company_name !== undefined) updates.company_name = company_name;
+      if (pix_key !== undefined) updates.pix_key = pix_key;
+
+      const { data, error } = await supabaseAdmin
+        .from('partners')
+        .update(updates)
+        .eq('id', auth.partnerId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, partner: data }));
+      return;
+    }
+
+    // POST /api/partner/impersonate/:tenantId
+    if (url.startsWith('/api/partner/impersonate/') && req.method === 'POST') {
+      const tenantId = url.split('/api/partner/impersonate/')[1];
+      if (!tenantId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'ID do tenant é obrigatório' }));
+        return;
+      }
+
+      // 1. Validar se o parceiro possui acesso ao tenant
+      const { data: tenant, error: tenantErr } = await supabaseAdmin
+        .from('tenants')
+        .select('*')
+        .eq('id', tenantId)
+        .eq('partner_id', auth.partnerId)
+        .maybeSingle();
+
+      if (tenantErr || !tenant) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Acesso negado: este cliente não pertence a você ou não existe' }));
+        return;
+      }
+
+      // 2. Buscar um usuário associado a esse tenant
+      const { data: tenantUser, error: tuErr } = await supabaseAdmin
+        .from('tenant_users')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .limit(1)
+        .maybeSingle();
+
+      if (tuErr || !tenantUser) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Nenhum usuário associado a este tenant para impersonação' }));
+        return;
+      }
+
+      // 3. Buscar e-mail desse usuário
+      const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(tenantUser.user_id);
+      if (userErr || !userData.user || !userData.user.email) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Não foi possível encontrar o e-mail do usuário para impersonação' }));
+        return;
+      }
+      const clientEmail = userData.user.email;
+
+      // 4. Gerar Magic Link do Supabase
+      const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: clientEmail,
+      });
+
+      if (linkErr || !linkData?.properties?.action_link) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: linkErr?.message || 'Falha ao gerar Magic Link para impersonação' }));
+        return;
+      }
+
+      // 5. Salvar sessão de impersonação no banco (5 minutos expiração)
+      const token = `impersonate_${randomUUID()}`;
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      const { error: sessionErr } = await supabaseAdmin
+        .from('partner_impersonation_sessions')
+        .insert({
+          partner_id: auth.partnerId,
+          tenant_id: tenantId,
+          token,
+          expires_at: expiresAt,
+          created_by: auth.userId
+        });
+
+      if (sessionErr) throw sessionErr;
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        link: linkData.properties.action_link,
+        token,
+        expiresAt
+      }));
       return;
     }
 

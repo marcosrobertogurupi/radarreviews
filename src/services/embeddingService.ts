@@ -70,6 +70,39 @@ export class EmbeddingService {
     }
   }
 
+  async searchKnowledgeAllStatus(query: string, opts?: {
+    threshold?: number   // default 0.65
+    count?: number       // default 5
+    categoryId?: string
+  }): Promise<Array<KBSearchResult & { status: string }>> {
+    try {
+      const embedding = await this.generateEmbedding(query)
+      
+      const { data, error } = await supabaseAdmin.rpc('search_knowledge_all_status', {
+        query_embedding: embedding,
+        match_threshold: opts?.threshold ?? 0.65,
+        match_count: opts?.count ?? 5,
+        filter_category: opts?.categoryId || null
+      })
+
+      if (error) throw error
+
+      return (data || []).map((r: any) => ({
+        docId: r.doc_id,
+        title: r.title,
+        solutionSummary: r.solution_summary,
+        solutionSteps: r.solution_steps,
+        similarity: r.similarity,
+        confidenceScore: r.confidence_score,
+        resolutionCount: r.resolution_count,
+        status: r.status
+      }))
+    } catch (error) {
+      logger.error('Erro na busca semântica em todos os status na KB', { error })
+      return []
+    }
+  }
+
   async upsertDocEmbedding(docId: string, content: string): Promise<void> {
     try {
       const embedding = await this.generateEmbedding(content)

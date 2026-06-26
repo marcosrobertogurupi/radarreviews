@@ -1,7 +1,7 @@
 # PRD — Radar de Reviews (Reputei)
 **Documento de Requisitos do Produto**  
 *SaaS Multi-tenant para Monitoramento e Gestão de Reputação Online*  
-**Última Atualização:** 2026-05-25  
+**Última Atualização:** 2026-06-25  
 
 ---
 
@@ -95,7 +95,20 @@ O helpdesk conta com uma camada de atendimento automático inteligente baseada e
 4. **Ciclo de Aprendizado (Auto-Aprendiz):** Ao fechar um ticket resolvido (seja resolvido por humano ou por IA assistida), o job `KnowledgeLearningService` extrai o par problema-solução da thread, gera um JSON estruturado com o Gemini e:
    - Cria um novo artigo com status `draft` na base de conhecimento (`support_knowledge_docs`), gerando seu embedding vetorial.
    - Ou enriquece um artigo já existente (se a similaridade com o problema for >= 0.80), adicionando variações de termos e atualizando contadores.
-   - Documentos com avaliação CSAT >= 4.0 do cliente ou com mais de 3 utilizações bem-sucedidas são publicados automaticamente como `active`.
+    - Documentos com avaliação CSAT >= 4.0 do cliente ou com mais de 3 utilizações bem-sucedidas são publicados automaticamente como `active`.
+
+### 4.6 Módulo de Parceiros (Revendedores)
+O sistema permite que parceiros (agências, consultores e revendedores) atuem como canais de distribuição do SaaS:
+- **Estrutura de Parceiros:** Cadastro de parceiros (`partners`) definindo seu tipo (`agency` ou `vendedor`), tier (`bronze`, `silver`, `gold`) e chaves Pix.
+- **Indicações e Comissões:** Controle de indicações (`referrals`) vinculadas a tenants, aplicando taxas de comissão para a taxa de adesão (setup) e mensalidade recorrente (`commissions_log`).
+- **Impersonation/SSO:** Permite que o parceiro acesse o portal do cliente (tenant) com um login rápido sem expor as senhas das contas.
+
+### 4.7 Sistema de Prospecção Outbound e Comercial
+O painel administrativo possui ferramentas para prospecção outbound de novas empresas baseado em seu perfil de reputação:
+- **Campanhas de Prospecção:** Criação de campanhas (`prospect_campaigns`) segmentadas temporalmente.
+- **Gestão de Leads:** Enriquecimento de leads (`prospect_leads`) com dados de reputação de canais de origem (ex: nota Google Maps, volume de reclamações no Reclame Aqui).
+- **Envio Automático e Fila de Follow-ups:** Fila de disparos (`prospect_followup_queue`) via E-mail ou WhatsApp estruturados por templates de campanha.
+- **Polimorfismo Comercial:** Tabela de notas comerciais por canal (`commercial_channel_scores`) para classificar a reputação de empresas (matriz/filiais) de forma genérica.
 
 ---
 
@@ -135,6 +148,21 @@ O sistema possui duas interfaces web independentes construídas com React, Vite 
 
 ## 7. Roadmap e Funcionalidades Pendentes
 
-1. **Planos e Faturamento (Billing):** Integração com gateway de pagamentos baseado nas definições de planos (Starter, Pro, Enterprise).
-2. **Onboarding Self-service:** Fluxo assistido e intuitivo para o novo assinante cadastrar a empresa e autenticar seus primeiros conectores sem suporte humano.
-3. **Notificações por E-mail:** Envio de alertas de reviews e notificações de tickets por e-mail (usando template de e-mail e SMTP).
+1. **Onboarding Self-service:** Fluxo assistido e intuitivo para o novo assinante cadastrar a empresa e autenticar seus primeiros conectores sem suporte humano.
+2. **Notificações por E-mail:** Envio de alertas de reviews e notificações de tickets por e-mail (usando template de e-mail e SMTP).
+
+---
+
+## 8. Planos e Preços Praticados
+
+Os planos de assinatura do Reputei são cadastrados e controlados dinamicamente na tabela `plans` com os seguintes limites e valores:
+
+| Slug | Nome | Preço Mensal | Canais Permitidos | Descrição / Principais Benefícios |
+|---|---|---|---|---|
+| `trial` | Trial | R$ 0,00 | 3 | Período de avaliação gratuita de 7 dias. |
+| `basico` | Básico | R$ 289,00 | 3 | **Para pequenos negócios locais.** 500 reviews/mês, Google Maps & TripAdvisor, alertas por e-mail, relatórios semanais, suporte por e-mail. |
+| `completo` | Completo | R$ 459,00 | 8 | **Monitoramento total + IA.** Reviews ilimitados, todos os canais disponíveis, IA Copilot incluso, alertas via WhatsApp/SMS, suporte prioritário. (Plano Popular) |
+| `custom` | Custom | R$ 389,00 | 4 | **Flexibilidade para sua marca.** Canais sob demanda, reviews ilimitados, IA Copilot incluso, relatórios personalizados, multi-unidades, até 4 canais de sua escolha. |
+| `enterprise` | Enterprise | R$ 1.500,00 | 999 | **Escala e performance máxima.** Canais ilimitados, SLA garantido, integrações via API/Webhooks, suporte 24/7 dedicado, consultoria trimestral, desconto por volume. |
+
+Os benefícios específicos de cada plano são normalizados na tabela `plan_benefits` e associados via chaves estrangeiras.

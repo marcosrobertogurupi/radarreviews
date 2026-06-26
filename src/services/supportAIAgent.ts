@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../lib/supabase.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
 import { logger } from '../lib/logger.js'
 import { embeddingService } from './embeddingService.js'
+import { emailService } from './emailService.js'
 
 export class SupportAIAgent {
   private genAI: GoogleGenerativeAI
@@ -12,7 +13,6 @@ export class SupportAIAgent {
     if (!apiKey) throw new Error('GEMINI_API_KEY não definida.')
     this.genAI = new GoogleGenerativeAI(apiKey)
   }
-
   async handleNewTicket(ticketId: string): Promise<void> {
     try {
       const { data: ticket, error: tError } = await supabaseAdmin
@@ -34,14 +34,60 @@ export class SupportAIAgent {
         return
       }
 
-      // 1. Busca semântica na KB
+      // 1. Busca semântica na KB com threshold 0.0 para obter similaridade exata
       const query = `${ticket.subject} ${ticket.description}`
       const searchResults = await embeddingService.searchKnowledge(query, {
         categoryId: ticket.category_id,
-        threshold: 0.70
+        threshold: 0.0
       })
 
       const bestMatch = searchResults[0]
+      const similarity = bestMatch ? bestMatch.similarity : 0
+
+      // Definir Tier programaticamente
+      let tier: 'T1' | 'T2' | 'T3'
+      if (similarity >= 0.85) {
+        tier = 'T1'
+      } else if (similarity >= 0.65) {
+        tier = 'T2'
+      } else {
+        tier = 'T3'
+      }
+
+      if (tier === 'T3') {
+        // T3: Encaminhamento direto para fila humana sem chamar Gemini
+        await supabaseAdmin.from('ticket_ai_interactions').insert({
+          ticket_id: ticketId,
+          interaction_type: 'autonomous_response',
+          query_text: query,
+          matched_doc_ids: bestMatch ? [bestMatch.docId] : [],
+          top_similarity: similarity,
+          confidence_tier: 'T3',
+          generated_response: null,
+          model_used: AI_CONFIG.model,
+          outcome: 'routed_to_human'
+        })
+
+        await supabaseAdmin.from('support_tickets').update({
+          ai_attempt_count: attempt,
+          ai_confidence: similarity,
+          ai_doc_used_id: bestMatch?.docId || null,
+          status: 'needs_human'
+        }).eq('id', ticketId)
+
+        await supabaseAdmin.from('ticket_audit_log').insert({
+          ticket_id: ticketId,
+          action: 'status_changed',
+          from_value: ticket.status || 'open',
+          to_value: 'needs_human',
+          actor_role: 'ai',
+          metadata: { reason: 'Busca semântica sem correspondência relevante (T3)' }
+        })
+
+        return
+      }
+
+      // T1/T2: Chama Gemini para gerar resposta usando o contexto da KB
       const kbContext = bestMatch 
         ? `Documento de Conhecimento Relevante:
            Título: ${bestMatch.title}
@@ -49,7 +95,6 @@ export class SupportAIAgent {
            Passos: ${JSON.stringify(bestMatch.solutionSteps)}`
         : 'Nenhum documento exato encontrado na Base de Conhecimento.'
 
-      // 2. Chama Gemini para gerar resposta
       const model = this.genAI.getGenerativeModel({ model: AI_CONFIG.model })
       
       const prompt = `
@@ -64,16 +109,13 @@ Contexto KB:
 ${kbContext}
 
 Instruções:
-1. Se o Contexto KB for relevante e resolver o problema, gere uma resposta direta e educada.
-2. Se não houver contexto KB relevante, ou o problema for complexo, peça desculpas e informe que um agente humano está sendo acionado.
-3. Se houver ALTA confiança na solução (similarity > 0.85), retorne o campo "action" como "send_autonomously".
-4. Caso contrário, retorne "draft_for_human".
+1. Gere uma resposta direta, educada e útil em português para o cliente com base no contexto KB fornecido.
+2. Não invente informações fora do contexto KB.
+3. Retorne a resposta e a justificativa no JSON especificado.
 
 Retorne JSON:
 {
   "response_body": "<texto da resposta em português>",
-  "confidence": 0.0 a 1.0,
-  "action": "send_autonomously" | "draft_for_human" | "route_to_human",
   "reasoning": "<breve explicação técnica da decisão>"
 }
 
@@ -89,54 +131,90 @@ JSON:`.trim()
         return
       }
 
-      // 3. Log de Interação
-      await supabaseAdmin.from('ticket_ai_interactions').insert({
-        ticket_id: ticketId,
-        interaction_type: 'autonomous_response',
-        query_text: query,
-        matched_doc_ids: bestMatch ? [bestMatch.docId] : [],
-        top_similarity: bestMatch?.similarity || 0,
-        confidence_tier: aiResult.confidence > 0.85 ? 'T1' : aiResult.confidence > 0.6 ? 'T2' : 'T3',
-        generated_response: aiResult.response_body,
-        model_used: AI_CONFIG.model,
-        outcome: aiResult.action === 'send_autonomously' ? 'sent_autonomously' : 'draft_shown'
-      })
+      const responseBody = aiResult.response_body || ''
 
-      // 4. Executa Ação
-      const finalStatus = aiResult.action === 'send_autonomously' ? 'ai_responding' : 'needs_human'
-      
-      const updateData: any = {
-        ai_attempt_count: attempt,
-        ai_confidence: aiResult.confidence,
-        ai_doc_used_id: bestMatch?.docId || null,
-        status: finalStatus
-      }
+      if (tier === 'T1') {
+        // T1: Resposta automática e transições de estado
+        await supabaseAdmin.from('ticket_ai_interactions').insert({
+          ticket_id: ticketId,
+          interaction_type: 'autonomous_response',
+          query_text: query,
+          matched_doc_ids: bestMatch ? [bestMatch.docId] : [],
+          top_similarity: similarity,
+          confidence_tier: 'T1',
+          generated_response: responseBody,
+          model_used: AI_CONFIG.model,
+          outcome: 'sent_autonomously'
+        })
 
-      if (aiResult.action === 'draft_for_human') {
-        updateData.ai_draft_response = aiResult.response_body
-      }
+        // Atualiza para ai_responding
+        await supabaseAdmin.from('support_tickets').update({
+          ai_attempt_count: attempt,
+          ai_confidence: similarity,
+          ai_doc_used_id: bestMatch ? bestMatch.docId : null,
+          status: 'ai_responding'
+        }).eq('id', ticketId)
 
-      await supabaseAdmin.from('support_tickets').update(updateData).eq('id', ticketId)
+        await supabaseAdmin.from('ticket_audit_log').insert({
+          ticket_id: ticketId,
+          action: 'status_changed',
+          from_value: ticket.status || 'ai_triaged',
+          to_value: 'ai_responding',
+          actor_role: 'ai',
+          metadata: { reason: 'Confiança alta na resposta (T1)' }
+        })
 
-      // Se autônomo, envia mensagem
-      if (aiResult.action === 'send_autonomously') {
+        // Envia mensagem
         await supabaseAdmin.from('ticket_messages').insert({
           ticket_id: ticketId,
           author_role: 'ai',
-          body: aiResult.response_body
+          body: responseBody
         })
-        
-        await supabaseAdmin.from('support_tickets').update({ status: 'ai_resolved' }).eq('id', ticketId)
-        
-        // Auditoria
+
+        // Transiciona para ai_resolved
+        await supabaseAdmin.from('support_tickets').update({
+          status: 'ai_resolved'
+        }).eq('id', ticketId)
+
         await supabaseAdmin.from('ticket_audit_log').insert({
           ticket_id: ticketId,
           action: 'resolved',
-          from_value: 'ai_triaged',
+          from_value: 'ai_responding',
           to_value: 'ai_resolved',
           actor_role: 'ai',
-          metadata: { reason: 'Resolução autônoma via KB' }
+          metadata: { reason: 'Mensagem autônoma enviada com sucesso' }
         })
+
+        // Notificar por e-mail sobre a resposta automática da IA
+        supabaseAdmin.auth.admin.getUserById(ticket.created_by).then((res: any) => {
+          const email = res.data?.user?.email
+          if (email) {
+            emailService.sendTicketReplyEmail(email, { ...ticket, status: 'ai_resolved' }, responseBody, 'Assistente IA')
+              .catch((err: any) => logger.error('Erro ao notificar resposta autônoma por e-mail', { ticketId, err }))
+          }
+        }).catch((err: any) => {
+          logger.error('Erro ao obter usuário para notificação de e-mail de IA', { userId: ticket.created_by, err })
+        })
+      } else {
+        // T2: Gera rascunho de resposta mantendo o status em ai_triaged
+        await supabaseAdmin.from('ticket_ai_interactions').insert({
+          ticket_id: ticketId,
+          interaction_type: 'autonomous_response',
+          query_text: query,
+          matched_doc_ids: bestMatch ? [bestMatch.docId] : [],
+          top_similarity: similarity,
+          confidence_tier: 'T2',
+          generated_response: responseBody,
+          model_used: AI_CONFIG.model,
+          outcome: 'draft_shown'
+        })
+
+        await supabaseAdmin.from('support_tickets').update({
+          ai_attempt_count: attempt,
+          ai_confidence: similarity,
+          ai_doc_used_id: bestMatch ? bestMatch.docId : null,
+          ai_draft_response: responseBody
+        }).eq('id', ticketId)
       }
 
     } catch (error) {

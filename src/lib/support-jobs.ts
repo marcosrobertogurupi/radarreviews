@@ -11,7 +11,7 @@ export async function checkSLA(): Promise<void> {
   
   const { data: tickets, error } = await supabaseAdmin
     .from('support_tickets')
-    .select('id, ticket_number, tenant_id')
+    .select('id, ticket_number, tenant_id, priority, escalation_level, status')
     .eq('is_sla_breached', false)
     .not('status', 'in', '("resolved","closed","ai_resolved")')
     .lt('sla_deadline', now)
@@ -21,17 +21,74 @@ export async function checkSLA(): Promise<void> {
   logger.info(`[support-jobs] SLA violado em ${tickets.length} tickets`)
 
   for (const ticket of tickets) {
+    // 1. Obter o plano do tenant
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('plan')
+      .eq('id', ticket.tenant_id)
+      .single()
+
+    let planId: string | null = null
+    if (tenant?.plan) {
+      const { data: plan } = await supabaseAdmin
+        .from('plans')
+        .select('id')
+        .eq('slug', tenant.plan)
+        .maybeSingle()
+      if (plan) planId = plan.id
+    }
+
+    // 2. Buscar a regra de SLA específica do plano ou fallback
+    let { data: rule } = await supabaseAdmin
+      .from('ticket_sla_rules')
+      .select('escalation_level')
+      .eq('priority', ticket.priority)
+      .eq('plan_id', planId)
+      .maybeSingle()
+
+    if (!rule && planId !== null) {
+      const { data: defaultRule } = await supabaseAdmin
+        .from('ticket_sla_rules')
+        .select('escalation_level')
+        .eq('priority', ticket.priority)
+        .is('plan_id', null)
+        .maybeSingle()
+      rule = defaultRule
+    }
+
+    const nextEscalationLevel = Math.max(ticket.escalation_level ?? 0, rule?.escalation_level ?? 1)
+
     await supabaseAdmin
       .from('support_tickets')
-      .update({ is_sla_breached: true })
+      .update({
+        is_sla_breached: true,
+        status: 'escalated',
+        escalation_level: nextEscalationLevel,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', ticket.id)
 
-    await supabaseAdmin.from('ticket_audit_log').insert({
-      ticket_id: ticket.id,
-      action: 'sla_breached',
-      actor_role: 'system',
-      metadata: { deadline_at: now }
-    })
+    await supabaseAdmin.from('ticket_audit_log').insert([
+      {
+        ticket_id: ticket.id,
+        action: 'sla_breached',
+        actor_role: 'system',
+        metadata: { deadline_at: now }
+      },
+      {
+        ticket_id: ticket.id,
+        action: 'status_changed',
+        from_value: ticket.status,
+        to_value: 'escalated',
+        actor_role: 'system'
+      },
+      {
+        ticket_id: ticket.id,
+        action: 'escalated',
+        actor_role: 'system',
+        to_value: nextEscalationLevel.toString()
+      }
+    ])
 
     // Opcional: Notificar Slack/Webhook de escalação aqui
   }
@@ -78,5 +135,7 @@ export async function checkSupportInactivity(): Promise<void> {
       actor_role: 'system',
       metadata: { reason: 'Inatividade > 48h' }
     })
+
+    await knowledgeLearningService.queueTicket(ticket.id)
   }
 }

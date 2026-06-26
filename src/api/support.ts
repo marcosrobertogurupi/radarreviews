@@ -2,6 +2,8 @@ import http from 'node:http'
 import { supabaseAdmin } from '../lib/supabase.js'
 import { logger } from '../lib/logger.js'
 import { supportAITriageService } from '../services/supportAITriage.js'
+import { calculateSLADeadline } from '../lib/support-state.js'
+import { emailService } from '../services/emailService.js'
 
 /**
  * Helper para responder JSON
@@ -54,6 +56,9 @@ export async function handleSupportPortal(
       return json(res, 400, { error: 'Assunto e descrição são obrigatórios' })
     }
 
+    const priority = parsed.priority || 'medium'
+    const slaDeadline = await calculateSLADeadline(auth.tenantId, priority)
+
     const { data: ticket, error } = await supabaseAdmin
       .from('support_tickets')
       .insert({
@@ -62,7 +67,9 @@ export async function handleSupportPortal(
         subject: parsed.subject,
         description: parsed.description,
         category_id: parsed.category_id || null,
-        channel: 'portal'
+        channel: 'portal',
+        priority,
+        sla_deadline: slaDeadline.toISOString()
       })
       .select()
       .single()
@@ -75,6 +82,18 @@ export async function handleSupportPortal(
       action: 'created',
       actor_id: auth.userId,
       actor_role: 'tenant_user'
+    })
+
+    // Envia e-mail de confirmação ao criador do ticket
+    supabaseAdmin.auth.admin.getUserById(auth.userId).then((res: any) => {
+      const email = res.data?.user?.email
+      if (email) {
+        emailService.sendTicketCreatedEmail(email, ticket).catch((err: any) => {
+          logger.error('Erro ao enviar e-mail de chamado criado', { ticketId: ticket.id, err })
+        })
+      }
+    }).catch((err: any) => {
+      logger.error('Erro ao obter usuário para envio de e-mail de ticket', { userId: auth.userId, err })
     })
 
     // Dispara Triagem Assíncrona
@@ -145,12 +164,22 @@ export async function handleSupportPortal(
         .update({ status: 'reopened', updated_at: new Date().toISOString() })
         .eq('id', id)
       
-      await supabaseAdmin.from('ticket_audit_log').insert({
-        ticket_id: id,
-        action: 'reopened',
-        actor_id: auth.userId,
-        actor_role: 'tenant_user'
-      })
+      await supabaseAdmin.from('ticket_audit_log').insert([
+        {
+          ticket_id: id,
+          action: 'reopened',
+          actor_id: auth.userId,
+          actor_role: 'tenant_user'
+        },
+        {
+          ticket_id: id,
+          action: 'status_changed',
+          from_value: ticket.status,
+          to_value: 'reopened',
+          actor_id: auth.userId,
+          actor_role: 'tenant_user'
+        }
+      ])
     } else {
       // Apenas atualiza o timestamp do ticket
       await supabaseAdmin.from('support_tickets')

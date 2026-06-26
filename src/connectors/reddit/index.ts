@@ -165,6 +165,10 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       return result
     }
 
+    // Limpar erros transitórios se conseguimos recuperar posts de outros termos/subreddits
+    delete result.error
+    delete result.error_type
+
     const normalized = allPosts.map(p => mapPostToReview(p, connector))
     const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
 

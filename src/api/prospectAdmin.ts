@@ -36,6 +36,78 @@ export async function handleProspectAdmin(
     }
   }
 
+  // POST /api/admin/prospects/campaigns
+  if (url === '/api/admin/prospects/campaigns' && method === 'POST') {
+    try {
+      let body = ''
+      for await (const chunk of req) body += chunk
+      const parsed = JSON.parse(body)
+
+      if (!parsed.slug || !parsed.name) {
+        return json(res, 400, { error: 'slug e name são obrigatórios' })
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('prospect_campaigns')
+        .insert({
+          slug: parsed.slug,
+          name: parsed.name,
+          description: parsed.description || null,
+          campaign_date: parsed.campaign_date || new Date().toISOString().split('T')[0],
+          is_active: parsed.is_active !== undefined ? parsed.is_active : true
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return json(res, 201, data)
+    } catch (err: any) {
+      return json(res, 500, { error: err.message })
+    }
+  }
+
+  // PATCH /api/admin/prospects/campaigns/:id
+  if (url.startsWith('/api/admin/prospects/campaigns/') && method === 'PATCH') {
+    try {
+      const id = url.split('/').pop()?.split('?')[0]
+      if (!id) return json(res, 400, { error: 'id da campanha é obrigatório' })
+
+      let body = ''
+      for await (const chunk of req) body += chunk
+      const parsed = JSON.parse(body)
+
+      const { data, error } = await supabaseAdmin
+        .from('prospect_campaigns')
+        .update(parsed)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return json(res, 200, data)
+    } catch (err: any) {
+      return json(res, 500, { error: err.message })
+    }
+  }
+
+  // DELETE /api/admin/prospects/campaigns/:id
+  if (url.startsWith('/api/admin/prospects/campaigns/') && method === 'DELETE') {
+    try {
+      const id = url.split('/').pop()?.split('?')[0]
+      if (!id) return json(res, 400, { error: 'id da campanha é obrigatório' })
+
+      const { error } = await supabaseAdmin
+        .from('prospect_campaigns')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      return json(res, 200, { success: true })
+    } catch (err: any) {
+      return json(res, 500, { error: err.message })
+    }
+  }
+
   // GET /api/admin/prospects/leads?campaign_id=...
   if (url.startsWith('/api/admin/prospects/leads') && method === 'GET') {
     try {

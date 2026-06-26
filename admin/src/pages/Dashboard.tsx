@@ -152,33 +152,30 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
 
     try {
-      // 1. Contagem Total de Reviews (30 dias)
-      let qTotal = supabase.from('reviews').select('id', { count: 'exact', head: true }).gte('published_at', since30)
-      if (selectedTenantId) qTotal = qTotal.eq('tenant_id', selectedTenantId)
-      const { count: totalCount } = await qTotal
+      // 1. Buscar agregados diários (30 dias)
+      let qStats = supabase.from('review_stats_daily')
+        .select('total_reviews, positive_count, neutral_count, negative_count, critical_count, unanalyzed_count, avg_dissatisfaction_score')
+        .gte('date', since30.split('T')[0])
+      if (selectedTenantId) qStats = qStats.eq('tenant_id', selectedTenantId)
+      const { data: stats } = await qStats
 
-      // 2. Contagem de Negativos/Críticos (30 dias)
-      let qNeg = supabase.from('reviews').select('id', { count: 'exact', head: true })
-        .gte('published_at', since30)
-        .in('sentiment', ['negative', 'critical'])
-      if (selectedTenantId) qNeg = qNeg.eq('tenant_id', selectedTenantId)
-      const { count: negCritCount } = await qNeg
+      let totalCount = 0
+      let negCritCount = 0
+      let critCount = 0
+      let totalScoreWeight = 0
+      let totalReviewsWithScore = 0
 
-      // 3. Contagem de Críticos (30 dias)
-      let qCrit = supabase.from('reviews').select('id', { count: 'exact', head: true })
-        .gte('published_at', since30)
-        .eq('sentiment', 'critical')
-      if (selectedTenantId) qCrit = qCrit.eq('tenant_id', selectedTenantId)
-      const { count: critCount } = await qCrit
+      for (const s of stats || []) {
+        totalCount += s.total_reviews ?? 0
+        negCritCount += (s.negative_count ?? 0) + (s.critical_count ?? 0)
+        critCount += s.critical_count ?? 0
+        if (s.avg_dissatisfaction_score != null && s.total_reviews > 0) {
+          totalScoreWeight += Number(s.avg_dissatisfaction_score) * s.total_reviews
+          totalReviewsWithScore += s.total_reviews
+        }
+      }
 
-      // 4. Score Médio (30 dias)
-      let qScore = supabase.from('reviews').select('dissatisfaction_score')
-        .gte('published_at', since30)
-        .not('dissatisfaction_score', 'is', null)
-      if (selectedTenantId) qScore = qScore.eq('tenant_id', selectedTenantId)
-      const { data: scoresData } = await qScore.limit(1000)
-      const scores = (scoresData || []).map(r => r.dissatisfaction_score as number)
-      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+      const avg = totalReviewsWithScore ? Math.round(totalScoreWeight / totalReviewsWithScore) : 0
 
       // 5. Conectores Ativos e Alertas Pendentes (Lógica simplificada para evitar 400)
       let activeConnectors = 0
@@ -203,30 +200,32 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       }
 
       setKpis({
-        totalReviews: totalCount ?? 0,
-        negativeRate: totalCount ? Math.round(((negCritCount ?? 0) / totalCount) * 100) : 0,
-        criticalCount: critCount ?? 0,
+        totalReviews: totalCount,
+        negativeRate: totalCount ? Math.round((negCritCount / totalCount) * 100) : 0,
+        criticalCount: critCount,
         activeConnectors,
         pendingAlerts,
         avgScore: avg,
       })
 
       // 7. Distribuição de sentimento (30 dias)
-      let qDist = supabase.from('reviews').select('sentiment').gte('published_at', since30)
-      if (selectedTenantId) qDist = qDist.eq('tenant_id', selectedTenantId)
-      const { data: distData } = await qDist.limit(1000)
-      
-      const dist: Record<string, number> = {}
-      for (const r of distData ?? []) {
-        dist[r.sentiment] = (dist[r.sentiment] || 0) + 1
+      const dist = { positive: 0, neutral: 0, negative: 0, critical: 0, unanalyzed: 0 }
+      for (const s of stats || []) {
+        dist.positive += s.positive_count ?? 0
+        dist.neutral += s.neutral_count ?? 0
+        dist.negative += s.negative_count ?? 0
+        dist.critical += s.critical_count ?? 0
+        dist.unanalyzed += s.unanalyzed_count ?? 0
       }
 
       setSentimentDist(
-        Object.entries(dist).map(([name, value]) => ({
-          name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
-          value,
-          color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
-        }))
+        Object.entries(dist)
+          .filter(([, v]) => v > 0)
+          .map(([name, value]) => ({
+            name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
+            value,
+            color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
+          }))
       )
     } catch (err) {
       console.error('Erro ao carregar KPIs:', err)
@@ -262,32 +261,33 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       days.push({ label, day: dayStr, positivo: 0, neutro: 0, negativo: 0, crítico: 0 })
     }
 
-    let q = supabase.from('reviews').select('sentiment, published_at').gte('published_at', days[0].day)
+    let q = supabase.from('review_stats_daily')
+      .select('date, positive_count, neutral_count, negative_count, critical_count')
+      .gte('date', days[0].day)
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
 
     for (const r of data ?? []) {
-      const day = new Date(r.published_at).toISOString().split('T')[0]
-      const bucket = days.find(d => d.day === day)
+      const bucket = days.find(d => d.day === r.date)
       if (!bucket) continue
-      const s = r.sentiment
-      if (s === 'positive') bucket.positivo++
-      else if (s === 'neutral') bucket.neutro++
-      else if (s === 'negative') bucket.negativo++
-      else if (s === 'critical') bucket.crítico++
+      bucket.positivo += r.positive_count ?? 0
+      bucket.neutro += r.neutral_count ?? 0
+      bucket.negativo += r.negative_count ?? 0
+      bucket.crítico += r.critical_count ?? 0
     }
 
     setTrendData(days)
   }
 
   async function loadChannelData() {
-    let q = supabase.from('reviews').select('channel')
+    let q = supabase.from('review_stats_daily')
+      .select('channel, total_reviews')
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
 
     const counts: Record<string, number> = {}
     for (const r of data ?? []) {
-      counts[r.channel] = (counts[r.channel] || 0) + 1
+      counts[r.channel] = (counts[r.channel] || 0) + (r.total_reviews ?? 0)
     }
 
     setChannelData(
@@ -302,34 +302,35 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   async function loadRanking() {
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
     
-    // Buscar todos os reviews com score dos últimos 30 dias
-    const { data: reviews } = await supabase
-      .from('reviews')
-      .select('tenant_id, dissatisfaction_score')
-      .gte('published_at', since30)
-      .not('dissatisfaction_score', 'is', null)
-      .limit(5000)
+    // Buscar estatísticas agregadas por tenant dos últimos 30 dias
+    const { data: stats } = await supabase
+      .from('review_stats_daily')
+      .select('tenant_id, total_reviews, avg_dissatisfaction_score')
+      .gte('date', since30.split('T')[0])
 
-    if (!reviews) return
+    if (!stats) return
 
     // Agrupar por tenant
-    const groups: Record<string, { total: number, count: number }> = {}
-    for (const r of reviews) {
-      if (!groups[r.tenant_id]) groups[r.tenant_id] = { total: 0, count: 0 }
-      groups[r.tenant_id].total += r.dissatisfaction_score as number
-      groups[r.tenant_id].count++
+    const groups: Record<string, { totalScore: number, totalReviews: number }> = {}
+    for (const s of stats) {
+      if (s.avg_dissatisfaction_score != null && s.total_reviews > 0) {
+        if (!groups[s.tenant_id]) groups[s.tenant_id] = { totalScore: 0, totalReviews: 0 }
+        groups[s.tenant_id].totalScore += Number(s.avg_dissatisfaction_score) * s.total_reviews
+        groups[s.tenant_id].totalReviews += s.total_reviews
+      }
     }
 
     // Calcular médias e mapear nomes
-    const ranking = Object.entries(groups).map(([tid, stats]) => {
+    const ranking = Object.entries(groups).map(([tid, gStats]) => {
       const name = tenants.find(t => t.id === tid)?.name || 'Desconhecido'
       return {
         id: tid,
         name,
-        avgScore: Math.round(stats.total / stats.count),
-        count: stats.count
+        avgScore: Math.round(gStats.totalScore / gStats.totalReviews),
+        count: gStats.totalReviews
       }
     })
+
 
     // Ordenar pelo maior score (mais insatisfeito primeiro)
     setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore).slice(0, 5))

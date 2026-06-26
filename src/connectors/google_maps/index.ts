@@ -58,6 +58,10 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   
   let reviews: NormalizedReview[] = []
 
+  let scraperFailed = false
+  let apiOldFailed = false
+  let apiNewFailed = false
+
   // 1. Tentar Scraping via Playwright (Primário)
   if (useScraper) {
     try {
@@ -67,6 +71,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         logger.info(`[${CHANNEL}] Scraper retornou ${reviews.length} reviews.`)
       }
     } catch (err) {
+      scraperFailed = true
       logger.warn(`[${CHANNEL}] Scraper falhou. Tentando fallback via API...`, {
         error: err instanceof Error ? err.message : String(err),
       })
@@ -83,6 +88,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       const legadas = await fetchFromApiOld(placeId)
       apiReviews.push(...legadas.map(r => normalizeOld(r, connector)))
     } catch (err) {
+      apiOldFailed = true
       logger.warn(`[${CHANNEL}] Fallback API Legada falhou.`)
     }
 
@@ -91,6 +97,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       const novas = await fetchFromApiNew(placeId)
       apiReviews.push(...novas.map(r => normalizeNew(r, connector)))
     } catch (err) {
+      apiNewFailed = true
       logger.warn(`[${CHANNEL}] Fallback API Nova falhou.`)
     }
 
@@ -98,7 +105,15 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   if (reviews.length === 0) {
-    result.error = 'Todas as estratégias (Scraper e API) falharam ou não encontraram reviews.'
+    const scraperOk = useScraper ? !scraperFailed : true
+    const apiOldOk = !apiOldFailed
+    const apiNewOk = !apiNewFailed
+
+    if (!scraperOk && !apiOldOk && !apiNewOk) {
+      result.error = 'Todas as estratégias (Scraper e API) falharam ou não encontraram reviews.'
+    } else {
+      logger.info(`[${CHANNEL}] Nenhum review encontrado ou estratégias vazias`, { connector_id: connector.id })
+    }
     return result
   }
 

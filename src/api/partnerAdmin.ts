@@ -1,11 +1,6 @@
 import http from 'node:http';
-import { createClient } from '@supabase/supabase-js';
 import { getAuthUser, setCors } from './server.js';
-
-const supabaseAdmin = createClient(
-  process.env['SUPABASE_URL']!,
-  process.env['SUPABASE_SERVICE_ROLE_KEY']!
-);
+import { supabaseAdmin } from '../lib/supabase.js';
 
 async function readBody(req: http.IncomingMessage): Promise<any> {
   let raw = '';
@@ -57,7 +52,7 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
     // POST /api/admin/partners
     if (url === '/api/admin/partners' && req.method === 'POST') {
       const body = await readBody(req);
-      const { name, email, phone, company_name, partner_type, commission_setup_rate, commission_recurring_rate, status, password } = body;
+      const { name, email, phone, company_name, partner_type, commission_setup_rate, commission_recurring_rate, status, password, tier, pix_key } = body;
       
       if (!name || !email || !password || !partner_type) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -78,6 +73,21 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
         return;
       }
 
+      const selectedTier = tier || 'bronze';
+      let setupRate = commission_setup_rate;
+      let recurringRate = commission_recurring_rate;
+
+      if (setupRate === undefined || setupRate === null) {
+        if (selectedTier === 'gold') setupRate = 20.00;
+        else if (selectedTier === 'silver') setupRate = 15.00;
+        else setupRate = 10.00;
+      }
+      if (recurringRate === undefined || recurringRate === null) {
+        if (selectedTier === 'gold') recurringRate = 20.00;
+        else if (selectedTier === 'silver') recurringRate = 15.00;
+        else recurringRate = 10.00;
+      }
+
       // 2. Criar na tabela partners
       const { data: partner, error: partnerErr } = await supabaseAdmin
         .from('partners')
@@ -88,9 +98,11 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
           phone,
           company_name,
           partner_type,
-          commission_setup_rate,
-          commission_recurring_rate,
-          status: status || 'active'
+          commission_setup_rate: setupRate,
+          commission_recurring_rate: recurringRate,
+          status: status || 'active',
+          tier: selectedTier,
+          pix_key
         })
         .select()
         .single();
@@ -120,6 +132,17 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
     if (url.startsWith('/api/admin/partners/') && req.method === 'PUT') {
       const id = url.split('/api/admin/partners/')[1];
       const body = await readBody(req);
+
+      if (body.tier && (body.commission_setup_rate === undefined || body.commission_setup_rate === null)) {
+        if (body.tier === 'gold') body.commission_setup_rate = 20.00;
+        else if (body.tier === 'silver') body.commission_setup_rate = 15.00;
+        else body.commission_setup_rate = 10.00;
+      }
+      if (body.tier && (body.commission_recurring_rate === undefined || body.commission_recurring_rate === null)) {
+        if (body.tier === 'gold') body.commission_recurring_rate = 20.00;
+        else if (body.tier === 'silver') body.commission_recurring_rate = 15.00;
+        else body.commission_recurring_rate = 10.00;
+      }
       
       const { error } = await supabaseAdmin
         .from('partners')

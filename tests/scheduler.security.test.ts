@@ -9,6 +9,9 @@ const mockRpc  = vi.fn()
 const mockFrom = vi.fn().mockReturnValue({
   update: vi.fn().mockReturnThis(),
   eq:     vi.fn().mockReturnThis(),
+  in:     vi.fn().mockReturnThis(),
+  or:     vi.fn().mockReturnThis(),
+  order:  vi.fn().mockReturnThis(),
   insert: vi.fn().mockReturnThis(),
   select: vi.fn().mockReturnThis(),
   single: vi.fn().mockResolvedValue({ data: null, error: null }),

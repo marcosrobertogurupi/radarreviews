@@ -17,13 +17,14 @@ import { z } from 'zod'
 // [APPSEC] C9 — Schema Zod para validação e sanitização XSS
 export const RawReviewSchema = z.object({
   external_id:        z.string().max(255),
+  channel:            z.enum(['google_maps', 'facebook', 'instagram', 'reclame_aqui', 'consumidor_gov', 'tripadvisor', 'trustpilot', 'reddit']).optional(),
   rating:             z.number().min(0).max(5).nullable().optional(),
   title:              z.string().max(255).nullable().optional()
                         .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
   body:               z.string().max(10_000).nullable().optional()
                         .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
   author_name:        z.string().max(255).nullable().optional()
-                        .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),
+                        .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }).trim() : s),
   author_external_id: z.string().max(255).nullable().optional(),
   url:                z.string().url().max(1000).nullable().optional(),
   language:           z.string().max(10).nullable().optional(),

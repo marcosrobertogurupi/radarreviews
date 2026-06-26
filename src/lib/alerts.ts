@@ -19,6 +19,7 @@ import { supabase } from './supabase.js'
 import { logger } from './logger.js'
 import axios from 'axios'
 import type { NormalizedReview, SourceChannel } from '../types/review.js'
+import { emailService } from '../services/emailService.js'
 
 interface AlertRule {
   id: string
@@ -70,6 +71,39 @@ export async function checkAlerts(
 
   if (!rules || rules.length === 0) return
 
+  // ── Cálculo de volume_spike e negative_surge ──
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data: dbRecent } = await supabase
+    .from('reviews')
+    .select('external_id, sentiment')
+    .eq('business_id', businessId)
+    .gte('published_at', oneDayAgo)
+
+  const newExternalIds = new Set(reviews.map(r => r.external_id))
+  
+  // Excluir os reviews novos que já foram inseridos no banco para evitar double counting
+  const dbRecentCount = dbRecent?.filter(r => !newExternalIds.has(r.external_id)).length ?? 0
+  const dbRecentNegativeCount = dbRecent?.filter(r => !newExternalIds.has(r.external_id) && (r.sentiment === 'negative' || r.sentiment === 'critical')).length ?? 0
+
+  // Contar quantos reviews novos estão dentro da janela de 24h
+  const newRecentReviews = reviews.filter(r => r.published_at >= oneDayAgo)
+  const newRecentCount = newRecentReviews.length
+  const newRecentNegativeCount = newRecentReviews.filter(r => r.sentiment === 'negative' || r.sentiment === 'critical').length
+
+  const recentCount = dbRecentCount + newRecentCount
+  const recentNegativeCount = dbRecentNegativeCount + newRecentNegativeCount
+
+  // ── Buscar estatísticas diárias históricas (últimos 30 dias) para cálculo de limiares dinâmicos ──
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!
+  const { data: dailyStats } = await supabase
+    .from('review_stats_daily')
+    .select('channel, total_reviews, negative_count, date')
+    .eq('business_id', businessId)
+    .gte('date', thirtyDaysAgo)
+
+  const triggeredRules = new Set<string>()
+  const triggeredReviews = new Set<string>()
+
   // Para cada combinação (review × regra), verificar se deve disparar
   const events: Array<{
     rule_id: string
@@ -78,13 +112,34 @@ export async function checkAlerts(
     detail: Record<string, unknown>
   }> = []
 
-  const triggeredReviews = new Set<string>()
-
   for (const review of reviews) {
     for (const rule of rules as AlertRule[]) {
       if (triggeredReviews.has(review.external_id)) continue
+      if (triggeredRules.has(rule.id)) continue
 
-      if (shouldTrigger(review, rule)) {
+      // Calcular a média diária histórica baseada na regra
+      const statsByDate = new Map<string, { total: number; negative: number }>()
+      for (const s of dailyStats ?? []) {
+        if (!rule.channel || s.channel === rule.channel) {
+          const current = statsByDate.get(s.date) || { total: 0, negative: 0 }
+          current.total += s.total_reviews ?? 0
+          current.negative += s.negative_count ?? 0
+          statsByDate.set(s.date, current)
+        }
+      }
+
+      const daysCount = statsByDate.size || 1
+      let totalSum = 0
+      let negativeSum = 0
+      for (const val of statsByDate.values()) {
+        totalSum += val.total
+        negativeSum += val.negative
+      }
+
+      const avgDailyTotal = totalSum / daysCount
+      const avgDailyNegative = negativeSum / daysCount
+
+      if (shouldTrigger(review, rule, recentCount, recentNegativeCount, avgDailyTotal, avgDailyNegative)) {
         const urgency = calculateUrgency(review, rule);
         events.push({
           rule_id: rule.id,
@@ -97,6 +152,10 @@ export async function checkAlerts(
           },
         })
         triggeredReviews.add(review.external_id)
+
+        if (rule.condition_type === 'volume_spike' || rule.condition_type === 'negative_surge') {
+          triggeredRules.add(rule.id)
+        }
 
         logger.info('[alerts] Alerta disparado', {
           rule_id: rule.id,
@@ -167,6 +226,17 @@ export async function checkAlerts(
           .eq('id', event.id)
           
         logger.info('[alerts] Evento marcado como notificado', { event_id: event.id })
+
+        // Enviar e-mail de alerta de review se o inquilino tiver e-mail
+        if (rule.notify_email && tenant?.admin_email) {
+          const reviewExtId = (event.detail as any)?.review_external_id || (event.detail as any)?.external_id
+          const matchedReview = reviews.find(r => r.external_id === reviewExtId)
+          if (matchedReview) {
+            await emailService.sendReviewAlertEmail(tenant.admin_email, matchedReview, rule.name).catch(err => {
+              logger.error('[alerts] Erro ao enviar e-mail de alerta', { rule_id: rule.id, err })
+            })
+          }
+        }
       } catch (err) {
         logger.warn('[alerts] Falha ao disparar webhook', {
           rule_id: rule.id,
@@ -210,16 +280,31 @@ function isQuietTime(rule: any): boolean {
 /**
  * Avalia se um review dispara uma regra de alerta.
  */
-function shouldTrigger(review: NormalizedReview, rule: AlertRule): boolean {
+function shouldTrigger(
+  review: NormalizedReview,
+  rule: AlertRule,
+  recentCount: number,
+  recentNegativeCount: number,
+  avgDailyTotal: number,
+  avgDailyNegative: number
+): boolean {
   switch (rule.condition_type) {
     case 'rating_drop':
       // Disparar se o rating for <= threshold (ex: threshold=2 → alerta para 1 e 2 estrelas)
       if (rule.threshold === null || review.rating === undefined) return false
       return review.rating <= rule.threshold
 
-    case 'negative_surge':
+    case 'negative_surge': {
       // Disparar para reviews com sentimento negative OU critical
-      return review.sentiment === 'negative' || review.sentiment === 'critical'
+      const isNegative = review.sentiment === 'negative' || review.sentiment === 'critical'
+      if (!isNegative) return false
+      
+      const threshold = rule.threshold !== null && rule.threshold !== undefined
+        ? Number(rule.threshold)
+        : Math.max(Math.ceil(2 * avgDailyNegative), 3)
+      
+      return recentNegativeCount >= threshold
+    }
 
     case 'critical_review':
       // Disparar para reviews com score de insatisfação >= threshold da regra
@@ -243,9 +328,13 @@ function shouldTrigger(review: NormalizedReview, rule: AlertRule): boolean {
       return rule.keywords.some(kw => text.includes(kw.toLowerCase()))
     }
 
-    case 'volume_spike':
-      // Implementar na Fase 5 (requer análise histórica de volume)
-      return false
+    case 'volume_spike': {
+      const threshold = rule.threshold !== null && rule.threshold !== undefined
+        ? Number(rule.threshold)
+        : Math.max(Math.ceil(2 * avgDailyTotal), 5)
+      
+      return recentCount >= threshold
+    }
 
     default:
       logger.warn('[alerts] Tipo de condição desconhecido', {

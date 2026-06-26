@@ -168,7 +168,7 @@ describe('Reclame Aqui connector', () => {
   })
 
   it('fecha o browser mesmo quando ocorre um erro de navegação', async () => {
-    mocks.mockPage.goto.mockRejectedValueOnce(new Error('ERR_CONNECTION_RESET'))
+    mocks.mockPage.goto.mockRejectedValue(new Error('ERR_CONNECTION_RESET'))
 
     const connector = mockConnector('reclame_aqui')
     const result = await run(connector)

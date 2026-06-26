@@ -108,38 +108,125 @@ JSON:`.trim()
 
     if (!aiResult.should_learn || aiResult.confidence < 0.7) return
 
-    // 3. Salva novo documento na KB (em rascunho)
-    const { data: newDoc, error: docError } = await supabaseAdmin
-      .from('support_knowledge_docs')
-      .insert({
-        category_id: ticket.category_id,
-        title: aiResult.title,
-        problem_description: aiResult.problem_description,
-        solution_summary: aiResult.solution_summary,
-        solution_steps: aiResult.solution_steps,
-        keywords: aiResult.keywords,
-        source_ticket_ids: [ticket.id],
-        confidence_score: aiResult.confidence,
-        status: 'draft'
-      })
-      .select()
-      .single()
-
-    if (docError) throw docError
-
-    // 4. Gera embedding
-    const contentToEmbed = `${aiResult.title}\n${aiResult.problem_description}\n${aiResult.solution_summary}`
-    await embeddingService.upsertDocEmbedding(newDoc.id, contentToEmbed)
-
-    logger.info('Novo conhecimento extraído e enfileirado para revisão', { ticketId: ticket.id, docId: newDoc.id })
-    
-    // Log de Interação
-    await supabaseAdmin.from('ticket_ai_interactions').insert({
-      ticket_id: ticket.id,
-      interaction_type: 'learning_extraction',
-      outcome: 'knowledge_extracted',
-      model_used: AI_CONFIG.model
+    // 3. Busca artigos similares na KB (todos os status)
+    const contentToSearch = `${aiResult.title}\n${aiResult.problem_description}\n${aiResult.solution_summary}`
+    const similarDocs = await embeddingService.searchKnowledgeAllStatus(contentToSearch, {
+      categoryId: ticket.category_id,
+      threshold: 0.80
     })
+
+    if (similarDocs.length > 0) {
+      // Artigo similar encontrado (similaridade >= 0.80) -> Enriquecer
+      const matchedDoc = similarDocs[0]
+      if (!matchedDoc) throw new Error('Documento similar inválido')
+      
+      const { data: doc, error: fetchErr } = await supabaseAdmin
+        .from('support_knowledge_docs')
+        .select('*')
+        .eq('id', matchedDoc.docId)
+        .single()
+
+      if (fetchErr || !doc) throw fetchErr || new Error('Documento similar não encontrado no banco')
+
+      const oldTicketIds = doc.source_ticket_ids || []
+      const newTicketIds = oldTicketIds.includes(ticket.id) ? oldTicketIds : [...oldTicketIds, ticket.id]
+
+      const oldVariants = doc.problem_variants || []
+      const potentialVariants = [aiResult.title, aiResult.problem_description].filter(Boolean)
+      const newVariantsSet = new Set(oldVariants)
+      for (const variant of potentialVariants) {
+        if (variant !== doc.title && variant !== doc.problem_description) {
+          newVariantsSet.add(variant)
+        }
+      }
+      const newVariants = Array.from(newVariantsSet)
+
+      const oldResolutionCount = doc.resolution_count || 0
+      const newResolutionCount = oldResolutionCount + 1
+
+      let newAvgCsat = doc.avg_csat
+      if (ticket.csat_score !== null && ticket.csat_score !== undefined) {
+        const csatVal = Number(ticket.csat_score)
+        if (doc.avg_csat !== null && doc.avg_csat !== undefined) {
+          const oldAvg = Number(doc.avg_csat)
+          newAvgCsat = (oldAvg * oldResolutionCount + csatVal) / (oldResolutionCount + 1)
+        } else {
+          newAvgCsat = csatVal
+        }
+      }
+
+      // Regra de publicação automática: CSAT >= 4.0 ou resolution_count >= 4
+      const shouldPublish = (newAvgCsat !== null && newAvgCsat >= 4.0) || (newResolutionCount >= 4)
+      const updatedStatus = shouldPublish ? 'active' : doc.status
+      const autoPublished = shouldPublish ? true : doc.auto_published
+
+      const { error: updErr } = await supabaseAdmin
+        .from('support_knowledge_docs')
+        .update({
+          source_ticket_ids: newTicketIds,
+          problem_variants: newVariants,
+          resolution_count: newResolutionCount,
+          avg_csat: newAvgCsat,
+          status: updatedStatus,
+          auto_published: autoPublished,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', doc.id)
+
+      if (updErr) throw updErr
+
+      logger.info('Artigo existente enriquecido no aprendizado', { ticketId: ticket.id, docId: doc.id, published: shouldPublish })
+
+      // Log de Interação
+      await supabaseAdmin.from('ticket_ai_interactions').insert({
+        ticket_id: ticket.id,
+        interaction_type: 'learning_extraction',
+        outcome: 'knowledge_updated',
+        model_used: AI_CONFIG.model
+      })
+
+    } else {
+      // Nenhum artigo similar -> Criar novo artigo draft
+      const newAvgCsat = (ticket.csat_score !== null && ticket.csat_score !== undefined) ? Number(ticket.csat_score) : null
+      const shouldPublish = (newAvgCsat !== null && newAvgCsat >= 4.0)
+      const newStatus = shouldPublish ? 'active' : 'draft'
+      const newAutoPublished = shouldPublish
+
+      const { data: newDoc, error: docError } = await supabaseAdmin
+        .from('support_knowledge_docs')
+        .insert({
+          category_id: ticket.category_id,
+          title: aiResult.title,
+          problem_description: aiResult.problem_description,
+          solution_summary: aiResult.solution_summary,
+          solution_steps: aiResult.solution_steps,
+          keywords: aiResult.keywords,
+          source_ticket_ids: [ticket.id],
+          confidence_score: aiResult.confidence,
+          status: newStatus,
+          auto_published: newAutoPublished,
+          avg_csat: newAvgCsat,
+          resolution_count: 1
+        })
+        .select()
+        .single()
+
+      if (docError) throw docError
+
+      // Gera embedding
+      const contentToEmbed = `${aiResult.title}\n${aiResult.problem_description}\n${aiResult.solution_summary}`
+      await embeddingService.upsertDocEmbedding(newDoc.id, contentToEmbed)
+
+      logger.info('Novo conhecimento extraído e inserido', { ticketId: ticket.id, docId: newDoc.id, published: shouldPublish })
+
+      // Log de Interação
+      await supabaseAdmin.from('ticket_ai_interactions').insert({
+        ticket_id: ticket.id,
+        interaction_type: 'learning_extraction',
+        outcome: 'knowledge_extracted',
+        model_used: AI_CONFIG.model
+      })
+    }
   }
 }
 

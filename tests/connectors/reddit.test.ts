@@ -10,6 +10,12 @@ import { mockConnector } from '../fixtures/connector.js'
 
 vi.mock('dotenv/config', () => ({}))
 
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn().mockRejectedValue(new Error('Axios mocked error')),
+  },
+}))
+
 const mockSupabaseMethods = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
@@ -90,6 +96,11 @@ describe('Reddit connector — modo público', () => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.spyOn(global, 'setTimeout').mockImplementation((cb: any) => {
+      cb()
+      return 0 as any
+    })
   })
 
   // 1. Busca global retorna posts normalizados

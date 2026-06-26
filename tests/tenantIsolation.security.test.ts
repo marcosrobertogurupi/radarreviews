@@ -24,6 +24,7 @@ vi.mock('../src/lib/supabase.js', () => ({
   },
 }))
 
+describe('[C3] Autenticação — getAuthUser', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
