@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F10" status="done">
+  <tasks_completed>
+    <task id="F10-E1-T1" notes="Onboarding self-service implementado: o cadastro de novo inquilino/empresa cria o tenant, vincula os conectores solicitados (ex: trustpilot, facebook) e agenda uma sincronização inicial imediata (runOnce) em segundo plano (setTimeout 1s)."/>
+    <task id="F10-E2-T1" notes="Integração de envio de e-mails com nodemailer e templates HTML responsivos com visual premium para: alertas de novos reviews críticos/negativos, confirmação de abertura de chamados, e novas respostas em tickets (suporte humano, assistente IA e aprovação de rascunhos)."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+  </new_database_objects>
+  <new_endpoints>
+    <endpoint method="POST" path="/api/onboarding" description="Processa o onboarding self-service de novas empresas com agendamento imediato da primeira sincronização"/>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+    <var name="SMTP_HOST" vault="false"/>
+    <var name="SMTP_PORT" vault="false"/>
+    <var name="SMTP_USER" vault="false"/>
+    <var name="SMTP_PASS" vault="false"/>
+    <var name="SMTP_SECURE" vault="false"/>
+    <var name="SMTP_FROM" vault="false"/>
+    <var name="VITE_PORTAL_URL" vault="false"/>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>O serviço de e-mail (EmailService) está centralizado em src/services/emailService.ts e exporta a instância singleton emailService. Ele envia e-mails reais usando SMTP (se configurado no .env) ou cai no log de simulação em desenvolvimento sem travar os fluxos principais do sistema.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

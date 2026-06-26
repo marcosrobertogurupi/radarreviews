@@ -23,7 +23,7 @@ const SUGGESTIONS = [
 
 const WELCOME: Message = {
   role: 'assistant',
-  content: 'Olá! Sou o **Copiloto de Reputação** da Reputei 📡\n\nAnalisei os seus reviews e alertas recentes. Posso te ajudar a:\n\n• Entender o que está impactando sua reputação\n• Sugerir respostas para reviews negativos\n• Identificar padrões nos feedbacks\n• Recomendar ações prioritárias\n\nComo posso te ajudar hoje?',
+  content: 'Olá! Sou a **Reputei IA** ✨, assistente de Inteligência Reputacional da Reputei.\n\nAnalisei os seus reviews e alertas recentes. Posso te ajudar a:\n\n• Entender o que está impactando sua reputação\n• Sugerir respostas empáticas para reviews negativos\n• Identificar padrões nos feedbacks de clientes\n• Recomendar ações prioritárias baseadas em dados\n\nMinhas análises são baseadas exclusivamente nos seus dados — sem invenções. Como posso te ajudar hoje?',
   time: new Date(),
 }
 
@@ -113,9 +113,9 @@ export default function Copilot({ session }: Props) {
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #6366f1, #06b6d4)', boxShadow: '0 0 14px rgba(99,102,241,0.4)', flexShrink: 0 }}>
               <Bot size={17} color="white" />
             </span>
-            IA Copilot
+            Reputei IA
           </h1>
-          <p className="page-subtitle">Suporte inteligente sobre sua reputação online — powered by Gemini.</p>
+          <p className="page-subtitle">Sua assistente de Inteligência Reputacional. Análises baseadas nos seus dados reais, sem alucinações.</p>
         </div>
         <button className="btn btn-ghost" onClick={reset} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <RefreshCw size={14} /> Nova conversa
@@ -194,7 +194,7 @@ export default function Copilot({ session }: Props) {
         )}
 
         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
-          As respostas são geradas por IA com base nos seus dados e podem conter imprecisões. Valide ações críticas com sua equipe.
+          A Reputei IA gera respostas com base exclusivamente nos seus dados reais. Valide ações críticas com sua equipe.
         </p>
       </div>
     </div>

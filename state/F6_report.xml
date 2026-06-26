@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F6" status="done">
+  <tasks_completed>
+    <task id="F6-E1-T1" notes="Colunas 'tier' (bronze/silver/gold) e 'pix_key' adicionadas à tabela 'partners'. Endpoint de admin atualizado para calcular comissões baseado no tier do parceiro."/>
+    <task id="F6-E1-T2" notes="Criação automática de comissão de setup no cadastro de clientes. Implementado o job de mensalidades 'runCommissionsJob' para comissões recorrentes, protegendo contra duplicatas para o mesmo mês."/>
+    <task id="F6-E2-T1" notes="Implementado login por impersonação temporária de 5 minutos na tabela 'partner_impersonation_sessions' com RLS. O endpoint gera Magic Link do Supabase e o middleware 'getAuthUser' valida tokens 'Bearer impersonate_token'."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <table name="partner_impersonation_sessions" rls="true"/>
+  </new_database_objects>
+  <new_endpoints>
+    <endpoint method="GET" path="/api/partner/profile" description="Retorna os dados do parceiro autenticado"/>
+    <endpoint method="PUT" path="/api/partner/profile" description="Atualiza o telefone, razão social e chave Pix do parceiro"/>
+    <endpoint method="POST" path="/api/partner/impersonate/:tenantId" description="Gera Magic Link e token temporário para impersonar o cliente"/>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>O login por impersonação gera um token no formato 'impersonate_&lt;uuid&gt;'. O helper 'getAuthUser' aceita esse token no header 'Authorization' para simular o acesso do tenant dono, permitindo auditorias e expiração automática de 5 minutos configurada no banco.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

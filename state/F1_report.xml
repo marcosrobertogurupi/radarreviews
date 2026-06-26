@@ -1,0 +1,39 @@
+<phase_completion_report phase="F1" status="done">
+  <tasks_completed>
+    <task id="F1-E1-T1" notes="Tabela reviews modelada com colunas normalizadas, coluna raw_data (jsonb) contendo o payload bruto original, e constraint única composta (channel, external_id, tenant_id) para garantir o upsert seguro via ingestReviews()."/>
+    <task id="F1-E1-T2" notes="Tabela sync_jobs implementada para auditoria e rastreabilidade técnica dos conectores, registrando datas, contagens e logs detalhados de erros."/>
+    <task id="F1-E1-T3" notes="Tabela channel_connectors modelada para guardar o status do conector (active, error, pending_auth), além de last_sync_at e next_sync_at para controle do scheduler."/>
+    <task id="F1-E1-T4" notes="Scheduler implementado em src/scheduler/index.ts utilizando RPC claim_review_jobs para claim atômico de jobs pendentes com FOR UPDATE SKIP LOCKED."/>
+    <task id="F1-E2-T1" notes="Conector Google Maps integrado via scraping Playwright com fallback para Google Places API (New) e legada."/>
+    <task id="F1-E3-T1" notes="Conector TripAdvisor integrado via Content API v2 suportando paginação baseada em offset."/>
+    <task id="F1-E4-T1" notes="Conector Consumidor.gov integrado via download e parse de dados abertos CSV mensais, filtrados pelo CNPJ e gerando ID externo via hash SHA-256."/>
+    <task id="F1-E5-T1" notes="Conector Trustpilot integrado com Consumer API v1 pública usando API Key cadastrada."/>
+    <task id="F1-E6-T1" notes="Conector Reddit integrado no modo público buscando menções via endpoints JSON públicos."/>
+    <task id="F1-E6-T2" notes="Conector Reddit preparado para OAuth2 com credenciais, aplicando fallback para busca pública ou RSS se necessário."/>
+    <task id="F1-E7-T1" notes="Conector Facebook integrado com Meta Graph API para recuperar avaliações de páginas públicas usando tokens do Vault."/>
+    <task id="F1-E8-T1" notes="Conector Instagram integrado com Instagram Graph API para buscar comentários de mídia social contendo palavras-chave."/>
+    <task id="F1-E9-T1" notes="Estratégia do Reclame Aqui definida: uso de Playwright local headless com StealthPlugin e suporte a Apify como canal principal."/>
+    <task id="F1-E9-T2" notes="Conector Reclame Aqui implementado com Playwright local (raspando __NEXT_DATA__) e suporte a Apify."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <table name="reviews" rls="true"/>
+    <table name="sync_jobs" rls="true"/>
+    <table name="channel_connectors" rls="true"/>
+    <function name="claim_review_jobs(...)"/>
+    <index name="idx_reviews_channel_external"/>
+    <index name="idx_connectors_next_sync"/>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+    <var name="REDDIT_PROXY_URL" vault="false"/>
+    <var name="REDDIT_PROXY_SECRET_KEY" vault="false"/>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>Todos os reviews ingeridos são higienizados por Zod e DOMPurify através de RawReviewSchema antes da escrita.</note>
+    <note>Ao final de cada conector, a função ingestReviews() deve ser chamada para realizar a deduplicação e detecção de atualizações.</note>
+    <note>O scheduler gerencia automaticamente a fila de sincronização monitorando o campo status e next_sync_at.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

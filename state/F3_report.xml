@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F3" status="done">
+  <tasks_completed>
+    <task id="F3-E1-T1" notes="A regra rating_drop já existia e foi devidamente integrada na assinatura de verificação de alertas."/>
+    <task id="F3-E1-T2" notes="Implementada a regra volume_spike com suporte a threshold estático e limiar dinâmico de 2x média diária de volume histórico dos últimos 30 dias (respeitando mínimo padrão de 5)."/>
+    <task id="F3-E1-T3" notes="Implementada a regra negative_surge com suporte a sentimento de IA e limiar dinâmico de 2x média diária histórica de negativos (respeitando mínimo padrão de 3)."/>
+    <task id="F3-E1-T4" notes="A regra keyword já existia e foi validada com testes automatizados cobrindo a detecção no corpo e título dos reviews."/>
+    <task id="F3-E2-T1" notes="Disparo de webhook de envio de e-mail (ou n8n padrão do tenant) devidamente testado e disparado de forma atômica."/>
+    <task id="F3-E2-T2" notes="Notificação para webhooks customizados dos tenants com dados de suporte e formatação amigável."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+    <var name="N8N_SUBSCRIBER_ALERTS_WEBHOOK" vault="false"/>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>O motor de alertas foi complementado com suporte a surtos de volume (volume_spike) e surtos negativos (negative_surge) no arquivo src/lib/alerts.ts.
+Ambas as regras calculam limiares dinâmicos automaticamente com base nas estatísticas agregadas de 30 dias em review_stats_daily quando nenhum threshold explícito é informado.
+A contagem de reviews e reviews negativos das últimas 24h evita contagem dupla dos reviews recém-ingeridos.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

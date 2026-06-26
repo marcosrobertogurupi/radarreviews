@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F7" status="done">
+  <tasks_completed>
+    <task id="F7-E1-T1" notes="Implementado suporte para o time comercial criar, pausar e encerrar campanhas. Adicionados os endpoints POST, PATCH (is_active) e DELETE em prospectAdmin.ts."/>
+    <task id="F7-E1-T2" notes="Leads de prospecção são enriquecidos no push-to-prospect com scores de reputação consolidados de pelo menos dois canais (Google Maps nota local e Reclame Aqui nota de marca) salvos em variáveis."/>
+    <task id="F7-E2-T1" notes="Implementada a fila de disparos de follow-ups automáticos (prospect_followup_queue) via e-mail/WhatsApp baseados em templates e intervalos de campanha. Follow-ups pendentes são cancelados automaticamente quando o lead passa para status responded ou converted."/>
+    <task id="F7-E2-T2" notes="Configurado o modelo polimórfico de scores comerciais (commercial_channel_scores) apontando para empresa-mãe (company) ou filiais (branch) para suportar marcas de multi-unidades sem duplicar lógica."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+  </new_database_objects>
+  <new_endpoints>
+    <endpoint method="POST" path="/api/admin/prospects/campaigns" description="Cria uma nova campanha de prospecção comercial"/>
+    <endpoint method="PATCH" path="/api/admin/prospects/campaigns/:id" description="Edita e pausa (muda is_active) a campanha comercial de prospecção"/>
+    <endpoint method="DELETE" path="/api/admin/prospects/campaigns/:id" description="Encerra e remove a campanha comercial de prospecção"/>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>As campanhas comerciais podem ser pausadas definindo is_active como false. O worker em server.ts (processProspectFollowups) roda em background a cada 5 minutos enviando follow-ups baseados nos templates da campanha. A tabela commercial_channel_scores é polimórfica, onde target_type ('company' | 'branch') e target_id referenciam a matriz ou filial.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

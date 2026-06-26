@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F8" status="done">
+  <tasks_completed>
+    <task id="F8-E1-T1" notes="Criados índices no banco de dados para todas as chaves estrangeiras comumente filtradas e um índice parcial em next_sync_at (channel_connectors) para conectores ativos no scheduler, otimizando o plano de execução (EXPLAIN)."/>
+    <task id="F8-E1-T2" notes="Migrada a tabela review_stats_daily para incluir critical_count e avg_dissatisfaction_score. Criada trigger no banco (trg_reviews_aggregate_stats) para agregar estatísticas diárias em tempo real após inserts/updates/deletes. Dashboards do portal e admin reescritos para usarem os agregados da review_stats_daily."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <index name="idx_reviews_business_id" rls="false"/>
+    <index name="idx_reviews_tenant_id" rls="false"/>
+    <index name="idx_connectors_next_sync" rls="false"/>
+    <index name="idx_reviews_business_channel_date" rls="false"/>
+    <index name="idx_stats_business_date" rls="false"/>
+    <index name="idx_stats_tenant_date" rls="false"/>
+    <function name="aggregate_daily_stats"/>
+    <function name="trg_reviews_aggregate_stats_fn"/>
+    <trigger name="trg_reviews_aggregate_stats"/>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>Todos os KPIs e gráficos de tendência dos dashboards (admin e portal) agora consomem da tabela review_stats_daily. Qualquer nova métrica agregada que o dashboard precise exibir no futuro deve ser primeiramente adicionada a esta tabela e preenchida pela função aggregate_daily_stats() para manter a performance de renderização em 100%.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

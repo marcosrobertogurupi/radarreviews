@@ -1,0 +1,28 @@
+<phase_completion_report phase="F5" status="done">
+  <tasks_completed>
+    <task id="F5-E1-T1" notes="Triagem inicial e classificação de sentimentos implementadas e integradas."/>
+    <task id="F5-E1-T2" notes="Estrutura de support_knowledge_docs pronta com suporte a embeddings de 768 dimensões."/>
+    <task id="F5-E1-T3" notes="Indexador HNSW idx_kb_embeddings_hnsw criado para buscas em tempo menor que 10ms."/>
+    <task id="F5-E1-T4" notes="Busca por similaridade de cosseno via RPC no Supabase implementada."/>
+    <task id="F5-E1-T5" notes="Implementados os Tiers programáticos de confiança: T1 (respostas autônomas), T2 (rascunhos) e T3 (encaminhamento humano sem uso de tokens da IA)."/>
+    <task id="F5-E2-T1" notes="Implementado KnowledgeLearningService que extrai conhecimento estruturado a partir da conversa quando um ticket é resolvido."/>
+    <task id="F5-E2-T2" notes="Busca de duplicados (similaridade >= 0.80) adicionada para enriquecer variações de termos e contadores em vez de duplicar artigos."/>
+    <task id="F5-E2-T3" notes="Regras de auto-publicação baseadas em média de CSAT >= 4.0 ou resolution_count >= 4 implementadas."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <function name="search_knowledge_all_status"/>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>
+      O pipeline Perceber-Recuperar-Agir e o ciclo de aprendizado contínuo estão totalmente implementados.
+      As transições de estado respeitam rigidamente as regras da máquina de estados do helpdesk.
+      A RPC search_knowledge_all_status retorna doc_id, title, solution_summary, solution_steps, similarity, confidence_score, resolution_count e status.
+    </note>
+  </interface_for_next_phases>
+</phase_completion_report>

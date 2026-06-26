@@ -1,0 +1,23 @@
+<phase_completion_report phase="F2" status="done">
+  <tasks_completed>
+    <task id="F2-E1-T1" notes="Gemini 2.5 Flash integrado para analisar sentimentos, gerando classificações estruturadas (positive, neutral, negative, critical) e persistindo sentiment_score no banco de dados."/>
+    <task id="F2-E1-T2" notes="IA extrai tópicos específicos do review (atendimento, produto, cobrança, etc.) salvos em reviews.tags, e gera um resumo executivo de uma única frase salvo em reviews.sentiment_summary."/>
+    <task id="F2-E1-T3" notes="Cálculo do dissatisfaction_score (0 a 100) implementado via prompt da IA para detecção rápida de crises e priorização no painel."/>
+    <task id="F2-E2-T1" notes="Fallback heurístico baseado em léxico de termos positivos e negativos implementado em src/lib/sentiment.ts. Ativado automaticamente se a API do Gemini falhar."/>
+    <task id="F2-E2-T2" notes="Pipeline de sentimento acionado automaticamente dentro da função de ingestão ingestReviews() para todos os novos reviews e reviews cujo conteúdo de texto foi modificado."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <table name="reviews" rls="true"/>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+    <var name="GEMINI_API_KEY" vault="false"/>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>A análise de sentimentos retorna uma interface estruturada contendo sentiment, dissatisfaction_score, confidence, topics, summary, alert_reason e action_suggestion.</note>
+    <note>O fallback léxico garante a continuidade da operação mesmo com instabilidades na API do Google Gemini, preenchendo a nota baseada no rating do review.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

@@ -35,7 +35,7 @@ const NAV_CLIENTE = [
   { id: 'dashboard' as Page, label: 'Visão Geral',  icon: LayoutDashboard },
   { id: 'reviews'   as Page, label: 'Reviews',      icon: MessageSquare },
   { id: 'alerts'    as Page, label: 'Alertas',      icon: Bell },
-  { id: 'copilot'   as Page, label: 'IA Copilot',   icon: Bot },
+  { id: 'copilot'   as Page, label: 'Reputei IA',    icon: Bot },
   { id: 'benchmarking' as Page, label: 'Benchmarking', icon: BarChart2 },
   { id: 'widget'    as Page, label: 'Widget Site',  icon: Layout },
   { id: 'generate'  as Page, label: 'Gerar Reviews', icon: Send },

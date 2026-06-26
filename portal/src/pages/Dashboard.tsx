@@ -9,7 +9,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts'
-import { MessageSquare, TrendingDown, Star, AlertTriangle, FileText } from 'lucide-react'
+import { MessageSquare, TrendingDown, Star, AlertTriangle, FileText, Award } from 'lucide-react'
 
 interface KPI {
   total: number       // últimos 30 dias
@@ -21,6 +21,20 @@ interface KPI {
   avg_score: number
 }
 
+interface ReputationScore {
+  score: number
+  component_rating: number
+  component_sentiment: number
+  component_volume: number
+  component_response: number
+  component_reclame: number
+  component_consumidor: number
+  component_trend: number
+  reviews_analyzed: number
+  calculated_at: string
+  reputation_score_history?: Array<{ score: number; snapshot_date: string }>
+}
+
 interface Props { tenantId: string }
 
 export default function Dashboard({ tenantId }: Props) {
@@ -30,6 +44,7 @@ export default function Dashboard({ tenantId }: Props) {
   const [recent, setRecent]     = useState<Review[]>([])
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
   const [competitors, setCompetitors] = useState<any[]>([])
+  const [repScore, setRepScore] = useState<ReputationScore | null>(null)
   const [loading, setLoading]     = useState(true)
 
   async function load(silent = false) {
@@ -51,9 +66,19 @@ export default function Dashboard({ tenantId }: Props) {
         .eq('tenant_id', tenantId)
       const bizIds = (bizData ?? []).map(b => b.id)
 
-      const [rvRes, alRes, recentRes, alertRes, compRes] = await Promise.all([
-        supabase.from('reviews').select('sentiment, dissatisfaction_score, rating, published_at')
-          .eq('tenant_id', tenantId).gte('published_at', since30),
+      const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const repScorePromise: Promise<ReputationScore[]> = token
+        ? fetch(`${API_BASE}/api/reputation-score`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.ok ? r.json() : [])
+            .catch(() => [])
+        : Promise.resolve([])
+
+      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores] = await Promise.all([
+        supabase.from('review_stats_daily').select('positive_count, neutral_count, negative_count, critical_count, unanalyzed_count, avg_rating, avg_dissatisfaction_score, total_reviews, date')
+          .eq('tenant_id', tenantId).gte('date', since30.split('T')[0]),
+        supabase.from('review_stats_daily').select('total_reviews')
+          .eq('tenant_id', tenantId),
         bizIds.length
           ? supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false).in('business_id', bizIds)
           : Promise.resolve({ count: 0, data: null, error: null }),
@@ -64,36 +89,41 @@ export default function Dashboard({ tenantId }: Props) {
           : Promise.resolve({ data: [], error: null }),
         bizIds.length
           ? supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
-          : Promise.resolve({ data: [], error: null })
-      ])
+          : Promise.resolve({ data: [], error: null }),
+        repScorePromise,
+      ] as const)
 
-      const reviews = rvRes.data ?? []
+      const stats = statsRes.data ?? []
+      const allStats = allStatsRes.data ?? []
 
-      // KPIs com contagem nativa para evitar limites de fetch
-      const [totalRes, negCritRes, critRes, totalAllRes] = await Promise.all([
-        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30),
-        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).in('sentiment', ['negative', 'critical']),
-        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('published_at', since30).eq('sentiment', 'critical'),
-        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
-      ])
+      // KPIs a partir do review_stats_daily
+      let total = 0
+      let negCritCount = 0
+      let critCount = 0
+      let totalRatingWeight = 0
+      let totalReviewsWithRating = 0
+      let totalScoreWeight = 0
+      let totalReviewsWithScore = 0
 
-      const total    = totalRes.count    ?? 0
-      const totalAll = totalAllRes.count ?? 0
-      const negCritCount = negCritRes.count ?? 0
-      const critCount    = critRes.count    ?? 0
+      for (const s of stats) {
+        total += s.total_reviews ?? 0
+        negCritCount += (s.negative_count ?? 0) + (s.critical_count ?? 0)
+        critCount += s.critical_count ?? 0
 
-      // Para média e score, ainda buscamos uma amostra
-      const { data: metricsData } = await supabase
-        .from('reviews')
-        .select('rating, dissatisfaction_score')
-        .eq('tenant_id', tenantId)
-        .gte('published_at', since30)
-        .limit(1000)
+        if (s.avg_rating != null && s.total_reviews > 0) {
+          totalRatingWeight += Number(s.avg_rating) * s.total_reviews
+          totalReviewsWithRating += s.total_reviews
+        }
 
-      const rated = (metricsData || []).filter(r => r.rating != null)
-      const avgRating = rated.length ? rated.reduce((s, r) => s + (r.rating as number), 0) / rated.length : 0
-      const scored = (metricsData || []).filter(r => r.dissatisfaction_score != null)
-      const avgScore = scored.length ? scored.reduce((s, r) => s + (r.dissatisfaction_score as number), 0) / scored.length : 0
+        if (s.avg_dissatisfaction_score != null && s.total_reviews > 0) {
+          totalScoreWeight += Number(s.avg_dissatisfaction_score) * s.total_reviews
+          totalReviewsWithScore += s.total_reviews
+        }
+      }
+
+      const totalAll = allStats.reduce((acc, curr) => acc + (curr.total_reviews ?? 0), 0)
+      const avgRating = totalReviewsWithRating ? totalRatingWeight / totalReviewsWithRating : 0
+      const avgScore = totalReviewsWithScore ? totalScoreWeight / totalReviewsWithScore : 0
 
       setKpi({
         total,
@@ -106,12 +136,23 @@ export default function Dashboard({ tenantId }: Props) {
       })
 
       // Distribuição de sentimento (pizza)
-      const sentCounts: Record<string, number> = {}
-      for (const r of reviews) { sentCounts[r.sentiment] = (sentCounts[r.sentiment] ?? 0) + 1 }
+      const sentCounts = { positive: 0, neutral: 0, negative: 0, critical: 0, unanalyzed: 0 }
+      for (const s of stats) {
+        sentCounts.positive += s.positive_count ?? 0
+        sentCounts.neutral += s.neutral_count ?? 0
+        sentCounts.negative += s.negative_count ?? 0
+        sentCounts.critical += s.critical_count ?? 0
+        sentCounts.unanalyzed += s.unanalyzed_count ?? 0
+      }
+
       setDist(
         Object.entries(sentCounts)
           .filter(([, v]) => v > 0)
-          .map(([k, v]) => ({ name: SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k, value: v, color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280' }))
+          .map(([k, v]) => ({
+            name: SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k,
+            value: v,
+            color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280'
+          }))
       )
 
       // Tendência 7 dias
@@ -119,12 +160,12 @@ export default function Dashboard({ tenantId }: Props) {
       for (let i = 6; i >= 0; i--) {
         const d  = new Date(); d.setDate(d.getDate() - i)
         const ds = d.toISOString().split('T')[0]!
-        const dayRevs = reviews.filter(r => r.published_at.startsWith(ds))
+        const dayStats = stats.filter(s => s.date === ds)
         days.push({
           date: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-          pos:  dayRevs.filter(r => r.sentiment === 'positive').length,
-          neg:  dayRevs.filter(r => r.sentiment === 'negative').length,
-          crit: dayRevs.filter(r => r.sentiment === 'critical').length,
+          pos:  dayStats.reduce((acc, curr) => acc + (curr.positive_count ?? 0), 0),
+          neg:  dayStats.reduce((acc, curr) => acc + (curr.negative_count ?? 0), 0),
+          crit: dayStats.reduce((acc, curr) => acc + (curr.critical_count ?? 0), 0),
         })
       }
       setTrend(days)
@@ -132,6 +173,8 @@ export default function Dashboard({ tenantId }: Props) {
       setRecent(recentRes.data ?? [])
       setAlerts(alertRes.data ?? [])
       setCompetitors(compRes.data ?? [])
+      setRepScore((repScores as ReputationScore[])[0] ?? null)
+
     } catch (err) {
       console.error('Erro ao carregar dashboard do portal:', err)
     } finally {
@@ -273,6 +316,63 @@ export default function Dashboard({ tenantId }: Props) {
           <div className="kpi-icon"><Star size={18} color="#f59e0b" /></div>
         </div>
       </div>
+
+      {/* Reputation Score — F12-E8-T4 */}
+      {repScore && (
+        <div className="card" style={{ padding: 20, marginBottom: 24 }}>
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Award size={18} color="#f59e0b" />
+            Reputation Score
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+              Calculado em {new Date(repScore.calculated_at).toLocaleDateString('pt-BR')}
+            </span>
+          </div>
+
+          {/* Score principal */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 32, marginBottom: 20, marginTop: 8 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: 56, fontWeight: 800, lineHeight: 1,
+                color: repScore.score >= 700 ? '#10b981' : repScore.score >= 400 ? '#f59e0b' : '#ef4444',
+                fontFamily: 'Outfit, sans-serif',
+              }}>
+                {repScore.score}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>de 1000</div>
+              <div style={{ fontSize: 11, fontWeight: 600, marginTop: 6, color: repScore.score >= 700 ? '#10b981' : repScore.score >= 400 ? '#f59e0b' : '#ef4444' }}>
+                {repScore.score >= 700 ? '🌟 Excelente' : repScore.score >= 400 ? '📈 Regular' : '⚠️ Precisa melhorar'}
+              </div>
+            </div>
+
+            {/* Barra de componentes */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[
+                { label: 'Nota média (30%)',       val: repScore.component_rating,    color: '#6366f1' },
+                { label: 'Sentimento positivo (20%)', val: repScore.component_sentiment, color: '#10b981' },
+                { label: 'Volume de reviews (10%)',val: repScore.component_volume,    color: '#06b6d4' },
+                { label: 'Taxa de resposta (10%)', val: repScore.component_response,  color: '#8b5cf6' },
+                { label: 'Reclame Aqui (10%)',     val: repScore.component_reclame,   color: '#f59e0b' },
+                { label: 'Consumidor.gov (10%)',   val: repScore.component_consumidor,color: '#ec4899' },
+                { label: 'Tendência 90d (10%)',    val: repScore.component_trend,     color: '#14b8a6' },
+              ].map(c => (
+                <div key={c.label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>{c.label}</span>
+                    <span style={{ fontWeight: 600, color: c.color }}>{Math.round(Number(c.val))}pts</span>
+                  </div>
+                  <div className="score-bar-bg">
+                    <div className="score-bar-fill" style={{ width: `${Math.round(Number(c.val))}%`, background: c.color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            Baseado em {repScore.reviews_analyzed} reviews · Fórmula: nota (30%) + sentimento (20%) + volume (10%) + resposta (10%) + Reclame Aqui (10%) + Consumidor.gov (10%) + tendência (10%)
+          </div>
+        </div>
+      )}
 
       <div className="grid-2">
         {/* Tendência */}

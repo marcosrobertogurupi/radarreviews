@@ -15,8 +15,9 @@
 import 'dotenv/config'
 import http from 'node:http'
 import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '../lib/supabase.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { startScheduler } from '../scheduler/index.js'
+import { startScheduler, runOnce } from '../scheduler/index.js'
 import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/dataforseo.js'
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
 import { createAsaasCustomer, createAsaasSubscription, getAsaasSubscriptionPayments, getAsaasPixQrCode, getAsaasSubscription } from '../lib/asaas.js'
@@ -39,13 +40,13 @@ import { handleCommercialAdmin } from './commercialAdmin.js'
 import { handlePartnerRoutes } from './partner.js'
 import { handlePartnerAdminRoutes } from './partnerAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
+import { calculateAllScoresForTenant } from '../services/reputationScore.js'
+import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
-const supabaseAdmin = createClient(
-  process.env['SUPABASE_URL']!,
-  process.env['SUPABASE_SERVICE_ROLE_KEY']!
-)
+// Reutiliza o cliente singleton do modulo lib/supabase
+// supabaseAdmin agora é importado no topo do arquivo
 
 function getGemini() {
   const key = process.env['GEMINI_API_KEY']
@@ -185,8 +186,10 @@ function buildSystemPrompt(ctx: TenantContext): string {
       ).join('\n')
     : '- Nenhum review crítico recente.'
 
-  return `Você é o Copiloto de Reputação da plataforma Reputei, um assistente especializado em gestão de reputação online.
-Você fala português do Brasil, é empático, objetivo e focado em ações práticas.
+  return `Você é a Reputei IA, assistente de Inteligência Reputacional da plataforma Reputei.
+Você foi projetada para ajudar gestores a entenderem e melhorarem a reputação online de seus negócios.
+Você fala português do Brasil, é empática, objetiva e focada em ações práticas.
+Importante: suas análises são baseadas exclusivamente nos dados fornecidos abaixo. Quando não houver dados suficientes, diga claramente — nunca invente métricas ou informações.
 
 ## Contexto atual de ${ctx.businessName} (últimos 30 dias):
 - Total de reviews coletados: ${ctx.total30d}
@@ -226,7 +229,7 @@ function slugify(name: string): string {
     .slice(0, 50)
 }
 
-async function handleOnboarding(
+export async function handleOnboarding(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
@@ -490,6 +493,11 @@ async function handleOnboarding(
       invoiceUrl: invoiceUrl // Link para o cliente ver a fatura/configurar pagamento
     }))
 
+    // Disparar sincronização imediata em background para o novo inquilino
+    setTimeout(() => {
+      runOnce().catch(err => console.error('[onboarding-sync] Falha na sincronização inicial:', err))
+    }, 1000)
+
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[onboarding] Erro:', msg)
@@ -503,6 +511,43 @@ async function handleOnboarding(
 export async function getAuthUser(authHeader: string | undefined): Promise<{ userId: string; tenantId: string; perfil: string; nome: string; email: string } | null> {
   if (!authHeader?.startsWith('Bearer ')) return null
   const token = authHeader.slice(7)
+
+  if (token.startsWith('impersonate_')) {
+    // Validar token no banco de dados para impersonação
+    const { data: session, error: sessionErr } = await supabaseAdmin
+      .from('partner_impersonation_sessions')
+      .select('*')
+      .eq('token', token)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+
+    if (sessionErr || !session) return null;
+
+    // Encontrar o usuário associado a esse tenant
+    const { data: tenantUser } = await supabaseAdmin
+      .from('tenant_users')
+      .select('user_id')
+      .eq('tenant_id', session.tenant_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (!tenantUser) return null;
+
+    const { data: userData } = await supabaseAdmin
+      .from('usuarios')
+      .select('nome, email, perfil')
+      .eq('id', tenantUser.user_id)
+      .single();
+
+    return {
+      userId: tenantUser.user_id,
+      tenantId: session.tenant_id,
+      perfil: userData?.perfil || 'assinante',
+      nome: userData?.nome || 'Usuário Impersonado',
+      email: userData?.email || ''
+    };
+  }
+
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user) return null
 
@@ -534,7 +579,7 @@ export async function getAuthUser(authHeader: string | undefined): Promise<{ use
 
   return { 
     userId: user.id, 
-    tenantId, 
+    tenantId: finalTenantId, 
     perfil: userData?.perfil || 'assinante', 
     nome: userData?.nome || user.email?.split('@')[0] || 'Usuário',
     email: userData?.email || user.email || ''
@@ -551,7 +596,7 @@ function checkPermission(userPerfil: string, allowedPerfis: string[]): boolean {
 
 // [APPSEC] C2 — Helper para injeção segura de tenant_id em todas as queries
 export function tenantQuery(table: string, tenantId: string) {
-  return supabaseAdmin.from(table).eq('tenant_id', tenantId);
+  return supabaseAdmin.from(table).select('*').eq('tenant_id', tenantId);
 }
 
 // [APPSEC] C5 — Helper para checar status da assinatura no back-end
@@ -946,7 +991,7 @@ async function handleDeleteConnector(
 
 // ── Novos endpoints de admin ───────────────────────────────────────
 
-async function handleCreateConnector(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+export async function handleCreateConnector(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res)
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   try {
@@ -956,6 +1001,67 @@ async function handleCreateConnector(req: http.IncomingMessage, res: http.Server
       external_id: string
       config?: Record<string, unknown>
     }
+
+    if (!body.business_id) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'business_id obrigatório' }))
+      return
+    }
+
+    // Verificação de limite de plano (F11-E1-T2)
+    // 1. Resolver tenant_id a partir do business_id
+    const { data: business, error: bizErr } = await supabaseAdmin
+      .from('monitored_businesses')
+      .select('tenant_id')
+      .eq('id', body.business_id)
+      .single()
+
+    if (bizErr || !business) {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Empresa não encontrada' }))
+      return
+    }
+
+    // 2. Buscar plano do tenant
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('plan')
+      .eq('id', business.tenant_id)
+      .single()
+
+    const tenantPlan = tenant?.plan ?? 'trial'
+
+    // 3. Buscar max_channels do plano
+    const { data: planData } = await supabaseAdmin
+      .from('plans')
+      .select('max_channels')
+      .eq('slug', tenantPlan)
+      .maybeSingle()
+
+    const maxChannels = planData?.max_channels ?? 3
+
+    // 4. Contar conectores ativos do tenant (via monitored_businesses)
+    const { count: currentCount } = await supabaseAdmin
+      .from('channel_connectors')
+      .select('id', { count: 'exact', head: true })
+      .in('business_id', supabaseAdmin
+        .from('monitored_businesses')
+        .select('id')
+        .eq('tenant_id', business.tenant_id) as any
+      )
+
+    if ((currentCount ?? 0) >= maxChannels) {
+      res.writeHead(422, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        error: `O plano ${tenantPlan} permite no máximo ${maxChannels} ${maxChannels !== 1 ? 'canais' : 'canal'}. Faça upgrade para adicionar mais conectores.`,
+        code: 'PLAN_CHANNEL_LIMIT_EXCEEDED',
+        current: currentCount,
+        max: maxChannels,
+        plan: tenantPlan
+      }))
+      return
+    }
+
     const { data, error } = await supabaseAdmin
       .from('channel_connectors')
       .insert({
@@ -979,6 +1085,7 @@ async function handleCreateConnector(req: http.IncomingMessage, res: http.Server
     res.writeHead(500); res.end(JSON.stringify({ error: msg }))
   }
 }
+
 
 async function handleUpdateConnectorConfig(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res)
@@ -1290,6 +1397,55 @@ async function handleAnalyzeReview(req: http.IncomingMessage, res: http.ServerRe
   }
 }
 
+// ── Reputation Score (F12-E8-T4) ─────────────────────────────────
+
+async function handleGetReputationScore(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'GET') { res.writeHead(405); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const { data: scores } = await supabaseAdmin
+      .from('reputation_scores')
+      .select('*, reputation_score_history(score, snapshot_date)')
+      .eq('tenant_id', auth.tenantId)
+      .order('score', { ascending: false })
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(scores ?? []))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+async function handleRecalcReputationScore(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const results = await calculateAllScoresForTenant(auth.tenantId)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, updated: results.length, scores: results }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 async function handleRespondReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
@@ -1583,6 +1739,42 @@ const server = http.createServer(async (req, res) => {
   if (url.startsWith('/api/widget/')) {
     handleWidgetRequest(req, res).catch(err => {
       console.error('[widget] Erro não tratado:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  // ── Funil de reviews — rotas públicas (landing de triagem) ──────
+  if (url.startsWith('/api/funnel/')) {
+    handlePublicFunnel(req, res).catch(err => {
+      console.error('[review-funnel-public] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  // ── Funil de reviews — rotas do portal (requer auth) ─────────────
+  if (url.startsWith('/api/review-funnel/')) {
+    const auth = await getAuthUser(req.headers.authorization)
+    if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+    handleReviewFunnelPortal(req, res, auth).catch(err => {
+      console.error('[review-funnel] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/reputation-score' && req.method === 'GET') {
+    handleGetReputationScore(req, res).catch(err => {
+      console.error('[reputation-score] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/reputation-score/recalc' && req.method === 'POST') {
+    handleRecalcReputationScore(req, res).catch(err => {
+      console.error('[reputation-score-recalc] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F9" status="done">
+  <tasks_completed>
+    <task id="F9-E1-T1" notes="Dashboard operacional de conectores e suporte integrado no painel admin com KPIs de SLAs, CSAT e chamados pendentes."/>
+    <task id="F9-E1-T2" notes="Gerenciador global de conectores com suporte para listagem por tenant, exibição de status e funcionalidade de force-sync para forçar sincronização manual de canais específicos."/>
+    <task id="F9-E1-T3" notes="Fila de suporte no painel admin com detalhamento de chamados, visualização da thread de mensagens, aprovação em 1 clique de rascunhos de IA (T2) e envio de respostas humanas com transições de status."/>
+    <task id="F9-E1-T4" notes="Gerenciador de KB integrado com aprovação, criação e edição de artigos diretamente do Admin. Inclui simulador de RAG completo para testar consultas contra embeddings semânticos gerados."/>
+    <task id="F9-E1-T5" notes="Linha do tempo técnica e visualizador de logs de auditoria (ticket_audit_log) implementados na lateral de detalhes do ticket do SupportCenter."/>
+    <task id="F9-E2-T1" notes="Dashboard de reputação do tenant no portal do assinante exibindo evolução das avaliações e distribuição de sentimento via dados de review_stats_daily."/>
+    <task id="F9-E2-T2" notes="Grade de reviews normalizados no portal com botão de sugerir resposta empática contextualizada usando o Gemini."/>
+    <task id="F9-E2-T3" notes="Painel de chamados do assinante com widget de deflexão e busca semântica na KB antes de abrir novos tickets."/>
+    <task id="F9-E2-T4" notes="Copilot IA flutuante no portal respondendo de forma conversacional baseado nos documentos da base de conhecimento."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked/>
+  <new_database_objects/>
+  <new_endpoints>
+    <endpoint method="POST" path="/api/admin/support/tickets/:id/approve-ai-draft" description="Aprova o rascunho de IA (T2) gerado, enviando-o como mensagem de agente, alterando o status para resolved e auditando."/>
+    <endpoint method="POST" path="/api/admin/support/tickets/:id/messages" description="Envia mensagem de agente humano, permitindo alterar o status do ticket no processo."/>
+    <endpoint method="GET" path="/api/admin/support/tickets/:id/audit" description="Obtém a lista cronológica de logs de auditoria técnica do ticket."/>
+    <endpoint method="GET" path="/api/admin/support/tickets/:id" description="Obtém os detalhes e mensagens de um ticket específico para o administrador."/>
+    <endpoint method="POST" path="/api/admin/support/kb" description="Cadastra um novo artigo na base de conhecimento gerando seu respectivo embedding."/>
+    <endpoint method="POST" path="/api/admin/support/kb/test-query" description="Simula uma busca RAG e gera uma resposta simulada do Gemini baseado no contexto retornado."/>
+  </new_endpoints>
+  <new_env_vars_or_secrets/>
+  <interface_for_next_phases>
+    <note>Os endpoints criados em /api/admin/support/ e a funcionalidade de simulação RAG utilizam o modulo embeddingService e a API do Gemini de acordo com os limites configurados centralmente. O frontend no painel administrativo SupportCenter agora está completo com os botões de ação e modais de edição de KB.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

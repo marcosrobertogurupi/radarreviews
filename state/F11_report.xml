@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F11" status="done">
+  <tasks_completed>
+    <task id="F11-E1-T1" notes="Tabelas plans e plan_benefits já existiam (migration 017_plans_table.sql) com 5 planos configurados: trial (3ch/R$0), basico (3ch/R$139), completo (8ch/R$199), custom (5ch/R$149), enterprise (999ch/R$1500). RLS habilitado em ambas as tabelas. Dados consultáveis via FK sem hardcode no código."/>
+    <task id="F11-E1-T2" notes="Adicionada verificação de limite de plano em runtime no endpoint POST /api/admin/connector (handleCreateConnector). O handler resolve tenant_id via business_id, busca max_channels do plano e conta conectores ativos do tenant. Retorna 422 com code='PLAN_CHANNEL_LIMIT_EXCEEDED' se o limite for atingido. handleCreateConnector exportado para testabilidade."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>A tabela 'plans' possui os campos: slug, name, description, price_monthly, max_channels, color, is_active, is_public, is_popular, sort_order. O enforcement de limite de canais ocorre no endpoint POST /api/admin/connector e no onboarding (handleOnboarding e partner.ts). A resposta de erro 422 inclui: code='PLAN_CHANNEL_LIMIT_EXCEEDED', current (count atual), max (limite do plano), plan (slug do plano).</note>
+  </interface_for_next_phases>
+</phase_completion_report>

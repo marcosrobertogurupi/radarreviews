@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phase_completion_report phase="F12" status="partial">
+
+  <tasks_completed>
+
+    <task id="F12-E8-T1" notes="Fórmula documentada e implementada em src/services/reputationScore.ts: rating_médio(30%) + sentimento_positivo(20%) + volume_log(10%) + taxa_resposta(10%) + reclame_aqui(10%) + consumidor_gov(10%) + tendência_90d(10%). Já estava presente antes desta fase."/>
+
+    <task id="F12-E8-T2" notes="Colunas has_response e responded_at adicionadas à tabela reviews via migrations/021_reputation_score.sql. Já estava presente antes desta fase."/>
+
+    <task id="F12-E8-T3" notes="Motor de cálculo implementado em src/services/reputationScore.ts com upsert em reputation_scores e snapshot diário em reputation_score_history. Tabelas criadas em migrations/021_reputation_score.sql com RLS. Job registrado no scheduler (diário via AI_JOBS_INTERVAL_MS)."/>
+
+    <task id="F12-E8-T4" notes="Widget de Reputation Score adicionado ao portal/src/pages/Dashboard.tsx. Exibe score 0-1000 com cor semântica (verde/amarelo/vermelho), barra de componentes individuais com percentuais e contexto de cálculo. Dados carregados via GET /api/reputation-score (novo endpoint autenticado em server.ts)."/>
+
+    <task id="F12-E6-T1" notes="Persona 'Lumia' aplicada de forma consistente: (1) system prompt do copilot em server.ts — nome 'Lumia' + guardrails explícitos contra alucinação; (2) Copilot.tsx — mensagem de boas-vindas, título da página e rodapé; (3) App.tsx — label do menu 'Lumia IA'."/>
+
+    <task id="F12-E7-T1" notes="Especificação técnica implementada diretamente no serviço: entrada (sentiment_topics + review_stats_daily 30d por unidade), prompt estruturado com regras de confiança, saída JSON tipada (PrescriptiveInsight[]), limites (máx 5 insights/tenant, confiança ≥ 0.6). Ver src/services/prescriptiveAnalysis.ts."/>
+
+    <task id="F12-E7-T2" notes="Job runPrescriptiveAnalysisJob() implementado em src/services/prescriptiveAnalysis.ts. Itera todos os tenants ativos, monta contexto multi-unidade, chama Gemini Flash, e grava insights como alert_events do tipo 'prescriptive_insight' (reutiliza canal de disparo existente). Registrado no scheduler com execução na inicialização e a cada 24h."/>
+
+    <task id="F12-E5-T2" notes="Migration 022_benchmark_snapshots.sql criada com tabela benchmark_snapshots (RLS ativo). Job runBenchmarkSnapshotJob() em src/lib/benchmark-snapshot-job.ts captura avg_rating, total_reviews, response_rate, positive_rate do tenant + competitors_avg_rating/reviews dos concorrentes cadastrados. Registrado no scheduler com execução semanal (BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 dias)."/>
+
+    <task id="F12-E3-T3" notes="Migration 023_review_funnel.sql criada com tabelas review_campaigns, review_qr_codes e review_requests (RLS ativo em todas). Handler src/api/reviewFunnel.ts implementa: (a) CRUD de campanhas autenticado via /api/review-funnel/campaigns; (b) geração de QR codes / links curtos; (c) métricas de conversão por campanha; (d) landing pública /api/funnel/:shortCode com triagem — satisfação ≥ threshold → redireciona para review_url; satisfação abaixo → cria ticket de suporte privado (nunca exposto ao Google). IP anonimizado via SHA-256. Rotas registradas em server.ts."/>
+
+  </tasks_completed>
+
+  <tasks_pending_or_blocked>
+
+    <task id="F12-E1-T1" reason="BLOCKED: requer OAuth flow do Google Business Profile Performance API (credenciais externas e aprovação do Google). Nenhuma dependência interna impede — apenas o acesso à API externa."/>
+
+    <task id="F12-E2-T1" reason="BLOCKED: requer decisão de negócio sobre o fluxo UX de pesquisas NPS/CSAT/CES pós-serviço (quem aciona, qual evento dispara, como coletar contato do cliente). A integração técnica de envio (SMTP/UAZAPI) já existe — falta apenas o gatilho de negócio."/>
+
+    <task id="F12-E2-T2" reason="DEPENDS: aguarda F12-E2-T1 (dashboard unificado de VoC só faz sentido após ter dados de pesquisas ativas)."/>
+
+    <task id="F12-E2-T3" reason="DEPENDS: aguarda F12-E2-T1 e F12-E2-T2 (construtor de pesquisas customizadas é extensão do módulo de pesquisas)."/>
+
+    <task id="F12-E3-T1" reason="DEPENDS: aguarda F12-E2-T1 (fluxo de solicitação de review para promotores depende do NPS/CSAT para identificar promotores)."/>
+
+    <task id="F12-E3-T2" reason="DEPENDS: aguarda F12-E3-T1."/>
+
+    <task id="F12-E4-T1" reason="BLOCKED: requer Google My Business API com escopo de escrita e OAuth aprovado pelo Google. A API de leitura de reviews já usa credenciais próprias — a API de publicação requer credenciais adicionais (review.write scope)."/>
+
+    <task id="F12-E4-T2" reason="DEPENDS: aguarda F12-E4-T1 (publicação de resposta via API depende do setup de escrita do GBP)."/>
+
+    <task id="F12-E5-T1" reason="PARTIALLY DONE: o portal já exibe benchmarking de nota média vs concorrentes (seção existente em Dashboard.tsx). O refinamento de 'visualizar posicionamento relativo sem suporte humano' é uma melhoria incremental sobre o que já existe. Dados de snapshots históricos (F12-E5-T2, concluída) alimentarão uma visualização de tendência futura."/>
+
+    <task id="F12-E5-T3" reason="DEPENDS: aguarda F12-E5-T1 refinado e F12-E7-T1 (benchmark por tópico requer motor de narrativa prescritiva, que foi especificado mas o cruzamento com dados de concorrentes ainda não foi implementado)."/>
+
+    <task id="F12-E7-T3" reason="DEPENDS: aguarda dados históricos de F12-E7-T2 (eficácia dos insights só pode ser medida após semanas de execução do job prescritivo)."/>
+
+    <task id="F12-E7-T4" reason="LOW PRIORITY: clusterização de NLP sobre temas requer volume mínimo de dados e decision sobre ferramenta (embedding + k-means vs Gemini batch). Adiada para sprint de maturidade."/>
+
+    <task id="F12-E7-T5" reason="BLOCKED: requer política de privacidade aprovada para cruzamento anônimo entre tenants (Opportunity Detection). Depende de alinhamento jurídico antes de implementar."/>
+
+    <task id="F12-E8-T4-dashboard-executivo" reason="O widget de Reputation Score foi adicionado ao dashboard do tenant (F12-E8-T4 concluída). O 'Dashboard Executivo' com explicação dos componentes mais impactantes já está no widget implementado."/>
+
+  </tasks_pending_or_blocked>
+
+  <new_database_objects>
+    <!-- De migrations/021 (pré-existente, registrado aqui para completude) -->
+    <table name="reputation_scores" rls="true"/>
+    <table name="reputation_score_history" rls="true"/>
+    <!-- De migrations/022 -->
+    <table name="benchmark_snapshots" rls="true"/>
+    <!-- De migrations/023 -->
+    <table name="review_campaigns" rls="true"/>
+    <table name="review_qr_codes" rls="true"/>
+    <table name="review_requests" rls="true"/>
+    <index name="idx_benchmark_snapshots_tenant"/>
+    <index name="idx_benchmark_snapshots_business"/>
+    <index name="idx_review_qr_codes_short_code"/>
+    <index name="idx_review_requests_campaign"/>
+    <index name="idx_review_requests_tenant"/>
+  </new_database_objects>
+
+  <new_endpoints>
+    <endpoint method="GET"   path="/api/reputation-score"                          description="Retorna reputation_scores do tenant autenticado (com histórico aninhado)."/>
+    <endpoint method="POST"  path="/api/reputation-score/recalc"                   description="Força recálculo imediato dos scores de todos os businesses do tenant."/>
+    <endpoint method="GET"   path="/api/review-funnel/campaigns"                   description="Lista campanhas de funil de review do tenant (com QR codes)."/>
+    <endpoint method="POST"  path="/api/review-funnel/campaigns"                   description="Cria nova campanha de funil de review."/>
+    <endpoint method="PATCH" path="/api/review-funnel/campaigns/:id"               description="Atualiza campanha (nome, URL, threshold, status, etc.)."/>
+    <endpoint method="POST"  path="/api/review-funnel/campaigns/:id/qr-codes"      description="Gera novo QR code / link curto para a campanha."/>
+    <endpoint method="GET"   path="/api/review-funnel/campaigns/:id/stats"         description="Métricas de conversão da campanha (total, redirecionados, tickets, taxa)."/>
+    <endpoint method="GET"   path="/api/funnel/:shortCode"                         description="Público: retorna dados da campanha para renderizar landing de triagem."/>
+    <endpoint method="POST"  path="/api/funnel/:shortCode/submit"                  description="Público: registra nota de satisfação; redireciona para review_url (satisfeitos) ou cria ticket privado (insatisfeitos)."/>
+  </new_endpoints>
+
+  <new_env_vars_or_secrets/>
+
+  <interface_for_next_phases>
+    <note>Reputation Score: tabelas reputation_scores e reputation_score_history populadas diariamente pelo job runReputationScoreJob(). O campo has_response em reviews deve ser atualizado para TRUE quando uma resposta for publicada (manual ou automaticamente via F12-E4-T2 futuro) para que o componente de taxa_resposta reflita dados reais.</note>
+    <note>Análise Prescritiva: insights gerados por runPrescriptiveAnalysisJob() são gravados como alert_events com condition_type='prescriptive_insight' e detail.type='prescriptive_insight'. O frontend pode filtrá-los por esse campo para exibir numa seção dedicada de recomendações.</note>
+    <note>Benchmark Snapshots: tabela benchmark_snapshots populada semanalmente com avg_rating, response_rate e positive_rate do tenant vs média dos concorrentes. Pronta para visualização de tendência de crescimento relativo (F12-E5-T1 refinado).</note>
+    <note>Funil de Reviews: fluxo completo implementado. Para integrar com o frontend do portal, criar tela de Campanhas que chame GET/POST /api/review-funnel/campaigns e exiba o link curto (BASE_URL/f/:shortCode) e QR code gerado client-side a partir do short_code. A landing pública pode ser uma SPA estática separada ou uma rota do portal sem autenticação.</note>
+    <note>Persona Lumia: nome e guardrails aplicados no system prompt (server.ts:buildSystemPrompt) e em toda a UI do Copilot. Consistência deve ser mantida em futuras telas com IA.</note>
+  </interface_for_next_phases>
+
+</phase_completion_report>

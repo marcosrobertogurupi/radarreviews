@@ -1,0 +1,42 @@
+<phase_completion_report phase="F0" status="done">
+  <tasks_completed>
+    <task id="F0-E1-T1" notes="Monorepo TypeScript inicializado e configurado com TypeScript estrito (strict: true), ESLint, vitest e zod."/>
+    <task id="F0-E1-T2" notes="Projeto Supabase provisionado com as extensões uuid-ossp, pg_cron, pgsodium (Vault) e vector habilitadas no banco de dados."/>
+    <task id="F0-E2-T1" notes="Função auxiliar auth_tenant_id() criada e configurada no banco de dados para resolver o tenant_id a partir do JWT do Supabase Auth."/>
+    <task id="F0-E2-T2" notes="RLS (Row Level Security) e políticas de isolamento habilitadas e testadas em todas as tabelas principais (tenants, tenant_users, monitored_businesses, channel_connectors, reviews, etc.)."/>
+    <task id="F0-E2-T3" notes="Supabase Vault (pgsodium) configurado para armazenar credenciais e tokens sensíveis de APIs de conectores externos (ex: Facebook, Instagram) por meio de vault_secret_id na tabela channel_connectors."/>
+    <task id="F0-E2-T4" notes="Separação estrita de chaves e permissões: o portal do assinante consome apenas a chave anônima (anon_key) respeitando RLS, enquanto a chave service_role_key fica restrita ao backend/scheduler."/>
+  </tasks_completed>
+  <tasks_pending_or_blocked>
+  </tasks_pending_or_blocked>
+  <new_database_objects>
+    <table name="tenants" rls="true"/>
+    <table name="tenant_users" rls="true"/>
+    <table name="monitored_businesses" rls="true"/>
+    <table name="channel_connectors" rls="true"/>
+    <table name="reviews" rls="true"/>
+    <table name="sync_jobs" rls="true"/>
+    <table name="alert_rules" rls="true"/>
+    <table name="alerts" rls="true"/>
+    <function name="auth_tenant_id()"/>
+  </new_database_objects>
+  <new_endpoints>
+  </new_endpoints>
+  <new_env_vars_or_secrets>
+    <var name="SUPABASE_URL" vault="false"/>
+    <var name="SUPABASE_SERVICE_ROLE_KEY" vault="false"/>
+    <var name="GEMINI_API_KEY" vault="false"/>
+    <var name="GOOGLE_MAPS_API_KEY" vault="false"/>
+    <var name="TRIPADVISOR_API_KEY" vault="false"/>
+    <var name="TRUSTPILOT_API_KEY" vault="false"/>
+    <var name="REDDIT_CLIENT_ID" vault="false"/>
+    <var name="REDDIT_CLIENT_SECRET" vault="false"/>
+    <var name="APIFY_TOKEN" vault="false"/>
+    <var name="VERCEL_TOKEN" vault="false"/>
+  </new_env_vars_or_secrets>
+  <interface_for_next_phases>
+    <note>A função auth_tenant_id() deve ser utilizada em todas as políticas RLS subsequentes para garantir o isolamento multi-tenant.</note>
+    <note>Todos os conectores e o pipeline de ingestão devem ser desenvolvidos em TypeScript estrito, garantindo validação de payloads via Zod (RawReviewSchema) e higienização via DOMPurify antes do upsert.</note>
+    <note>Chaves e tokens de canais de terceiros configurados no portal devem ser salvos via Vault do Supabase, utilizando a referência de vault_secret_id na tabela channel_connectors.</note>
+  </interface_for_next_phases>
+</phase_completion_report>

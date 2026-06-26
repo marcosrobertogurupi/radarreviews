@@ -28,6 +28,10 @@ import { runMonthlyReportsJob } from '../lib/monthly-reports-job.js'
 import { checkSystemHealth } from '../lib/system-health-job.js'
 import { checkSLA, runKnowledgeLearningJob, checkSupportInactivity } from '../lib/support-jobs.js'
 import { runBenchmarkingJob, runTopicsAnalysisJob } from '../lib/ai-jobs.js'
+import { runCommissionsJob } from '../lib/commissions-job.js'
+import { runReputationScoreJob } from '../services/reputationScore.js'
+import { runPrescriptiveAnalysisJob } from '../services/prescriptiveAnalysis.js'
+import { runBenchmarkSnapshotJob } from '../lib/benchmark-snapshot-job.js'
 
 // Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
 const POLL_INTERVAL_MS = 120_000
@@ -36,6 +40,7 @@ const MONTHLY_JOB_INTERVAL_MS = 4 * 3600_000 // 4 horas
 const SUPPORT_JOBS_INTERVAL_MS = 15 * 60_000 // 15 minutos
 const RECONCILE_INTERVAL_MS = 60 * 60_000 // 1 hora (reconciliação de assinaturas)
 const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Temas)
+const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots semanais)
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -108,6 +113,9 @@ export async function startScheduler(): Promise<void> {
   await runMonthlyReportsJob().catch(err => {
     logger.error('[scheduler] Erro no job mensal na inicialização', { error: err })
   })
+  await runCommissionsJob().catch(err => {
+    logger.error('[scheduler] Erro no job de comissões na inicialização', { error: err })
+  })
   
   // Jobs de Suporte
   await checkSLA().catch(err => logger.error('[scheduler] Erro checkSLA', { err }))
@@ -125,6 +133,9 @@ export async function startScheduler(): Promise<void> {
   })
   runTopicsAnalysisJob().catch(err => {
     logger.error('[scheduler] Erro no job de análise de temas inicial', { error: err })
+  })
+  runReputationScoreJob().catch(err => {
+    logger.error('[scheduler] Erro no job de reputation score inicial', { error: err })
   })
 
   // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
@@ -151,6 +162,9 @@ export async function startScheduler(): Promise<void> {
     await runMonthlyReportsJob().catch(err => {
       logger.error('[scheduler] Erro no ciclo de relatórios mensais', { error: err })
     })
+    await runCommissionsJob().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de comissões', { error: err })
+    })
   }, MONTHLY_JOB_INTERVAL_MS)
 
   // Loop de Suporte — Rodar a cada 15 min
@@ -176,10 +190,28 @@ export async function startScheduler(): Promise<void> {
     try {
       await runBenchmarkingJob()
       await runTopicsAnalysisJob()
+      await runReputationScoreJob()
+      // Prescritivo: roda diariamente mas só gera novos alertas quando há dados novos
+      await runPrescriptiveAnalysisJob()
     } catch (err) {
       logger.error('[scheduler] Erro no ciclo de jobs de IA', { error: err })
     }
   }, AI_JOBS_INTERVAL_MS)
+
+  // Primeira execução do prescritivo na inicialização
+  runPrescriptiveAnalysisJob().catch(err => {
+    logger.error('[scheduler] Erro no job prescritivo inicial', { error: err })
+  })
+
+  // Snapshot semanal de benchmarking competitivo
+  runBenchmarkSnapshotJob().catch(err => {
+    logger.error('[scheduler] Erro no job de benchmark snapshot inicial', { error: err })
+  })
+  setInterval(async () => {
+    await runBenchmarkSnapshotJob().catch(err => {
+      logger.error('[scheduler] Erro no ciclo de benchmark snapshots', { error: err })
+    })
+  }, BENCHMARK_SNAPSHOT_INTERVAL_MS)
 }
 
 /**
