@@ -1169,7 +1169,7 @@ async function handleForceSync(req: http.IncomingMessage, res: http.ServerRespon
   }
 }
 
-async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+export async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   try {
@@ -1198,8 +1198,76 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
       res.writeHead(403); res.end(JSON.stringify({ error: 'Apenas administradores podem alterar planos ou datas de teste.' })); return
     }
 
-    // Atualizar tenant
-    if (body.name || body.plan || body.slug || body.admin_whatsapp !== undefined || body.admin_email !== undefined || body.critical_alert_hours !== undefined) {
+    // Se houver qualquer campo a ser atualizado no tenant
+    const hasTenantUpdates = (
+      body.name !== undefined ||
+      body.plan !== undefined ||
+      body.slug !== undefined ||
+      body.admin_whatsapp !== undefined ||
+      body.admin_email !== undefined ||
+      body.critical_alert_hours !== undefined ||
+      body.whatsapp_token !== undefined ||
+      body.whatsapp_base_url !== undefined ||
+      body.whatsapp_limit_monthly !== undefined ||
+      body.plan_status !== undefined ||
+      body.trial_ends_at !== undefined
+    )
+
+    if (hasTenantUpdates) {
+      let finalPlan = body.plan
+      let finalPlanStatus = body.plan_status
+      let finalSubscriptionStatus: string | undefined = undefined
+      let finalTrialEndsAt = body.trial_ends_at
+      let autoIsActive: boolean | undefined = undefined
+
+      if (isChangingPlan) {
+        const { data: currentTenant } = await supabaseAdmin
+          .from('tenants')
+          .select('plan, plan_status, subscription_status, trial_ends_at, is_active')
+          .eq('id', tenantId)
+          .single()
+
+        if (currentTenant) {
+          if (finalPlan === undefined) finalPlan = currentTenant.plan
+          if (finalPlanStatus === undefined) finalPlanStatus = currentTenant.plan_status
+          if (finalTrialEndsAt === undefined) finalTrialEndsAt = currentTenant.trial_ends_at
+          finalSubscriptionStatus = currentTenant.subscription_status
+        }
+
+        // Se o status de plano mudar para active ou se trial_ends_at for atualizado para o futuro
+        if (finalPlanStatus === 'active') {
+          finalSubscriptionStatus = 'active'
+          autoIsActive = true
+        } else if (finalPlanStatus === 'paused') {
+          finalSubscriptionStatus = 'suspended'
+        } else if (finalPlanStatus === 'trial') {
+          const now = new Date()
+          const endsAt = finalTrialEndsAt ? new Date(finalTrialEndsAt) : null
+          if (endsAt && endsAt > now) {
+            finalSubscriptionStatus = 'trial'
+            autoIsActive = true
+          } else {
+            finalSubscriptionStatus = 'suspended'
+            finalPlanStatus = 'suspended'
+          }
+        }
+
+        // Se o admin editou o trial_ends_at
+        if (body.trial_ends_at) {
+          const endsAt = new Date(body.trial_ends_at)
+          if (endsAt > new Date()) {
+            if (finalPlan === 'trial') {
+              finalSubscriptionStatus = 'trial'
+              finalPlanStatus = 'trial'
+            } else {
+              finalSubscriptionStatus = 'active'
+              finalPlanStatus = 'active'
+            }
+            autoIsActive = true
+          }
+        }
+      }
+
       const { error } = await supabaseAdmin
         .from('tenants')
         .update({
@@ -1212,10 +1280,13 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
           ...(body.whatsapp_token !== undefined ? { whatsapp_token_enc: body.whatsapp_token ? encrypt(body.whatsapp_token) : null } : {}),
           ...(body.whatsapp_base_url !== undefined ? { whatsapp_base_url: body.whatsapp_base_url } : {}),
           ...(body.whatsapp_limit_monthly !== undefined ? { whatsapp_limit_monthly: body.whatsapp_limit_monthly } : {}),
-          ...(body.plan_status !== undefined ? { plan_status: body.plan_status } : {}),
+          ...(finalPlanStatus !== undefined ? { plan_status: finalPlanStatus } : {}),
+          ...(finalSubscriptionStatus !== undefined ? { subscription_status: finalSubscriptionStatus } : {}),
           ...(body.trial_ends_at !== undefined ? { trial_ends_at: body.trial_ends_at } : {}),
+          ...(autoIsActive !== undefined ? { is_active: autoIsActive } : {}),
         })
         .eq('id', tenantId)
+
       if (error) {
         if (error.code === '23505' || error.message.includes('duplicate key')) {
           res.writeHead(409, { 'Content-Type': 'application/json' })
@@ -1225,6 +1296,14 @@ async function handleUpdateTenant(req: http.IncomingMessage, res: http.ServerRes
         res.writeHead(400, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: error.message }))
         return
+      }
+
+      // Se ativamos o tenant automaticamente, ativamos a business associada
+      if (autoIsActive) {
+        await supabaseAdmin
+          .from('monitored_businesses')
+          .update({ is_active: true })
+          .eq('tenant_id', tenantId)
       }
 
       // LOG DE AUDITORIA

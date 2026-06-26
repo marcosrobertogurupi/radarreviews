@@ -7,18 +7,23 @@ const mockLt = vi.fn().mockReturnThis()
 const mockSelect = vi.fn().mockReturnThis()
 
 const mockFrom = vi.fn((table: string) => {
-  return {
+  const query = {
     select: mockSelect,
     update: mockUpdate,
     eq: mockEq,
     in: mockIn,
     lt: mockLt,
+    single: vi.fn(),
+    maybeSingle: vi.fn(),
     then: (onfulfilled: any) => {
       let data: any = []
       let error: any = null
 
-      if (table === 'tenants') {
-        // Simulação do update de trials expirados
+      if (table === 'usuarios') {
+        data = { perfil: 'admin', nome: 'Admin', email: 'admin@reputei.com.br' }
+      } else if (table === 'tenant_users') {
+        data = { tenant_id: 'tenant-abc' }
+      } else if (table === 'tenants') {
         data = []
       } else if (table === 'channel_connectors') {
         // Se for o select dos ativos
@@ -90,13 +95,52 @@ const mockFrom = vi.fn((table: string) => {
       return Promise.resolve({ data, error }).then(onfulfilled)
     }
   }
+
+  query.single.mockImplementation(() => {
+    let data: any = null
+    if (table === 'usuarios') {
+      data = { perfil: 'admin', nome: 'Admin', email: 'admin@reputei.com.br' }
+    } else if (table === 'tenant_users') {
+      data = { tenant_id: 'tenant-abc' }
+    } else if (table === 'tenants') {
+      data = {
+        plan: 'trial',
+        plan_status: 'suspended',
+        subscription_status: 'suspended',
+        trial_ends_at: '2026-05-01T00:00:00.000Z',
+        is_active: false
+      }
+    }
+    return Promise.resolve({ data, error: null })
+  })
+
+  query.maybeSingle.mockImplementation(() => {
+    return Promise.resolve({ data: null, error: null })
+  })
+
+  return query
 })
 
-vi.mock('../src/lib/supabase.js', () => ({
-  supabase: {
+vi.mock('../src/lib/supabase.js', () => {
+  const client = {
     from: mockFrom,
-  },
-}))
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: {
+          user: {
+            id: 'user-valido',
+            app_metadata: { tenant_id: 'tenant-abc' },
+          }
+        },
+        error: null
+      })
+    }
+  }
+  return {
+    supabase: client,
+    supabaseAdmin: client
+  }
+})
 
 describe('Scheduler — Reconciliação de Assinaturas e Reativação de Conectores', () => {
   beforeEach(() => {
@@ -136,5 +180,72 @@ describe('Scheduler — Reconciliação de Assinaturas e Reativação de Conecto
       next_sync_at: expect.any(String)
     }))
     expect(mockIn).toHaveBeenCalledWith('id', ['connector-3'])
+  })
+})
+
+import http from 'node:http'
+
+function createMockReq(method: string, url: string, body?: any): http.IncomingMessage {
+  const req = new http.IncomingMessage(null as any)
+  req.method = method
+  req.url = url
+  if (body) {
+    req.push(JSON.stringify(body))
+    req.push(null)
+  } else {
+    req.push(null)
+  }
+  return req
+}
+
+function createMockRes() {
+  const res = {
+    writeHead: vi.fn().mockReturnThis(),
+    setHeader: vi.fn().mockReturnThis(),
+    end: vi.fn().mockImplementation((payload) => {
+      try { res.body = payload ? JSON.parse(payload) : null } catch { res.body = payload }
+    }),
+    headersSent: false,
+    body: null as any
+  } as unknown as http.ServerResponse & { writeHead: any; setHeader: any; end: any; body: any }
+  return res
+}
+
+describe('API — handleUpdateTenant e Reativação Inteligente', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSelect.mockClear()
+    mockUpdate.mockClear()
+    mockEq.mockClear()
+    mockIn.mockClear()
+    mockLt.mockClear()
+  })
+
+  it('deve reativar o status do plano e da assinatura quando trial_ends_at for alterado para o futuro', async () => {
+
+    // Simula a requisição PATCH para estender trial
+    const req = createMockReq('PATCH', '/api/admin/tenant/tenant-trial-id', {
+      trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    })
+    req.headers = {
+      authorization: 'Bearer token-valido'
+    }
+    const res = createMockRes()
+
+    const { handleUpdateTenant } = await import('../src/api/server.js')
+    await handleUpdateTenant(req, res)
+
+    // Deve atualizar o tenant mudando status para trial e is_active para true
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      plan_status: 'trial',
+      subscription_status: 'trial',
+      is_active: true
+    }))
+
+    // Deve atualizar as monitored_businesses vinculadas
+    expect(mockFrom).toHaveBeenCalledWith('monitored_businesses')
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      is_active: true
+    }))
   })
 })
