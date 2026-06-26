@@ -31,6 +31,7 @@ interface Tenant {
   whatsapp_limit_monthly?: number
   trial_ends_at?: string | null
   plan_status?: string
+  subscription_status?: string
 }
 
 interface Business {
@@ -434,14 +435,55 @@ export default function Tenants() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                       <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
                       {(() => {
-                        const trialExpired = t.plan_status === 'trial' && t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
-                        const trialActive = t.plan_status === 'trial' && (!t.trial_ends_at || new Date(t.trial_ends_at) >= new Date())
-                        const statusColor = !isActive ? '#ef4444' : (trialExpired ? '#f59e0b' : (trialActive ? '#60a5fa' : '#10b981'))
-                        const statusBg = !isActive ? 'rgba(239, 68, 68, 0.1)' : (trialExpired ? 'rgba(245, 158, 11, 0.1)' : (trialActive ? 'rgba(96, 165, 250, 0.1)' : 'rgba(16, 185, 129, 0.1)'))
-                        const statusBorder = !isActive ? 'rgba(239, 68, 68, 0.2)' : (trialExpired ? 'rgba(245, 158, 11, 0.2)' : (trialActive ? 'rgba(96, 165, 250, 0.2)' : 'rgba(16, 185, 129, 0.2)'))
-                        const label = !isActive ? 'Bloqueado' : (trialExpired ? 'Trial Expirado' : (trialActive ? 'Trial Ativo' : 'Ativo'))
-                        const emoji = !isActive ? '⚫' : (trialExpired ? '⏰' : (trialActive ? '⏳' : '🟢'))
+                        const subStatus = t.plan_status || t.subscription_status || 'active'
                         
+                        let statusColor = '#10b981'
+                        let statusBg = 'rgba(16, 185, 129, 0.1)'
+                        let statusBorder = 'rgba(16, 185, 129, 0.2)'
+                        let label = 'Ativo'
+                        let emoji = '🟢'
+
+                        if (!isActive) {
+                          statusColor = '#ef4444'
+                          statusBg = 'rgba(239, 68, 68, 0.1)'
+                          statusBorder = 'rgba(239, 68, 68, 0.2)'
+                          label = 'Bloqueado'
+                          emoji = '⚫'
+                        } else if (subStatus === 'suspended') {
+                          statusColor = '#ef4444'
+                          statusBg = 'rgba(239, 68, 68, 0.1)'
+                          statusBorder = 'rgba(239, 68, 68, 0.2)'
+                          label = 'Suspenso'
+                          emoji = '🔴'
+                        } else if (subStatus === 'canceled') {
+                          statusColor = '#9ca3af'
+                          statusBg = 'rgba(156, 163, 175, 0.1)'
+                          statusBorder = 'rgba(156, 163, 175, 0.2)'
+                          label = 'Cancelado'
+                          emoji = '⚫'
+                        } else if (subStatus === 'past_due') {
+                          statusColor = '#f59e0b'
+                          statusBg = 'rgba(245, 158, 11, 0.1)'
+                          statusBorder = 'rgba(245, 158, 11, 0.2)'
+                          label = 'Atrasado'
+                          emoji = '🟡'
+                        } else if (subStatus === 'trial') {
+                          const trialExpired = t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
+                          if (trialExpired) {
+                            statusColor = '#f59e0b'
+                            statusBg = 'rgba(245, 158, 11, 0.1)'
+                            statusBorder = 'rgba(245, 158, 11, 0.2)'
+                            label = 'Trial Expirado'
+                            emoji = '⏰'
+                          } else {
+                            statusColor = '#60a5fa'
+                            statusBg = 'rgba(96, 165, 250, 0.1)'
+                            statusBorder = 'rgba(96, 165, 250, 0.2)'
+                            label = 'Trial Ativo'
+                            emoji = '⏳'
+                          }
+                        }
+
                         return (
                           <div style={{ 
                             display: 'flex', alignItems: 'center', gap: 4, 
@@ -467,7 +509,7 @@ export default function Tenants() {
                           </span>
                         )
                       })()}
-                      {t.plan_status === 'trial' && t.trial_ends_at && (
+                      {(t.plan_status === 'trial' || t.subscription_status === 'trial') && t.trial_ends_at && (
                         <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                           Expira: {new Date(t.trial_ends_at).toLocaleDateString()}
                         </span>
@@ -477,7 +519,7 @@ export default function Tenants() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 8, flexShrink: 0 }}>
-                  {t.plan_status === 'trial' && (
+                  {(t.plan_status === 'trial' || t.subscription_status === 'trial') && (
                     <button onClick={() => extendTrial(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="+7 dias de trial">
                       <Plus size={14} color="#f59e0b" />
                     </button>
