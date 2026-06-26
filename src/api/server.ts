@@ -42,6 +42,7 @@ import { handlePartnerAdminRoutes } from './partnerAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
 import { calculateAllScoresForTenant } from '../services/reputationScore.js'
 import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
+import { handleGoogleConnect, handleGoogleCallback, handleGoogleStatus, handleGoogleDisconnect } from './googleAuth.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -2205,6 +2206,39 @@ const server = http.createServer(async (req, res) => {
   if (url === '/health' || url === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, ts: new Date().toISOString(), service: 'reputei-api' }))
+    return
+  }
+
+  // ── Google Business Profile OAuth ────────────────────────────────
+  if (url === '/api/auth/google/connect') {
+    handleGoogleConnect(req, res).catch(err => {
+      console.error('[google-connect] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/auth/google/callback')) {
+    handleGoogleCallback(req, res).catch(err => {
+      console.error('[google-callback] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/auth/google/status') {
+    handleGoogleStatus(req, res).catch(err => {
+      console.error('[google-status] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/auth/google/disconnect' && req.method === 'DELETE') {
+    handleGoogleDisconnect(req, res).catch(err => {
+      console.error('[google-disconnect] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
     return
   }
 
