@@ -59,7 +59,7 @@ export default function Connectors() {
   const [filterBusiness, setFilterBusiness] = useState('')
 
   // Estados do novo conector
-  const [allBusinesses, setAllBusinesses] = useState<{id: string, name: string}[]>([])
+  const [allBusinesses, setAllBusinesses] = useState<{id: string, name: string, tenant_id: string}[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newConn, setNewConn] = useState({ 
     business_id: '', 

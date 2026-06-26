@@ -1447,6 +1447,74 @@ async function handleRecalcReputationScore(
   }
 }
 
+async function handleGetPrescriptiveInsights(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'GET') { res.writeHead(405); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const { data: businesses } = await supabaseAdmin
+      .from('monitored_businesses')
+      .select('id')
+      .eq('tenant_id', auth.tenantId)
+
+    const bizIds = (businesses ?? []).map(b => b.id)
+    if (bizIds.length === 0) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify([]))
+      return
+    }
+
+    const { data: events, error } = await supabaseAdmin
+      .from('alert_events')
+      .select('*, monitored_businesses(name)')
+      .in('business_id', bizIds)
+      .order('triggered_at', { ascending: false })
+
+    if (error) throw error
+
+    const prescriptiveInsights = (events ?? []).filter(e => {
+      const detail = e.detail as Record<string, any> | null
+      return detail?.type === 'prescriptive_insight'
+    })
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(prescriptiveInsights))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
+async function handleRecalcPrescriptiveInsights(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401); res.end(JSON.stringify({ error: 'Não autenticado' })); return }
+
+  try {
+    const { runPrescriptiveAnalysisJob } = await import('../services/prescriptiveAnalysis.js')
+    await runPrescriptiveAnalysisJob()
+    
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 async function handleRespondReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
@@ -1776,6 +1844,22 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/reputation-score/recalc' && req.method === 'POST') {
     handleRecalcReputationScore(req, res).catch(err => {
       console.error('[reputation-score-recalc] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/prescriptive-insights' && req.method === 'GET') {
+    handleGetPrescriptiveInsights(req, res).catch(err => {
+      console.error('[prescriptive-insights-get] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/prescriptive-insights/recalc' && req.method === 'POST') {
+    handleRecalcPrescriptiveInsights(req, res).catch(err => {
+      console.error('[prescriptive-insights-recalc] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

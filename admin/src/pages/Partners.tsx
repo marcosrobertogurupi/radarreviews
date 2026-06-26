@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Building2, MoreVertical, ShieldCheck, Mail, Phone, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Building2, MoreVertical, ShieldCheck, Mail, Phone, Edit, Trash2, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 export default function Partners() {

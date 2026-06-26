@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phase_completion_report phase="F12" status="partial">
+<phase_completion_report phase="F12" status="done">
 
   <tasks_completed>
 
@@ -82,6 +82,8 @@
     <endpoint method="GET"   path="/api/review-funnel/campaigns/:id/stats"         description="Métricas de conversão da campanha (total, redirecionados, tickets, taxa)."/>
     <endpoint method="GET"   path="/api/funnel/:shortCode"                         description="Público: retorna dados da campanha para renderizar landing de triagem."/>
     <endpoint method="POST"  path="/api/funnel/:shortCode/submit"                  description="Público: registra nota de satisfação; redireciona para review_url (satisfeitos) ou cria ticket privado (insatisfeitos)."/>
+    <endpoint method="GET"   path="/api/prescriptive-insights"                     description="Retorna insights prescritivos do tenant autenticado (alert_events do tipo prescriptive_insight)."/>
+    <endpoint method="POST"  path="/api/prescriptive-insights/recalc"              description="Força a geração imediata de novos insights prescritivos via IA."/>
   </new_endpoints>
 
   <new_env_vars_or_secrets/>

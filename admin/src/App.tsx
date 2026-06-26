@@ -109,25 +109,39 @@ export default function App() {
   }
 
   useEffect(() => {
-    // Carregar sessão inicial
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const ok = await validateProfile(session)
-        if (ok) {
-          setSession(session)
-          loadTenants()
+    // Carregar sessão inicial com tratamento robusto de erros para evitar tela de carregamento travada
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        try {
+          if (session) {
+            const ok = await validateProfile(session)
+            if (ok) {
+              setSession(session)
+              loadTenants()
+            }
+          }
+        } catch (err) {
+          console.error('[Auth] Erro ao validar perfil na carga inicial:', err)
+        } finally {
+          setLoadingSession(false)
         }
-      }
-      setLoadingSession(false)
-    })
+      })
+      .catch((err) => {
+        console.error('[Auth] Erro ao carregar sessão inicial:', err)
+        setLoadingSession(false)
+      })
 
     const authSub = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth Event:', event)
       
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session) {
-          const ok = await validateProfile(session)
-          if (ok) setSession(session)
+          try {
+            const ok = await validateProfile(session)
+            if (ok) setSession(session)
+          } catch (err) {
+            console.error('[Auth] Erro ao validar perfil no evento de auth:', err)
+          }
         }
       } else if (event === 'SIGNED_OUT') {
         setSession(null)
