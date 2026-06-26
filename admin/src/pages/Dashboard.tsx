@@ -300,40 +300,34 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
   
   async function loadRanking() {
-    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString()
-    
-    // Buscar estatísticas agregadas por tenant dos últimos 30 dias
-    const { data: stats } = await supabase
-      .from('review_stats_daily')
-      .select('tenant_id, total_reviews, avg_dissatisfaction_score')
-      .gte('date', since30.split('T')[0])
+    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
 
-    if (!stats) return
+    // Busca direta em reviews — funciona mesmo sem review_stats_daily populada
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('tenant_id, sentiment, dissatisfaction_score')
+      .gte('published_at', since30)
+      .in('sentiment', ['negative', 'critical'])
+
+    if (!reviews || reviews.length === 0) return
 
     // Agrupar por tenant
-    const groups: Record<string, { totalScore: number, totalReviews: number }> = {}
-    for (const s of stats) {
-      if (s.avg_dissatisfaction_score != null && s.total_reviews > 0) {
-        if (!groups[s.tenant_id]) groups[s.tenant_id] = { totalScore: 0, totalReviews: 0 }
-        groups[s.tenant_id].totalScore += Number(s.avg_dissatisfaction_score) * s.total_reviews
-        groups[s.tenant_id].totalReviews += s.total_reviews
-      }
+    const groups: Record<string, { totalScore: number; negCount: number }> = {}
+    for (const r of reviews) {
+      if (!r.tenant_id) continue
+      if (!groups[r.tenant_id]) groups[r.tenant_id] = { totalScore: 0, negCount: 0 }
+      groups[r.tenant_id].totalScore += Number(r.dissatisfaction_score ?? (r.sentiment === 'critical' ? 85 : 65))
+      groups[r.tenant_id].negCount++
     }
 
-    // Calcular médias e mapear nomes
-    const ranking = Object.entries(groups).map(([tid, gStats]) => {
-      const name = tenants.find(t => t.id === tid)?.name || 'Desconhecido'
-      return {
-        id: tid,
-        name,
-        avgScore: Math.round(gStats.totalScore / gStats.totalReviews),
-        count: gStats.totalReviews
-      }
-    })
+    const ranking = Object.entries(groups).map(([tid, g]) => ({
+      id: tid,
+      name: tenants.find(t => t.id === tid)?.name || 'Desconhecido',
+      avgScore: Math.round(g.totalScore / g.negCount),
+      count: g.negCount,
+    }))
 
-
-    // Ordenar pelo maior score (mais insatisfeito primeiro)
-    setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore).slice(0, 5))
+    setRankingData(ranking.sort((a, b) => b.count - a.count).slice(0, 5))
   }
 
   async function loadReputation() {
