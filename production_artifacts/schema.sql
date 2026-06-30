@@ -127,6 +127,9 @@ CREATE TABLE channel_connectors (
   last_sync_at    timestamptz,
   next_sync_at    timestamptz,
   error_message   text,
+  alert_6h_sent   boolean NOT NULL DEFAULT false,
+  alert_24h_sent  boolean NOT NULL DEFAULT false,
+  alert_72h_sent  boolean NOT NULL DEFAULT false,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
 

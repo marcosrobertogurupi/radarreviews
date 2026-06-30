@@ -8,6 +8,7 @@ export default function Partners() {
   const [search, setSearch] = useState('')
   const [isModalOpen, setModalOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null)
   
   // Form para cadastro
   const [form, setForm] = useState({
@@ -55,24 +56,104 @@ export default function Partners() {
     })
   }
 
+  const handleEdit = (partner: any) => {
+    setEditingPartnerId(partner.id)
+    setForm({
+      name: partner.name || '',
+      email: partner.email || '',
+      password: '',
+      phone: partner.phone || '',
+      company_name: partner.company_name || '',
+      partner_type: partner.partner_type || 'agency',
+      commission_setup_rate: partner.commission_setup_rate || 20,
+      commission_recurring_rate: partner.commission_recurring_rate || 10,
+      status: partner.status || 'active'
+    })
+    setFormError(null)
+    setModalOpen(true)
+  }
+
+  const handleToggleStatus = async (partner: any) => {
+    const newStatus = partner.status === 'active' ? 'suspended' : 'active'
+    const confirmMsg = newStatus === 'suspended' 
+      ? `Deseja realmente BLOQUEAR o parceiro ${partner.name}? Ele perderá acesso ao painel.`
+      : `Deseja ATIVAR o parceiro ${partner.name}?`
+      
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners/${partner.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error)
+      }
+      fetchPartners()
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`)
+    }
+  }
+
+  const handleDeletePartner = async (partner: any) => {
+    if (!window.confirm(`Deseja realmente EXCLUIR o parceiro ${partner.name}? Esta ação é irreversível e removerá seu acesso definitivamente.`)) return
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners/${partner.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        }
+      })
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error)
+      }
+      fetchPartners()
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
-        method: 'POST',
+      
+      const url = editingPartnerId 
+        ? `${import.meta.env.VITE_API_URL}/api/admin/partners/${editingPartnerId}`
+        : `${import.meta.env.VITE_API_URL}/api/admin/partners`
+        
+      const method = editingPartnerId ? 'PUT' : 'POST'
+      
+      // Se for edição e não digitou senha, não enviamos a senha no body
+      const payload = { ...form }
+      if (editingPartnerId && !payload.password) {
+        delete (payload as any).password
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`
         },
-        body: JSON.stringify(form)
+        body: JSON.stringify(payload)
       })
       if (!res.ok) {
         const errorData = await res.json()
         throw new Error(errorData.error)
       }
       setModalOpen(false)
+      setEditingPartnerId(null)
       fetchPartners()
       setForm({
         name: '', email: '', password: '', phone: '', company_name: '',
@@ -100,7 +181,15 @@ export default function Partners() {
             Cadastre e gerencie as contas de parceiros, agências e representantes.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setFormError(null); setModalOpen(true) }}>
+        <button className="btn btn-primary" onClick={() => { 
+          setFormError(null); 
+          setEditingPartnerId(null); 
+          setForm({
+            name: '', email: '', password: '', phone: '', company_name: '',
+            partner_type: 'agency', commission_setup_rate: 20, commission_recurring_rate: 10, status: 'active'
+          }); 
+          setModalOpen(true) 
+        }}>
           <Plus size={16} /> Novo Parceiro
         </button>
       </div>
@@ -172,7 +261,38 @@ export default function Partners() {
                   </td>
                   <td style={{ padding: '16px 24px' }}>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn" style={{ padding: 6 }} title="Editar"><Edit size={14} /></button>
+                      <button 
+                        className="btn" 
+                        style={{ padding: 6 }} 
+                        title="Editar"
+                        onClick={() => handleEdit(p)}
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button 
+                        className="btn" 
+                        style={{ 
+                          padding: 6, 
+                          color: p.status === 'active' ? '#fbbf24' : '#34d399',
+                          background: 'rgba(255,255,255,0.05)'
+                        }} 
+                        title={p.status === 'active' ? 'Bloquear Parceiro' : 'Ativar Parceiro'}
+                        onClick={() => handleToggleStatus(p)}
+                      >
+                        {p.status === 'active' ? <XCircle size={14} /> : <ShieldCheck size={14} />}
+                      </button>
+                      <button 
+                        className="btn" 
+                        style={{ 
+                          padding: 6, 
+                          color: '#f87171',
+                          background: 'rgba(239,68,68,0.1)'
+                        }} 
+                        title="Excluir Parceiro"
+                        onClick={() => handleDeletePartner(p)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -189,7 +309,7 @@ export default function Partners() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
         }}>
           <div className="card" style={{ width: '100%', maxWidth: 600, padding: 32 }}>
-            <h2 style={{ marginTop: 0, marginBottom: 24, fontSize: 20 }}>Novo Parceiro</h2>
+            <h2 style={{ marginTop: 0, marginBottom: 24, fontSize: 20 }}>{editingPartnerId ? 'Editar Parceiro' : 'Novo Parceiro'}</h2>
             
             {formError && (
               <div style={{ padding: 12, background: 'rgba(239,68,68,0.1)', color: '#fca5a5', borderRadius: 8, marginBottom: 16, border: '1px solid rgba(239,68,68,0.2)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -216,14 +336,41 @@ export default function Partners() {
                   <input required type="email" className="input" value={form.email} onChange={e => setForm({...form, email: e.target.value})} style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Senha *</label>
-                  <input required type="password" className="input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} style={{ width: '100%' }} />
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+                    {editingPartnerId ? 'Alterar Senha (Opcional)' : 'Senha *'}
+                  </label>
+                  <input 
+                    required={!editingPartnerId} 
+                    type="password" 
+                    className="input" 
+                    value={form.password} 
+                    onChange={e => setForm({...form, password: e.target.value})} 
+                    style={{ width: '100%' }} 
+                    placeholder={editingPartnerId ? 'Deixe em branco para manter' : ''}
+                  />
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Telefone</label>
-                <input type="text" className="input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} style={{ width: '100%' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: editingPartnerId ? '1fr 1fr' : '1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Telefone</label>
+                  <input type="text" className="input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} style={{ width: '100%' }} />
+                </div>
+                {editingPartnerId && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 8 }}>Status *</label>
+                    <select 
+                      className="input" 
+                      value={form.status} 
+                      onChange={e => setForm({...form, status: e.target.value})} 
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    >
+                      <option value="active">Ativo (Acesso Liberado)</option>
+                      <option value="suspended">Suspenso (Bloqueado)</option>
+                      <option value="inactive">Inativo (Bloqueado)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div style={{ padding: 16, background: 'var(--bg-darkest)', borderRadius: 8, border: '1px solid var(--border)' }}>

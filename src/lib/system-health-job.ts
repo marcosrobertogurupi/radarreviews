@@ -50,7 +50,22 @@ export async function checkSystemHealth(): Promise<void> {
     const diffHours = (now - firstErrorAt) / (1000 * 60 * 60)
 
     // Se o conector foi recém-reparado, ele deveria estar active. Garantimos checando as flags
-    if (diffHours >= 24 && !connector.alert_24h_sent) {
+    if (diffHours >= 72 && !connector.alert_72h_sent) {
+      await systemNotifications.notifyError(
+        connector, 
+        connector.error_message || 'Falha contínua desconhecida', 
+        false, 
+        72
+      )
+      
+      await supabase
+        .from('channel_connectors')
+        .update({ alert_72h_sent: true, alert_24h_sent: true, alert_6h_sent: true })
+        .eq('id', connector.id)
+
+      alertsSent++
+    }
+    else if (diffHours >= 24 && diffHours < 72 && !connector.alert_24h_sent) {
       await systemNotifications.notifyError(
         connector, 
         connector.error_message || 'Falha contínua desconhecida', 

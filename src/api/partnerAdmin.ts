@@ -143,14 +143,100 @@ export async function handlePartnerAdminRoutes(req: http.IncomingMessage, res: h
         else if (body.tier === 'silver') body.commission_recurring_rate = 15.00;
         else body.commission_recurring_rate = 10.00;
       }
+
+      // Buscar o user_id correspondente ao parceiro
+      const { data: partner, error: getErr } = await supabaseAdmin
+        .from('partners')
+        .select('user_id')
+        .eq('id', id)
+        .single();
       
+      if (getErr || !partner) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Parceiro não encontrado' }));
+        return;
+      }
+
+      const { user_id } = partner;
+
+      // Se informou nova senha ou e-mail, atualiza no Auth do Supabase
+      const authUpdates: any = {};
+      if (body.email) authUpdates.email = body.email.trim();
+      if (body.password) authUpdates.password = body.password;
+
+      if (Object.keys(authUpdates).length > 0 && user_id) {
+        const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, authUpdates);
+        if (authErr) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: authErr.message || 'Erro ao atualizar dados de autenticação' }));
+          return;
+        }
+      }
+
+      // Se informou nome ou e-mail ou status, atualiza na tabela usuarios
+      if (user_id) {
+        const userUpdates: any = {};
+        if (body.name) userUpdates.nome = body.name;
+        if (body.email) userUpdates.email = body.email.trim();
+        if (body.status) {
+          // Bloqueia se o status for inativo ou suspenso
+          userUpdates.ativo = body.status === 'active';
+        }
+
+        if (Object.keys(userUpdates).length > 0) {
+          await supabaseAdmin
+            .from('usuarios')
+            .update(userUpdates)
+            .eq('id', user_id);
+        }
+      }
+
+      // Remover password do body antes de atualizar a tabela partners
+      const { password, ...partnerBody } = body;
+
       const { error } = await supabaseAdmin
         .from('partners')
-        .update(body)
+        .update(partnerBody)
         .eq('id', id);
 
       if (error) throw error;
 
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // DELETE /api/admin/partners/:id
+    if (url.startsWith('/api/admin/partners/') && req.method === 'DELETE') {
+      const id = url.split('/api/admin/partners/')[1];
+      
+      const { data: partner, error: getErr } = await supabaseAdmin
+        .from('partners')
+        .select('user_id')
+        .eq('id', id)
+        .single();
+        
+      if (getErr || !partner) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Parceiro não encontrado' }));
+        return;
+      }
+      
+      if (partner.user_id) {
+        // Deletar da tabela usuarios
+        await supabaseAdmin.from('usuarios').delete().eq('id', partner.user_id);
+        // Deletar do auth.users
+        await supabaseAdmin.auth.admin.deleteUser(partner.user_id);
+      }
+      
+      // Deletar da tabela partners
+      const { error: delErr } = await supabaseAdmin
+        .from('partners')
+        .delete()
+        .eq('id', id);
+        
+      if (delErr) throw delErr;
+      
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       return;

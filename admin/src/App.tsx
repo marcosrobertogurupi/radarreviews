@@ -50,6 +50,24 @@ export default function App() {
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState('')
   const [isValidated, setIsValidated] = useState(false)
+  const [criticalErrorCount, setCriticalErrorCount] = useState(0)
+
+  async function fetchCriticalErrors() {
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+      const { data, error } = await supabase
+        .from('channel_connectors')
+        .select('id')
+        .eq('status', 'error')
+        .lte('first_error_at', threeDaysAgo)
+      
+      if (!error) {
+        setCriticalErrorCount(data?.length || 0)
+      }
+    } catch (err) {
+      console.error('Erro ao buscar falhas críticas de 3 dias:', err)
+    }
+  }
 
   async function validateProfile(session: Session, retry = true): Promise<boolean> {
     // Se já validamos este usuário nesta carga de página, não precisamos validar de novo
@@ -118,6 +136,7 @@ export default function App() {
             if (ok) {
               setSession(session)
               loadTenants()
+              fetchCriticalErrors()
             }
           }
         } catch (err) {
@@ -138,7 +157,10 @@ export default function App() {
         if (session) {
           try {
             const ok = await validateProfile(session)
-            if (ok) setSession(session)
+            if (ok) {
+              setSession(session)
+              fetchCriticalErrors()
+            }
           } catch (err) {
             console.error('[Auth] Erro ao validar perfil no evento de auth:', err)
           }
@@ -147,6 +169,7 @@ export default function App() {
         setSession(null)
         setIsValidated(false)
         setAuthError(null)
+        setCriticalErrorCount(0)
       }
     })
 
@@ -160,7 +183,10 @@ export default function App() {
       }
     }
 
-    const handleRefresh = () => loadTenants()
+    const handleRefresh = () => {
+      loadTenants()
+      fetchCriticalErrors()
+    }
     window.addEventListener('refresh_data', handleRefresh)
 
     // Antena Real-Time global para toda a schema 'public'
@@ -316,6 +342,46 @@ export default function App() {
 
       {/* ── Main Content ──────────────────────────────── */}
       <main className="main-content">
+        {criticalErrorCount > 0 && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(239,68,68,0.2) 0%, rgba(220,38,38,0.05) 100%)',
+            border: '1px solid rgba(239,68,68,0.4)',
+            borderRadius: 8,
+            padding: '12px 20px',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 20px rgba(239,68,68,0.15)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🚨</span>
+              <div>
+                <strong style={{ color: '#fca5a5' }}>Alerta Técnico Crítico:</strong>{' '}
+                <span style={{ color: '#f1f5f9', fontSize: 14 }}>
+                  Há {criticalErrorCount} conector(es) com falha contínua há mais de 3 dias. Verifique imediatamente para evitar perda de dados.
+                </span>
+              </div>
+            </div>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => setPage('audit')}
+              style={{ 
+                padding: '6px 12px', 
+                fontSize: 12, 
+                background: '#ef4444', 
+                borderColor: '#ef4444',
+                color: '#fff',
+                fontWeight: 600,
+                flexShrink: 0
+              }}
+            >
+              Verificar Auditoria
+            </button>
+          </div>
+        )}
         {pages[page]}
       </main>
     </div>

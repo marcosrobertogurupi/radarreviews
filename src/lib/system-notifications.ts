@@ -20,7 +20,7 @@ export const systemNotifications = {
    * Registra uma falha crítica e notifica via canais externos.
    * @param delayHours Se informado, indica que o erro já persiste por X horas.
    */
-  async notifyError(connector: ChannelConnector, error: string, isAuth = false, delayHours?: 6 | 24) {
+  async notifyError(connector: ChannelConnector, error: string, isAuth = false, delayHours?: number) {
     const type: SystemNotificationType = isAuth ? 'auth_failure' : 'sync_error'
     
     logger.error(`[system-notifications] Notificando erro no canal ${connector.channel}`, {
@@ -92,7 +92,7 @@ export const systemNotifications = {
   /**
    * Envia o alerta para o webhook do N8N para disparo de WhatsApp/Email.
    */
-  async fireExternalAlert(connector: ChannelConnector, status: 'FALHA' | 'RESOLVIDO', message: string, isAuth: boolean, delayHours?: 6 | 24) {
+  async fireExternalAlert(connector: ChannelConnector, status: 'FALHA' | 'RESOLVIDO', message: string, isAuth: boolean, delayHours?: number) {
     const webhookUrl = process.env['N8N_SYSTEM_ALERTS_WEBHOOK'] || process.env['N8N_WEBHOOK_URL']
     
     if (!webhookUrl) {
