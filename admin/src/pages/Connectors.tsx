@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SourceChannel } from '../lib/supabase'
 import { API_URL, CHANNEL_LABELS, CHANNEL_ICONS, formatDate, timeAgo } from '../lib/utils'
-import { Trash2, AlertTriangle, Activity, Settings } from 'lucide-react'
+import { Trash2, AlertTriangle, Activity, Settings, ServerCrash, Clock } from 'lucide-react'
 import { MetaConnectButton } from '../components/MetaConnectButton'
 import { useToast } from '../components/Toast'
+
+// Limites para alertas de saúde do sistema
+const STUCK_RUNNING_THRESHOLD_MIN = 20  // Conectores em 'running' por mais de X min → scheduler morto
+const OVERDUE_SYNC_THRESHOLD_HOURS = 3  // Última sync há mais de X horas → scheduler atrasado
 
 // ──────────────────────────────────────────────────────────────
 // Página Conectores
@@ -302,6 +306,41 @@ export default function Connectors() {
   const totalActive = connectors.filter(c => c.status === 'active').length
   const totalError = connectors.filter(c => c.status === 'error').length
 
+  // ── Detecção de saúde do scheduler ──────────────────────────────
+  const systemHealth = useMemo(() => {
+    const now = Date.now()
+
+    // 1. Conectores em 'running' há muito tempo → scheduler travado/morto
+    const stuckRunning = connectors.filter(c => {
+      if (c.status !== 'running') return false
+      const updatedAt = (c as any).updated_at
+      if (!updatedAt) return true
+      const ageMin = (now - new Date(updatedAt).getTime()) / 60_000
+      return ageMin > STUCK_RUNNING_THRESHOLD_MIN
+    })
+
+    // 2. Maioria dos conectores ativos com sync muito atrasada → scheduler lento/parado
+    const activeConns = connectors.filter(c => c.status === 'active')
+    const overdueActive = activeConns.filter(c => {
+      if (!c.last_sync_at) return false
+      const hoursAgo = (now - new Date(c.last_sync_at).getTime()) / 3_600_000
+      return hoursAgo > OVERDUE_SYNC_THRESHOLD_HOURS
+    })
+    const syncOverdue = activeConns.length > 0 &&
+      overdueActive.length / activeConns.length >= 0.5 // >= 50% atrasados
+
+    // Última sync de qualquer conector
+    const lastSyncDates = connectors
+      .filter(c => c.last_sync_at)
+      .map(c => new Date(c.last_sync_at!).getTime())
+    const mostRecentSync = lastSyncDates.length > 0 ? Math.max(...lastSyncDates) : null
+    const hoursWithoutSync = mostRecentSync
+      ? (now - mostRecentSync) / 3_600_000
+      : null
+
+    return { stuckRunning, syncOverdue, overdueActive, hoursWithoutSync }
+  }, [connectors])
+
   return (
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -314,6 +353,78 @@ export default function Connectors() {
         </div>
         <button className="btn" onClick={() => setShowCreateModal(true)}>+ Novo Conector</button>
       </div>
+
+      {/* ── Banner: SCHEDULER MORTO (conectores presos em 'running') ── */}
+      {systemHealth.stuckRunning.length > 0 && (
+        <div style={{
+          background: 'rgba(239,68,68,0.08)',
+          border: '1px solid rgba(239,68,68,0.4)',
+          borderRadius: 10,
+          padding: '16px 20px',
+          marginBottom: 16,
+          display: 'flex',
+          gap: 14,
+          alignItems: 'flex-start',
+        }}>
+          <ServerCrash size={22} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#f87171', marginBottom: 6 }}>
+              ⚠️ Scheduler parado — {systemHealth.stuckRunning.length} conector{systemHealth.stuckRunning.length > 1 ? 'es estão' : ' está'} travado{systemHealth.stuckRunning.length > 1 ? 's' : ''} em "Sincronizando"
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
+              O motor de coleta de reviews parece estar inativo ou travado. Isso pode indicar uma queda no servidor de backend (Railway/Heroku).
+              Nenhum review novo está sendo coletado no momento.
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <a
+                href="https://status.railway.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                  background: 'rgba(239,68,68,0.15)', color: '#fca5a5',
+                  border: '1px solid rgba(239,68,68,0.3)', textDecoration: 'none',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                🔍 Ver status Railway
+              </a>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Travados há mais de {STUCK_RUNNING_THRESHOLD_MIN} min ·
+                Serão auto-resetados pelo watchdog quando o servidor voltar
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner: SYNC ATRASADA (scheduler lento ou parado) ── */}
+      {systemHealth.stuckRunning.length === 0 && systemHealth.syncOverdue && (
+        <div style={{
+          background: 'rgba(245,158,11,0.07)',
+          border: '1px solid rgba(245,158,11,0.35)',
+          borderRadius: 10,
+          padding: '16px 20px',
+          marginBottom: 16,
+          display: 'flex',
+          gap: 14,
+          alignItems: 'flex-start',
+        }}>
+          <Clock size={22} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#fbbf24', marginBottom: 6 }}>
+              🕐 Coleta atrasada — {systemHealth.overdueActive.length} conector{systemHealth.overdueActive.length > 1 ? 'es sem' : ' sem'} sync há mais de {OVERDUE_SYNC_THRESHOLD_HOURS}h
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {systemHealth.hoursWithoutSync != null
+                ? `Última coleta registrada: há ${Math.round(systemHealth.hoursWithoutSync)}h. `
+                : ''}
+              O scheduler pode estar sobrecarregado ou ter reiniciado recentemente.
+              Se o padrão persistir por mais de 1 hora, verifique os logs do servidor.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Banner: conectores aguardando configuração ────────── */}
       {(() => {

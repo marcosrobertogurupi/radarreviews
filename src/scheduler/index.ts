@@ -41,6 +41,8 @@ const SUPPORT_JOBS_INTERVAL_MS = 15 * 60_000 // 15 minutos
 const RECONCILE_INTERVAL_MS = 60 * 60_000 // 1 hora (reconciliação de assinaturas)
 const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Temas)
 const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots semanais)
+const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
+const WATCHDOG_TIMEOUT_MIN = 20 // Conectores em 'running' por mais de 20min são resetados
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -102,6 +104,11 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
 export async function startScheduler(): Promise<void> {
   logger.info('[scheduler] Iniciando — verificando conectores a cada 60s')
 
+  // Watchdog: resetar imediatamente conectores travados em 'running' (ex: crash anterior)
+  await resetStuckRunningConnectors().catch(err => {
+    logger.error('[scheduler] Erro no watchdog inicial', { error: err })
+  })
+
   // Executar imediatamente na inicialização, depois em loop
   await runOnce()
   await checkCriticalAlerts().catch(err => {
@@ -146,6 +153,13 @@ export async function startScheduler(): Promise<void> {
     setTimeout(runSyncCycle, POLL_INTERVAL_MS)
   }
   runSyncCycle()
+
+  // Watchdog periódico — reseta conectores travados em 'running' a cada 10 min
+  setInterval(async () => {
+    await resetStuckRunningConnectors().catch(err => {
+      logger.error('[scheduler] Erro no ciclo do watchdog', { error: err })
+    })
+  }, WATCHDOG_INTERVAL_MS)
 
   // Loop de Alertas (Assinantes e Sistema) — Rodar a cada 1 hora
   setInterval(async () => {
@@ -502,6 +516,29 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
         next_sync_at: new Date(Date.now() + 5 * 60_000).toISOString(), // Tentar de novo em 5 min
       })
       .eq('id', connector.id)
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Watchdog — reseta conectores travados em status 'running'
+// -----------------------------------------------------------------------------
+
+/**
+ * Detecta conectores que ficaram presos em 'running' (ex: crash do scheduler)
+ * e os reseta para 'error' com next_sync_at imediato para que sejam retomados.
+ */
+async function resetStuckRunningConnectors(): Promise<void> {
+  const { data, error } = await supabase
+    .rpc('reset_stuck_connectors', { p_timeout_min: WATCHDOG_TIMEOUT_MIN })
+
+  if (error) {
+    logger.error('[scheduler] Watchdog: falha ao resetar conectores travados', { error: error.message })
+    return
+  }
+
+  const count = data as number
+  if (count > 0) {
+    logger.warn(`[scheduler] Watchdog: ${count} conector(es) travado(s) em 'running' foram resetados para 'error'`)
   }
 }
 
