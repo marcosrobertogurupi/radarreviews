@@ -69,8 +69,20 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     const year = month === 12 ? now.getFullYear() - 1 : now.getFullYear()
     
     // Verificamos se há uma URL manual na config (útil para reprocessar meses específicos)
-    const csvUrl = (connector.config['resource_url'] as string) || 
-      await discoverLatestUrl(year, month)
+    // Verificamos se há uma URL manual na config (útil para reprocessar meses específicos)
+    let csvUrl = (connector.config['resource_url'] as string)
+    if (!csvUrl) {
+      let discoverTimeoutHandle: ReturnType<typeof setTimeout> | undefined
+      const discoverPromise = discoverLatestUrl(year, month)
+      const discoverTimeoutPromise = new Promise<never>((_, reject) => {
+        discoverTimeoutHandle = setTimeout(() => reject(new Error('Timeout de 30 segundos ao descobrir a URL do CSV')), 30000)
+      })
+      try {
+        csvUrl = await Promise.race([discoverPromise, discoverTimeoutPromise])
+      } finally {
+        if (discoverTimeoutHandle) clearTimeout(discoverTimeoutHandle)
+      }
+    }
 
     logger.info(`[${CHANNEL}] Iniciando processamento de CSV`, {
       connector_id: connector.id,
@@ -79,48 +91,67 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     })
 
     // 3. Download e Processamento por Stream
-    const response = await axios.get(csvUrl, { 
-      responseType: 'stream',
-      timeout: 60000 
-    })
+    const abortController = new AbortController()
+    const abortTimeoutHandle = setTimeout(() => {
+      abortController.abort()
+    }, 10 * 60 * 1000) // 10 minutos
 
-    const foundReviews: NormalizedReview[] = []
+    try {
+      const response = await axios.get(csvUrl, { 
+        responseType: 'stream',
+        timeout: 60000,
+        maxContentLength: 100 * 1024 * 1024,
+        maxBodyLength: 100 * 1024 * 1024,
+        signal: abortController.signal,
+      })
 
-    // Criar o parser
-    const parser = response.data
-      .pipe(iconv.decodeStream('latin1')) // Dados do governo costumam ser latin1/iso-8859-1
-      .pipe(parse({
-        delimiter: ';',
-        skip_empty_lines: true,
-        from_line: 2, // pular cabeçalho
-        relax_column_count: true
-      }))
+      const foundReviews: NormalizedReview[] = []
 
-    for await (const row of parser) {
-      const rowCnpj = String(row[COLS.CNPJ] || '').replace(/\D/g, '')
+      // Criar o parser
+      const parser = response.data
+        .pipe(iconv.decodeStream('latin1')) // Dados do governo costumam ser latin1/iso-8859-1
+        .pipe(parse({
+          delimiter: ';',
+          skip_empty_lines: true,
+          from_line: 2, // pular cabeçalho
+          relax_column_count: true
+        }))
 
-      if (rowCnpj === targetCnpj) {
-        result.reviews_fetched++
-        foundReviews.push(normalize(row, connector, targetCnpj))
+      let lineCount = 0
+      for await (const row of parser) {
+        lineCount++
+        if (lineCount > 100000) {
+          logger.warn(`[${CHANNEL}] Limite de 100.000 linhas atingido. Interrompendo parsing do CSV.`)
+          break
+        }
+
+        const rowCnpj = String(row[COLS.CNPJ] || '').replace(/\D/g, '')
+
+        if (rowCnpj === targetCnpj) {
+          result.reviews_fetched++
+          foundReviews.push(normalize(row, connector, targetCnpj))
+        }
       }
-    }
 
-    if (foundReviews.length > 0) {
-      const ingest = await ingestReviews(
-        foundReviews,
-        CHANNEL,
-        connector.id,
-        connector.business_id
-      )
-      result.reviews_new = ingest.reviews_new
-      result.reviews_updated = ingest.reviews_updated
-    }
+      if (foundReviews.length > 0) {
+        const ingest = await ingestReviews(
+          foundReviews,
+          CHANNEL,
+          connector.id,
+          connector.business_id
+        )
+        result.reviews_new = ingest.reviews_new
+        result.reviews_updated = ingest.reviews_updated
+      }
 
-    logger.info(`[${CHANNEL}] Sync finalizado`, {
-      connector_id: connector.id,
-      fetched: result.reviews_fetched,
-      new: result.reviews_new,
-    })
+      logger.info(`[${CHANNEL}] Sync finalizado`, {
+        connector_id: connector.id,
+        fetched: result.reviews_fetched,
+        new: result.reviews_new,
+      })
+    } finally {
+      clearTimeout(abortTimeoutHandle)
+    }
 
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 404) {

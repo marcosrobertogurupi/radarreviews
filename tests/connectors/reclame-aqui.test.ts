@@ -48,10 +48,9 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('playwright-extra', () => ({
+vi.mock('playwright-core', () => ({
   chromium: {
     launch: vi.fn().mockResolvedValue(mocks.mockBrowser),
-    use: vi.fn(),
   },
 }))
 
@@ -155,7 +154,7 @@ describe('Reclame Aqui connector', () => {
 
     expect(result.error).toContain('external_id')
     // Browser não deve ter sido aberto
-    const { chromium } = await import('playwright-extra')
+    const { chromium } = await import('playwright-core')
     expect(chromium.launch).not.toHaveBeenCalled()
   })
 
