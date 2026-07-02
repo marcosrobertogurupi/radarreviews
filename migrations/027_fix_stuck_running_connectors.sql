@@ -8,7 +8,7 @@
 -- ============================================================================
 -- 1. Função de watchdog — chamada periodicamente pelo scheduler
 -- ============================================================================
-CREATE OR REPLACE FUNCTION reset_stuck_connectors(p_timeout_min int DEFAULT 20)
+CREATE OR REPLACE FUNCTION reset_stuck_connectors(p_timeout_min int DEFAULT 45)
 RETURNS int
 LANGUAGE plpgsql
 AS $$
@@ -18,6 +18,7 @@ BEGIN
   UPDATE channel_connectors
     SET status         = 'error',
         error_message  = 'Reset automático: conector travado em running por mais de ' || p_timeout_min || ' minutos.',
+        first_error_at = COALESCE(first_error_at, now()),
         next_sync_at   = now() + interval '5 minutes'
   WHERE status = 'running'
     AND updated_at < now() - (p_timeout_min || ' minutes')::interval;

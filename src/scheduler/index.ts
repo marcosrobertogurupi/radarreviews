@@ -42,7 +42,7 @@ const RECONCILE_INTERVAL_MS = 60 * 60_000 // 1 hora (reconciliação de assinatu
 const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Temas)
 const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots semanais)
 const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
-const WATCHDOG_TIMEOUT_MIN = 20 // Conectores em 'running' por mais de 20min são resetados
+const WATCHDOG_TIMEOUT_MIN = 45 // Conectores em 'running' por mais de 45min são resetados (scraping pode demorar)
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários

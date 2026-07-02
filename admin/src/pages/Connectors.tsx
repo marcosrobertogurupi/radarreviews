@@ -7,7 +7,7 @@ import { MetaConnectButton } from '../components/MetaConnectButton'
 import { useToast } from '../components/Toast'
 
 // Limites para alertas de saúde do sistema
-const STUCK_RUNNING_THRESHOLD_MIN = 20  // Conectores em 'running' por mais de X min → scheduler morto
+const STUCK_RUNNING_THRESHOLD_MIN = 45  // Conectores em 'running' por mais de X min → scheduler morto
 const OVERDUE_SYNC_THRESHOLD_HOURS = 3  // Última sync há mais de X horas → scheduler atrasado
 
 // ──────────────────────────────────────────────────────────────
