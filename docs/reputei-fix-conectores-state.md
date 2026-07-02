@@ -27,3 +27,44 @@ Nenhum desvio significativo do plano original. Apenas parametrizamos a função 
 ## Arquivos Modificados
 - `src/scheduler/index.ts`
 - `tests/scheduler.security.test.ts`
+
+---
+
+# Handoff — Fase 2/3: Scrapers (Remoção de Stealth Incompatível + Hardening do Consumidor.gov)
+
+- **Data/Hora da execução**: 2026-07-02T14:15:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 3 (Remover stealth incompatível e usar playwright-core puro)**: ✅ Concluída.
+  - **Tarefa 4 (Tornar download do CSV do Consumidor.gov cancelável e limitado)**: ✅ Concluída.
+
+## Detalhes das Alterações
+
+### 1. Remoção do Stealth Incompatível
+- **Arquivos modificados**:
+  - `src/connectors/reclame-aqui.ts`
+  - `src/connectors/tripadvisor-scraper.ts`
+  - `tests/connectors/reclame-aqui.test.ts`
+  - `package.json`
+  - `package-lock.json`
+- **Alterações**:
+  - Removido `playwright-extra`, `playwright-stealth` e `puppeteer-extra-plugin-stealth` de todas as dependências e códigos.
+  - Migrado o controle do Chromium para `playwright-core` puro em todos os scrapers.
+  - Removido o argumento `--no-zygote` do launch do browser.
+  - Mantidas e validadas as técnicas de evasão manual (User-Agent real, desabilitação da propriedade `navigator.webdriver` via `addInitScript`, e flag `--disable-blink-features=AutomationControlled`).
+  - O SIGTRAP retornou ao remover `--no-zygote`? **Não**. Todos os testes locais e unitários rodaram perfeitamente sem problemas de sinal ou quebra do Chromium.
+
+### 2. Hardening do Consumidor.gov
+- **Arquivo modificado**: `src/connectors/consumidor-gov.ts`
+- **Alterações**:
+  - Adicionado `maxContentLength` e `maxBodyLength` limitados a 100MB no `axios.get`.
+  - Configurado um `AbortController` com timeout de 10 minutos para abortar downloads lentos ou gigantescos, com limpeza do timer (`clearTimeout`) garantida em bloco `finally`.
+  - Inserido contador de linhas no loop do CSV parser para interromper a execução (`break`) caso ultrapasse 100.000 linhas processadas.
+  - Envolvida a busca da URL da API CKAN com `Promise.race` contra um timeout de 30 segundos, lançando erro caso atinja o limite.
+
+## Arquivos Efetivamente Modificados nesta Fase
+- `src/connectors/reclame-aqui.ts`
+- `src/connectors/tripadvisor-scraper.ts`
+- `src/connectors/consumidor-gov.ts`
+- `tests/connectors/reclame-aqui.test.ts`
+- `package.json`
+- `package-lock.json`
