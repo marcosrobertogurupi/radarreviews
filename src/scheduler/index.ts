@@ -307,13 +307,11 @@ export async function runOnce(): Promise<void> {
           channel: connectorData.channel,
           error: errMsg,
         })
-        if (errMsg.includes('Timeout')) {
-          await supabase.from('channel_connectors').update({
-            status: 'error',
-            error_message: errMsg,
-            next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-          }).eq('id', connectorData.id)
-        }
+        await supabase.from('channel_connectors').update({
+          status: 'error',
+          error_message: errMsg,
+          next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        }).eq('id', connectorData.id)
       })
       .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
   }))
