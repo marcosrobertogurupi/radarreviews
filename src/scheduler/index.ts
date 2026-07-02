@@ -43,6 +43,7 @@ const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Tema
 const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots semanais)
 const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
 const WATCHDOG_TIMEOUT_MIN = 45 // Conectores em 'running' por mais de 45min são resetados (scraping pode demorar)
+const CONNECTOR_TIMEOUT_MS = 8 * 60_000 // 8 min por conector — evita travamento permanente do batch
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -267,8 +268,7 @@ export async function runOnce(): Promise<void> {
 
   logger.info(`[scheduler] ${jobs.length} job(s) bloqueado(s) para este worker (${workerId})`)
 
-  for (const job of jobs) {
-    // Busca o connector associado com o tenant_id
+  await Promise.all((jobs as Array<{ id: string; connector_id: string }>).map(async (job) => {
     const { data: connectorData } = await supabase
       .from('channel_connectors')
       .select(`
@@ -279,24 +279,41 @@ export async function runOnce(): Promise<void> {
       `)
       .eq('id', job.connector_id)
       .single()
-    
-    if (connectorData) {
-      // Injeta o tenant_id no objeto do conector
-      const businessInfo = (connectorData as any).monitored_businesses
-      const connectorWithTenant = {
-        ...connectorData,
-        tenant_id: businessInfo?.tenant_id
-      } as ChannelConnector
 
-      await runConnector(connectorWithTenant, job.id).catch(err => {
-        logger.error('[scheduler] Erro inesperado ao executar conector', {
+    if (!connectorData) return
+
+    const businessInfo = (connectorData as any).monitored_businesses
+    const connectorWithTenant = {
+      ...connectorData,
+      tenant_id: businessInfo?.tenant_id
+    } as ChannelConnector
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(
+        () => reject(new Error(`Timeout de ${CONNECTOR_TIMEOUT_MS / 60_000}min excedido`)),
+        CONNECTOR_TIMEOUT_MS
+      )
+    })
+
+    await Promise.race([runConnector(connectorWithTenant, job.id), timeoutPromise])
+      .catch(async (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.error('[scheduler] Erro ou timeout ao executar conector', {
           connector_id: connectorData.id,
           channel: connectorData.channel,
-          error: err,
+          error: errMsg,
         })
+        if (errMsg.includes('Timeout')) {
+          await supabase.from('channel_connectors').update({
+            status: 'error',
+            error_message: errMsg,
+            next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+          }).eq('id', connectorData.id)
+        }
       })
-    }
-  }
+      .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
+  }))
 }
 
 // -----------------------------------------------------------------------------
