@@ -58,6 +58,11 @@ export default function Connectors() {
   const [editingExternalId, setEditingExternalId] = useState('')
   const [editingConfigJson, setEditingConfigJson] = useState('')
 
+  // Estados de saúde da API de coleta (Railway)
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+  const [apiLatency, setApiLatency] = useState<number | null>(null)
+  const [apiErrorMsg, setApiErrorMsg] = useState<string | null>(null)
+
   // Filtros da tabela
   const [filterChannel, setFilterChannel] = useState('')
   const [filterBusiness, setFilterBusiness] = useState('')
@@ -73,6 +78,38 @@ export default function Connectors() {
     hashtags: '',
     fb_url: ''
   })
+
+  // Hook para verificar a saúde da API (Railway)
+  useEffect(() => {
+    async function checkApiHealth() {
+      const start = Date.now()
+      try {
+        const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(6000) })
+        const duration = Date.now() - start
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.ok) {
+            setApiStatus('online')
+            setApiLatency(duration)
+            setApiErrorMsg(null)
+          } else {
+            setApiStatus('offline')
+            setApiErrorMsg(`Resposta inesperada do servidor: ${JSON.stringify(data)}`)
+          }
+        } else {
+          setApiStatus('offline')
+          setApiErrorMsg(`Erro HTTP ${res.status} (${res.statusText})`)
+        }
+      } catch (err: any) {
+        setApiStatus('offline')
+        setApiErrorMsg(err.message || 'Falha na conexão de rede (CORS, DNS ou Servidor inativo)')
+      }
+    }
+
+    checkApiHealth()
+    const interval = setInterval(checkApiHealth, 25_000) // Verifica a cada 25s
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     loadAll()
@@ -353,6 +390,59 @@ export default function Connectors() {
         </div>
         <button className="btn" onClick={() => setShowCreateModal(true)}>+ Novo Conector</button>
       </div>
+
+      {/* ── Banner: API SERVER INACESSÍVEL (Problema de Infraestrutura/Railway/CORS/DNS) ── */}
+      {apiStatus === 'offline' && (
+        <div style={{
+          background: 'rgba(239,68,68,0.1)',
+          border: '2px dashed rgba(239,68,68,0.6)',
+          borderRadius: 10,
+          padding: '18px 22px',
+          marginBottom: 20,
+          display: 'flex',
+          gap: 16,
+          alignItems: 'flex-start',
+        }}>
+          <ServerCrash size={26} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, color: '#f87171', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+              🚨 ERRO CRÍTICO DE INFRAESTRUTURA: API DE COLETA FORA DO AR
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
+              O painel admin não conseguiu se conectar com o servidor principal de sincronização (Railway). 
+              Ações como <strong>"Forçar Busca"</strong> e <strong>"Salvar Conector"</strong> não funcionarão até que a conexão seja restabelecida.
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '10px 14px', marginBottom: 12, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600 }}>DETALHES DA CONEXÃO:</div>
+              <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#fda4af', marginBottom: 4 }}>
+                <strong>URL Solicitada:</strong> {API_URL}
+              </div>
+              <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#fca5a5' }}>
+                <strong>Causa do Erro:</strong> {apiErrorMsg || 'Tempo limite excedido ou servidor inacessível.'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <a
+                href="https://status.railway.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+                  background: '#ef4444', color: 'white',
+                  border: 'none', textDecoration: 'none',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }}
+              >
+                🔍 Acompanhar Status do Railway
+              </a>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                💡 <strong>Dica de Correção:</strong> Se o servidor no Railway foi reiniciado e o domínio mudou, atualize a variável <code>VITE_API_URL</code> nas configurações do projeto na Vercel para <code>https://api-production-24e1.up.railway.app</code>.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Banner: SCHEDULER MORTO (conectores presos em 'running') ── */}
       {systemHealth.stuckRunning.length > 0 && (
