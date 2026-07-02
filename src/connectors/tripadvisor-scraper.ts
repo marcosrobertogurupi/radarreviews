@@ -7,11 +7,8 @@
 // 4. Fallback: extração DOM com múltiplos seletores
 // 5. Pagina via padrão -orN- no URL até atingir since_days ou max_reviews
 
-import { chromium } from 'playwright-extra'
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import { chromium } from 'playwright-core'
 import { logger } from '../lib/logger.js'
-
-chromium.use(StealthPlugin())
 
 const CHANNEL = 'tripadvisor'
 const REVIEWS_PER_PAGE = 10
@@ -22,7 +19,6 @@ const LAUNCH_ARGS = [
   '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
   '--disable-gpu',
-  '--no-zygote',
   '--disable-blink-features=AutomationControlled',
   '--lang=pt-BR',
 ]

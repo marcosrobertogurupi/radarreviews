@@ -23,17 +23,13 @@
 
 import 'dotenv/config'
 import { createHash } from 'node:crypto'
-import { chromium } from 'playwright-extra'
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import { chromium } from 'playwright-core'
 import { z } from 'zod'
 import { ingestReviews } from '../lib/ingest.js'
 import { fetchReclameAquiComplaints } from '../lib/apify.js'
 import { logger } from '../lib/logger.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
-
-// Ativar stealth
-chromium.use(StealthPlugin())
 
 
 // -----------------------------------------------------------------------------
@@ -150,7 +146,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-gpu',
-          '--no-zygote',
           '--disable-blink-features=AutomationControlled',
         ],
       })
