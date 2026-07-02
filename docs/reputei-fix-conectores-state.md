@@ -125,3 +125,30 @@ Aplicamos as seguintes mitigações em [src/scheduler/index.ts](file:///c:/Users
 
 ## Arquivos Modificados nesta Fase
 - `src/scheduler/index.ts`
+
+---
+
+# FASE 5/5 — FALHA SILENCIOSA NA CRIAÇÃO DE SYNC_JOBS (Resolução e Defesa em Profundidade)
+
+- **Data/Hora da execução**: 2026-07-02T16:05:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 9 (Inverter a ordem de preparação dos jobs e tratar erros explicitamente)**: ✅ Concluída.
+  - **Tarefa 10 (Fechar sync_jobs também no catch do Promise.race)**: ✅ Concluída.
+
+## Detalhes das Alterações
+
+### 1. Inversão e Resiliência na Criação de Jobs
+- **Arquivo modificado**: `src/scheduler/index.ts`
+- **Alterações**:
+  - Em `runOnce()`, alteramos a ordem no mapeamento de preparação de jobs: primeiro é realizado o `INSERT` do `sync_jobs` com `status='pending'`.
+  - Tratamos explicitamente os erros retornados pelo Supabase. Se o `INSERT` falhar (ex: por RLS, constraints do banco ou falta de variáveis apropriadas), o erro é registrado (`logger.error`) e a função retorna antecipadamente (`return`), **impedindo** que o conector correspondente seja marcado como `'running'`.
+  - Apenas se o `sync_job` for criado com sucesso, tentamos o `UPDATE` em `channel_connectors` para `status='running'`. Erros desse update também são tratados e logados como inconsistência (mas não impedem a execução, pois o job pendente existe e poderá ser reivindicado pelo RPC).
+
+### 2. Defesa em Profundidade no Fechamento de Jobs
+- **Arquivo modificado**: `src/scheduler/index.ts`
+- **Alterações**:
+  - Adicionamos no bloco `.catch()` do `Promise.race([runWithSemaphore(), timeoutPromise])` a atualização correspondente da tabela `sync_jobs` para `status='failed'`, registrando o `errMsg` no JSONB `error_detail`.
+  - Isso garante que, mesmo que ocorra um timeout ou falha fora do `runConnector` (por exemplo, bloqueio no semáforo ou erro transiente de inicialização), o `sync_job` correspondente seja devidamente encerrado e não fique marcado como `'running'` para sempre.
+
+## Arquivos Modificados nesta Fase
+- `src/scheduler/index.ts`

@@ -300,15 +300,40 @@ export async function runOnce(): Promise<void> {
     
     await Promise.all(
       connectors.map(async (connector) => {
-        // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
-        await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
-        
-        // Insere job pendente
-        await supabase.from('sync_jobs').insert({
+        // 1. Primeiro, insere o job pendente e trata o erro do Supabase
+        const { error: insertError } = await supabase.from('sync_jobs').insert({
           connector_id: connector.id,
           status: 'pending',
           started_at: null
         })
+
+        if (insertError) {
+          logger.error('[scheduler] Falha ao criar sync_job para o conector', {
+            connector_id: connector.id,
+            channel: connector.channel,
+            error: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint
+          })
+          // Não avança para marcar o conector como 'running' se falhar na criação do job
+          return
+        }
+
+        // 2. Só atualiza status para 'running' se o insert foi confirmado com sucesso
+        const { error: updateError } = await supabase
+          .from('channel_connectors')
+          .update({ status: 'running' })
+          .eq('id', connector.id)
+
+        if (updateError) {
+          logger.error('[scheduler] Inconsistência: sync_job criado, mas falha ao marcar conector como running', {
+            connector_id: connector.id,
+            channel: connector.channel,
+            error: updateError.message,
+            details: updateError.details,
+            hint: updateError.hint
+          })
+        }
       })
     )
 
@@ -383,11 +408,20 @@ export async function runOnce(): Promise<void> {
               channel: connectorData.channel,
               error: errMsg,
             })
+            
+            // Atualiza status do conector para error
             await supabase.from('channel_connectors').update({
               status: 'error',
               error_message: errMsg,
               next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
             }).eq('id', connectorData.id)
+
+            // Defesa em profundidade: fecha também o sync_job como falho
+            await supabase.from('sync_jobs').update({
+              status: 'failed',
+              finished_at: new Date().toISOString(),
+              error_detail: { message: errMsg },
+            }).eq('id', job.id)
           })
           .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
       } catch (err) {
