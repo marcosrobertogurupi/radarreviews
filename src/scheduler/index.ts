@@ -23,6 +23,20 @@ import crypto from 'crypto'
 // [APPSEC] C8 — Identificador único por worker
 const workerId = process.env.WORKER_ID ?? crypto.randomUUID()
 
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('[process] Rejeição de Promise não tratada detectada:', {
+    reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : String(reason),
+    promise
+  })
+})
+
+process.on('uncaughtException', (error) => {
+  logger.error('[process] Exceção não tratada detectada:', {
+    message: error.message,
+    stack: error.stack
+  })
+})
+
 import { checkCriticalAlerts } from '../lib/critical-alerts-job.js'
 import { runMonthlyReportsJob } from '../lib/monthly-reports-job.js'
 import { checkSystemHealth } from '../lib/system-health-job.js'
@@ -148,7 +162,11 @@ export async function startScheduler(): Promise<void> {
   })
 
   // Executar imediatamente na inicialização, depois em loop
-  await runOnce()
+  try {
+    await runOnce()
+  } catch (err) {
+    logger.error('[scheduler] Erro na execução inicial do runOnce no boot', { error: err })
+  }
   await checkCriticalAlerts().catch(err => {
     logger.error('[scheduler] Erro ao verificar alertas críticos na inicialização', { error: err })
   })
@@ -185,10 +203,15 @@ export async function startScheduler(): Promise<void> {
 
   // Loop de Sincronização (Robôs) — Usar setTimeout recursivo para evitar sobreposição
   async function runSyncCycle() {
-    await runOnce().catch(err => {
-      logger.error('[scheduler] Erro no ciclo de polling', { error: err })
-    })
-    setTimeout(runSyncCycle, POLL_INTERVAL_MS)
+    logger.info(`[scheduler] Ciclo de polling iniciado em ${new Date().toISOString()}`)
+    try {
+      await runOnce()
+      logger.info(`[scheduler] Ciclo de polling finalizado com sucesso em ${new Date().toISOString()}`)
+    } catch (err) {
+      logger.error(`[scheduler] Erro no ciclo de polling em ${new Date().toISOString()}`, { error: err })
+    } finally {
+      setTimeout(runSyncCycle, POLL_INTERVAL_MS)
+    }
   }
   runSyncCycle()
 
@@ -271,101 +294,110 @@ export async function startScheduler(): Promise<void> {
  * [APPSEC] C8 — Previne Race Conditions no Scheduler
  */
 export async function runOnce(): Promise<void> {
-  // 1. Enfileirar conectores vencidos como pendentes (se não estiverem já na fila)
-  const connectors = await fetchDueConnectors()
-  
-  await Promise.all(
-    connectors.map(async (connector) => {
-      // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
-      await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
-      
-      // Insere job pendente
-      await supabase.from('sync_jobs').insert({
-        connector_id: connector.id,
-        status: 'pending',
-        started_at: null
+  try {
+    // 1. Enfileirar conectores vencidos como pendentes (se não estiverem já na fila)
+    const connectors = await fetchDueConnectors()
+    
+    await Promise.all(
+      connectors.map(async (connector) => {
+        // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
+        await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
+        
+        // Insere job pendente
+        await supabase.from('sync_jobs').insert({
+          connector_id: connector.id,
+          status: 'pending',
+          started_at: null
+        })
       })
-    })
-  )
+    )
 
-  // 2. Claim atômico usando a RPC
-  const { data: jobs, error } = await supabase
-    .rpc('claim_review_jobs', {
-      p_batch_size: SYNC_BATCH_SIZE,
-      p_worker_id: workerId,
-      p_timeout_min: 15,
-    })
+    // 2. Claim atômico usando a RPC
+    const { data: jobs, error } = await supabase
+      .rpc('claim_review_jobs', {
+        p_batch_size: SYNC_BATCH_SIZE,
+        p_worker_id: workerId,
+        p_timeout_min: 15,
+      })
 
-  if (error) {
-    logger.error('[scheduler] claim_review_jobs error:', { error })
-    return
-  }
-
-  if (!jobs?.length) {
-    return // Nada a processar
-  }
-
-  logger.info(`[scheduler] ${jobs.length} job(s) bloqueado(s) para este worker (${workerId})`)
-
-  await Promise.all((jobs as Array<{ id: string; connector_id: string }>).map(async (job) => {
-    const { data: connectorData } = await supabase
-      .from('channel_connectors')
-      .select(`
-        *,
-        monitored_businesses (
-          tenant_id
-        )
-      `)
-      .eq('id', job.connector_id)
-      .single()
-
-    if (!connectorData) return
-
-    const businessInfo = (connectorData as any).monitored_businesses
-    const connectorWithTenant = {
-      ...connectorData,
-      tenant_id: businessInfo?.tenant_id
-    } as ChannelConnector
-
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new Error(`Timeout de ${CONNECTOR_TIMEOUT_MS / 60_000}min excedido`)),
-        CONNECTOR_TIMEOUT_MS
-      )
-    })
-
-    const isPlaywright = isPlaywrightChannel(connectorWithTenant.channel)
-
-    const runWithSemaphore = async () => {
-      if (isPlaywright) {
-        await PLAYWRIGHT_SEMAPHORE.acquire()
-      }
-      try {
-        await runConnector(connectorWithTenant, job.id)
-      } finally {
-        if (isPlaywright) {
-          PLAYWRIGHT_SEMAPHORE.release()
-        }
-      }
+    if (error) {
+      logger.error('[scheduler] claim_review_jobs error:', { error })
+      return
     }
 
-    await Promise.race([runWithSemaphore(), timeoutPromise])
-      .catch(async (err) => {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        logger.error('[scheduler] Erro ou timeout ao executar conector', {
-          connector_id: connectorData.id,
-          channel: connectorData.channel,
-          error: errMsg,
+    if (!jobs?.length) {
+      return // Nada a processar
+    }
+
+    logger.info(`[scheduler] ${jobs.length} job(s) bloqueado(s) para este worker (${workerId})`)
+
+    await Promise.all((jobs as Array<{ id: string; connector_id: string }>).map(async (job) => {
+      try {
+        const { data: connectorData } = await supabase
+          .from('channel_connectors')
+          .select(`
+            *,
+            monitored_businesses (
+              tenant_id
+            )
+          `)
+          .eq('id', job.connector_id)
+          .single()
+
+        if (!connectorData) return
+
+        const businessInfo = (connectorData as any).monitored_businesses
+        const connectorWithTenant = {
+          ...connectorData,
+          tenant_id: businessInfo?.tenant_id
+        } as ChannelConnector
+
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`Timeout de ${CONNECTOR_TIMEOUT_MS / 60_000}min excedido`)),
+            CONNECTOR_TIMEOUT_MS
+          )
         })
-        await supabase.from('channel_connectors').update({
-          status: 'error',
-          error_message: errMsg,
-          next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-        }).eq('id', connectorData.id)
-      })
-      .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
-  }))
+
+        const isPlaywright = isPlaywrightChannel(connectorWithTenant.channel)
+
+        const runWithSemaphore = async () => {
+          if (isPlaywright) {
+            await PLAYWRIGHT_SEMAPHORE.acquire()
+          }
+          try {
+            await runConnector(connectorWithTenant, job.id)
+          } finally {
+            if (isPlaywright) {
+              PLAYWRIGHT_SEMAPHORE.release()
+            }
+          }
+        }
+
+        await Promise.race([runWithSemaphore(), timeoutPromise])
+          .catch(async (err) => {
+            const errMsg = err instanceof Error ? err.message : String(err)
+            logger.error('[scheduler] Erro ou timeout ao executar conector', {
+              connector_id: connectorData.id,
+              channel: connectorData.channel,
+              error: errMsg,
+            })
+            await supabase.from('channel_connectors').update({
+              status: 'error',
+              error_message: errMsg,
+              next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+            }).eq('id', connectorData.id)
+          })
+          .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
+      } catch (err) {
+        logger.error('[scheduler] Falha inesperada ao processar job individual:', { job, error: err })
+      }
+    }))
+  } catch (err) {
+    logger.error('[scheduler] Erro crítico no runOnce:', { error: err })
+    throw err
+  }
 }
 
 // -----------------------------------------------------------------------------

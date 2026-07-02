@@ -100,3 +100,28 @@ Todas as 6 tarefas da série foram concluídas com sucesso. O scheduler e os con
 - `package.json` (Fase 2)
 - `package-lock.json` (Fase 2)
 - `docs/reputei-fix-conectores-state.md` (Fase 1, Fase 2, e Fase 3)
+
+---
+
+# FASE 4/4 — RESILIÊNCIA DO LOOP DO SCHEDULER (Verificação e Blindagem contra Travamento Silencioso)
+
+- **Data/Hora da execução**: 2026-07-02T15:50:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 8 (Investigar e blindar o loop contra travamento silencioso)**: ✅ Concluída.
+
+## Causa Detectada & Correções Aplicadas
+Identificamos que no boot do container, a chamada `await runOnce()` era executada diretamente no corpo principal de `startScheduler()`. Se ocorresse qualquer falha (por exemplo, lentidão do banco de dados/Supabase ao iniciar o container), o erro propagava, interrompendo a execução da função e impedindo que o loop de setTimeout recursivo e outros loops de intervalo fossem registrados. O servidor HTTP permanecia ativo, mas o scheduler morria silenciosamente desde a inicialização.
+
+Aplicamos as seguintes mitigações em [src/scheduler/index.ts](file:///c:/Users/Marcos/.gemini/antigravity-ide/scratch/radar-views/src/scheduler/index.ts):
+1. **Blindagem do setTimeout Recursivo**:
+   - Refatoramos a função `runSyncCycle()` envolvendo a execução de `runOnce()` em um bloco `try ... catch` e movendo o agendamento do próximo ciclo (`setTimeout(runSyncCycle, POLL_INTERVAL_MS)`) para um bloco `finally` garantido. Isso impede que erros internos cancelem os ciclos seguintes.
+2. **Proteção da Execução de Boot**:
+   - Envolvemos o `await runOnce()` inicial em um `try ... catch` no boot do scheduler para que falhas de warm-up/conexão inicial não quebrem o registro de outros temporizadores e do ciclo recorrente.
+3. **Isolamento de Erros por Conector**:
+   - Envolvemos a execução individual de cada conector dentro do map de `Promise.all` em um bloco `try ... catch` próprio. Com isso, se um conector específico falhar ao consultar o banco de dados (ex: erro temporário de rede), ele não rejeita a promise coletiva e não aborta os outros 9 conectores em execução.
+4. **Logs e Visibilidade**:
+   - Adicionamos logs explícitos de início (`logger.info`) e fim de ciclo de polling com timestamps.
+   - Configuramos tratadores de eventos globais para `unhandledRejection` e `uncaughtException` que registram stack traces completos no logger estruturado para maior visibilidade em produção.
+
+## Arquivos Modificados nesta Fase
+- `src/scheduler/index.ts`
