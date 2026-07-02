@@ -152,3 +152,33 @@ Aplicamos as seguintes mitigações em [src/scheduler/index.ts](file:///c:/Users
 
 ## Arquivos Modificados nesta Fase
 - `src/scheduler/index.ts`
+
+---
+
+# FASE 6/6 — RESET_STUCK_CONNECTORS NÃO SETA first_error_at (Resolução da Exclusão Permanente)
+
+- **Data/Hora da execução**: 2026-07-02T16:45:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 11 (reset_stuck_connectors deve setar first_error_at ao resetar um conector)**: ✅ Concluída (Migration criada).
+  - **Tarefa 12 (Tratar erro explicitamente no update de sucesso/falha do runConnector)**: ✅ Concluída.
+
+## Detalhes das Alterações
+
+### 1. Atualização da RPC reset_stuck_connectors (Tarefa 11)
+- **Arquivo de Migration**: [migrations/028_fix_reset_stuck_connectors_first_error.sql](file:///c:/Users/Marcos/.gemini/antigravity-ide/scratch/radar-views/migrations/028_fix_reset_stuck_connectors_first_error.sql)
+- **Detalhes**:
+  - Criamos a migration `028_fix_reset_stuck_connectors_first_error.sql` recriando a função SQL `reset_stuck_connectors()`.
+  - A nova versão passa a atualizar `first_error_at = COALESCE(first_error_at, now())` ao resetar conectores presos de `'running'` para `'error'`.
+  - Isso impede que o watchdog periódico "exclua permanentemente" os conectores do filtro de `fetchDueConnectors()` do scheduler (que exige `first_error_at >= ontem` para conectores em status `'error'`).
+  - O uso de `COALESCE` preserva o horário da primeira ocorrência de erro legítima se ela já existisse, mantendo a regra de circuit-breaker de 24h intacta.
+
+### 2. Tratamento de Erros nos Updates do runConnector (Tarefa 12)
+- **Arquivo modificado**: `src/scheduler/index.ts`
+- **Detalhes**:
+  - No bloco `if (success)`, capturamos o `{ error }` retornado pelo update de `channel_connectors` para o status `'active'`. Caso haja erro do Supabase, o logamos via `logger.error` com todos os detalhes e o `connector_id`.
+  - No bloco de `else` (falha), capturamos igualmente o `{ error }` retornado pelo update do conector para o status `'error'`. Caso haja erro do Supabase, ele também é logado via `logger.error`.
+  - Com isso, eliminamos qualquer possibilidade de falhas silenciosas na atualização de status pós-sync que pudessem manter o conector indevidamente marcado como `'running'`.
+
+## Arquivos Modificados nesta Fase
+- `migrations/028_fix_reset_stuck_connectors_first_error.sql`
+- `src/scheduler/index.ts`

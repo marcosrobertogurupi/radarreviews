@@ -567,7 +567,7 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
       }
 
       const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 120
-      await supabase
+      const { error: updateSuccessError } = await supabase
         .from('channel_connectors')
         .update({
           status: 'active',
@@ -581,6 +581,15 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
           alert_72h_sent: false,
         })
         .eq('id', connector.id)
+
+      if (updateSuccessError) {
+        logger.error('[scheduler] Falha ao atualizar channel_connectors para active após sync bem-sucedido', {
+          connector_id: connector.id,
+          channel: connector.channel,
+          error: updateSuccessError.message,
+          details: updateSuccessError.details
+        })
+      }
 
     } else {
       const isAuth = !!result.is_auth_error || result.error_type === 'fatal'
@@ -600,7 +609,7 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
         await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
       }
 
-      await supabase
+      const { error: updateErrorError } = await supabase
         .from('channel_connectors')
         .update({
           status: 'error',
@@ -610,6 +619,15 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
           next_sync_at: new Date(Date.now() + backoffMinutes * 60_000).toISOString(),
         })
         .eq('id', connector.id)
+
+      if (updateErrorError) {
+        logger.error('[scheduler] Falha ao atualizar channel_connectors para error após falha no sync', {
+          connector_id: connector.id,
+          channel: connector.channel,
+          error: updateErrorError.message,
+          details: updateErrorError.details
+        })
+      }
     }
 
     logger.info(`[scheduler] Sync concluído`, {
