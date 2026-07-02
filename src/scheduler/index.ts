@@ -33,6 +33,40 @@ import { runReputationScoreJob } from '../services/reputationScore.js'
 import { runPrescriptiveAnalysisJob } from '../services/prescriptiveAnalysis.js'
 import { runBenchmarkSnapshotJob } from '../lib/benchmark-snapshot-job.js'
 
+class SimpleSemaphore {
+  private activeCount = 0
+  private queue: (() => void)[] = []
+
+  constructor(private maxConcurrency: number) {}
+
+  async acquire(): Promise<void> {
+    if (this.activeCount < this.maxConcurrency) {
+      this.activeCount++
+      return
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve)
+    })
+  }
+
+  release(): void {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift()
+      if (next) {
+        next()
+        return
+      }
+    }
+    this.activeCount--
+  }
+}
+
+const PLAYWRIGHT_SEMAPHORE = new SimpleSemaphore(3)
+
+function isPlaywrightChannel(channel: string): boolean {
+  return ['google_maps', 'tripadvisor', 'reclame_aqui'].includes(channel)
+}
+
 // Intervalo de verificação do loop (ms) — verificar a cada 2 minutos
 const POLL_INTERVAL_MS = 120_000
 const ALERT_CHECK_INTERVAL_MS = 60 * 60_000 // 1 hora
@@ -240,17 +274,19 @@ export async function runOnce(): Promise<void> {
   // 1. Enfileirar conectores vencidos como pendentes (se não estiverem já na fila)
   const connectors = await fetchDueConnectors()
   
-  for (const connector of connectors) {
-    // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
-    await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
-    
-    // Insere job pendente
-    await supabase.from('sync_jobs').insert({
-      connector_id: connector.id,
-      status: 'pending',
-      started_at: null
+  await Promise.all(
+    connectors.map(async (connector) => {
+      // Bloqueia preventivamente no conector para não gerar múltiplos jobs pendentes
+      await supabase.from('channel_connectors').update({ status: 'running' }).eq('id', connector.id)
+      
+      // Insere job pendente
+      await supabase.from('sync_jobs').insert({
+        connector_id: connector.id,
+        status: 'pending',
+        started_at: null
+      })
     })
-  }
+  )
 
   // 2. Claim atômico usando a RPC
   const { data: jobs, error } = await supabase
@@ -299,7 +335,22 @@ export async function runOnce(): Promise<void> {
       )
     })
 
-    await Promise.race([runConnector(connectorWithTenant, job.id), timeoutPromise])
+    const isPlaywright = isPlaywrightChannel(connectorWithTenant.channel)
+
+    const runWithSemaphore = async () => {
+      if (isPlaywright) {
+        await PLAYWRIGHT_SEMAPHORE.acquire()
+      }
+      try {
+        await runConnector(connectorWithTenant, job.id)
+      } finally {
+        if (isPlaywright) {
+          PLAYWRIGHT_SEMAPHORE.release()
+        }
+      }
+    }
+
+    await Promise.race([runWithSemaphore(), timeoutPromise])
       .catch(async (err) => {
         const errMsg = err instanceof Error ? err.message : String(err)
         logger.error('[scheduler] Erro ou timeout ao executar conector', {
