@@ -109,7 +109,7 @@ export async function startScheduler(): Promise<void> {
   logger.info('[scheduler] Iniciando — verificando conectores a cada 60s')
 
   // Watchdog: resetar imediatamente conectores travados em 'running' (ex: crash anterior)
-  await resetStuckRunningConnectors().catch(err => {
+  await resetStuckRunningConnectors(5).catch(err => {
     logger.error('[scheduler] Erro no watchdog inicial', { error: err })
   })
 
@@ -546,9 +546,9 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
  * Detecta conectores que ficaram presos em 'running' (ex: crash do scheduler)
  * e os reseta para 'error' com next_sync_at imediato para que sejam retomados.
  */
-async function resetStuckRunningConnectors(): Promise<void> {
+async function resetStuckRunningConnectors(timeoutMin: number = WATCHDOG_TIMEOUT_MIN): Promise<void> {
   const { data, error } = await supabase
-    .rpc('reset_stuck_connectors', { p_timeout_min: WATCHDOG_TIMEOUT_MIN })
+    .rpc('reset_stuck_connectors', { p_timeout_min: timeoutMin })
 
   if (error) {
     logger.error('[scheduler] Watchdog: falha ao resetar conectores travados', { error: error.message })
