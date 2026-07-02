@@ -68,3 +68,35 @@ Nenhum desvio significativo do plano original. Apenas parametrizamos a função 
 - `tests/connectors/reclame-aqui.test.ts`
 - `package.json`
 - `package-lock.json`
+
+---
+
+# Handoff Final — Encerramento da Série (Mitigação de Recursos + Limpeza + Verificação Final)
+
+- **Data/Hora de encerramento**: 2026-07-02T14:30:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 5 (Limitar instâncias simultâneas de Chromium com Semáforo)**: ✅ Concluída.
+  - **Tarefa 6 (Paralelizar preparação dos jobs com Promise.all)**: ✅ Concluída.
+
+## Resumo de Encerramento (Fases 1, 2 e 3)
+Todas as 6 tarefas da série foram concluídas com sucesso. O scheduler e os conectores foram submetidos a testes unitários e de integração completos, e 100% da suíte de testes passou de forma limpa.
+
+### Observações Importantes para Acompanhamento Futuro
+1. **Semáforo de Concorrência de Chromium (Mitigação de OOM)**:
+   - Foi implementado um semáforo manual assíncrono do tipo FIFO (`SimpleSemaphore`) limitando a no máximo 3 instâncias de Chromium em execução simultânea para os canais que utilizam Playwright (`google_maps`, `tripadvisor`, `reclame_aqui`).
+   - Os conectores não baseados em Playwright (ex: `consumidor_gov`, `trustpilot`, `reddit`, etc.) executam imediatamente de forma paralela e concorrente sem passar pelo semáforo.
+2. **Propagação de AbortSignal para runConnector**:
+   - Como observado nas especificações da Tarefa 5, em um ciclo futuro pode ser interessante propagar um `AbortSignal` do timeout da `Promise.race` até os métodos internos de scraping. Atualmente, os timeouts do `Promise.race` abortam a espera no Scheduler e colocam o conector em status de erro, mas os processos em background do Playwright continuam rodando de forma assíncrona até que seus timeouts internos de página (30 segundos) sejam acionados e liberem os recursos. Como as execuções possuem try/catch/finally garantindo o fechamento (`browser.close()`), a liberação do semáforo ocorre com segurança.
+3. **Ausência de SIGTRAP**:
+   - Com a remoção do `playwright-extra` + plugin stealth, e a migração para `playwright-core` puro (sem `--no-zygote`), o Chromium foi executado em testes locais e de CI sem reportar SIGTRAP ou crashes inesperados de navegador.
+
+## Lista Total de Arquivos Modificados nesta Série
+- `src/scheduler/index.ts` (Fase 1 e Fase 3)
+- `tests/scheduler.security.test.ts` (Fase 1 e Fase 2)
+- `src/connectors/reclame-aqui.ts` (Fase 2)
+- `src/connectors/tripadvisor-scraper.ts` (Fase 2)
+- `src/connectors/consumidor-gov.ts` (Fase 2)
+- `tests/connectors/reclame-aqui.test.ts` (Fase 2)
+- `package.json` (Fase 2)
+- `package-lock.json` (Fase 2)
+- `docs/reputei-fix-conectores-state.md` (Fase 1, Fase 2, e Fase 3)
