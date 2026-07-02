@@ -14,6 +14,7 @@ const mockFrom = vi.fn().mockReturnValue({
   order:  vi.fn().mockReturnThis(),
   insert: vi.fn().mockReturnThis(),
   select: vi.fn().mockReturnThis(),
+  limit:  vi.fn().mockReturnThis(),
   single: vi.fn().mockResolvedValue({ data: null, error: null }),
 })
 
