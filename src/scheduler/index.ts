@@ -43,7 +43,7 @@ const AI_JOBS_INTERVAL_MS = 24 * 3600_000 // 24 horas (Métricas e Nuvem de Tema
 const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots semanais)
 const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
 const WATCHDOG_TIMEOUT_MIN = 45 // Conectores em 'running' por mais de 45min são resetados (scraping pode demorar)
-const CONNECTOR_TIMEOUT_MS = 8 * 60_000 // 8 min por conector — evita travamento permanente do batch
+const CONNECTOR_TIMEOUT_MS = 15 * 60_000 // 15 min por conector — Google Maps com muitas reviews pode demorar
 // Limitar o fetch ao mesmo tamanho do batch do RPC — evita marcar 40+ conectores como 'running'
 // quando só 10 serão processados, deixando os outros 30 presos até o watchdog de 45min
 const SYNC_BATCH_SIZE = 10

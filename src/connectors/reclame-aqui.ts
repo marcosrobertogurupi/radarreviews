@@ -140,16 +140,38 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
   let browser = null
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-      ],
-    })
+    // Tenta iniciar o Chromium — se o executável não existir, retorna erro fatal imediatamente
+    // para evitar que o conector fique em loop e apareça como "falha crítica" no painel
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-zygote',
+          '--disable-blink-features=AutomationControlled',
+        ],
+      })
+    } catch (launchErr) {
+      const msg = launchErr instanceof Error ? launchErr.message : String(launchErr)
+      const isMissingBinary = msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')
+      if (isMissingBinary) {
+        // Erro fatal de infraestrutura: Playwright desatualizado no container
+        // O redeploy da imagem Docker resolve — não há lógica de retry aqui
+        result.error = `Playwright binary ausente (container desatualizado). Redeploy necessário. Detalhes: ${msg}`
+        result.error_type = 'fatal'
+        logger.error(`[${CHANNEL}] Playwright binary ausente — redeploy do container necessário`, {
+          connector_id: connector.id,
+          slug,
+          error: msg,
+        })
+        return result
+      }
+      // Outros erros de launch são relançados para o catch externo
+      throw launchErr
+    }
 
     const context = await browser.newContext({
       userAgent: USER_AGENT,
@@ -192,7 +214,36 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         logger.info(`[${CHANNEL}] Navegando`, { connector_id: connector.id, url })
 
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
+          // Tenta com domcontentloaded primeiro; se ERR_ABORTED (Cloudflare/redirect),
+          // aguarda um intervalo e tenta novamente com 'load' que é mais tolerante a redirects
+          let gotoError: Error | null = null
+          try {
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
+          } catch (firstErr) {
+            const errMsg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+            const isAborted = errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR')
+            if (isAborted) {
+              logger.warn(`[${CHANNEL}] ERR_ABORTED na 1ª tentativa, aguardando 6s e tentando com waitUntil:load`, { url })
+              await page.waitForTimeout(6000)
+              try {
+                await page.goto(url, { waitUntil: 'load', timeout: timeoutMs * 3 })
+              } catch (retryErr) {
+                gotoError = retryErr instanceof Error ? retryErr : new Error(String(retryErr))
+              }
+            } else {
+              gotoError = firstErr instanceof Error ? firstErr : new Error(String(firstErr))
+            }
+          }
+
+          // Se ainda está em erro após retry, decidir se é fatal ou pular URL
+          if (gotoError) {
+            const errMsg = gotoError.message
+            // Timeout ou bloqueio permanente = pular esta URL; se for a última, lança para o catch externo
+            if (pageNum === 1 && urlIdx === urlsToTry.length - 1) throw gotoError
+            logger.warn(`[${CHANNEL}] Pulando URL após falha persistente`, { url, error: errMsg })
+            break
+          }
+
           await page.waitForTimeout(4000)
 
           const finalUrl = page.url()
@@ -335,10 +386,16 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       reviews_new: ingest.reviews_new,
     })
   } catch (error) {
-    result.error = error instanceof Error ? error.message : String(error)
+    const errMsg = error instanceof Error ? error.message : String(error)
+    result.error = errMsg
+    // ERR_ABORTED persistente e bloqueios de rede são transientes (Cloudflare/rate limit)
+    const isTransient = errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR') ||
+      errMsg.includes('timeout') || errMsg.includes('Timeout')
+    result.error_type = isTransient ? 'transient' : 'fatal'
     logger.error(`[${CHANNEL}] Erro crítico no conector ${connector.id}`, {
       error,
       connector_id: connector.id,
+      error_type: result.error_type,
     })
   } finally {
     // Sempre fecha o browser para liberar recursos
