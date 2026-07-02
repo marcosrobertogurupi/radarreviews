@@ -44,6 +44,9 @@ const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots se
 const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
 const WATCHDOG_TIMEOUT_MIN = 45 // Conectores em 'running' por mais de 45min são resetados (scraping pode demorar)
 const CONNECTOR_TIMEOUT_MS = 8 * 60_000 // 8 min por conector — evita travamento permanente do batch
+// Limitar o fetch ao mesmo tamanho do batch do RPC — evita marcar 40+ conectores como 'running'
+// quando só 10 serão processados, deixando os outros 30 presos até o watchdog de 45min
+const SYNC_BATCH_SIZE = 10
 
 // Mapa de canais → função run() do conector
 // Cada canal é lazy-loaded para evitar imports desnecessários
@@ -252,7 +255,7 @@ export async function runOnce(): Promise<void> {
   // 2. Claim atômico usando a RPC
   const { data: jobs, error } = await supabase
     .rpc('claim_review_jobs', {
-      p_batch_size: 10,
+      p_batch_size: SYNC_BATCH_SIZE,
       p_worker_id: workerId,
       p_timeout_min: 15,
     })
@@ -351,6 +354,7 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
     .or(`status.eq.active,and(status.eq.error,first_error_at.gte.${yesterday})`)
     .or(`next_sync_at.lte.${now},next_sync_at.is.null`)
     .order('next_sync_at', { ascending: true, nullsFirst: true })
+    .limit(SYNC_BATCH_SIZE)
 
   if (error) {
     logger.error('[scheduler] Falha ao buscar conectores', { error: error.message })
