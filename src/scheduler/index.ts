@@ -563,7 +563,20 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
     const wasInError = (connector.status as string) !== 'active'
     if (success) {
       if (wasInError) {
-        await systemNotifications.notifyRecovery(connector)
+        try {
+          await Promise.race([
+            systemNotifications.notifyRecovery(connector),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('notifyRecovery timeout after 10s')), 10_000)
+            )
+          ])
+        } catch (notifyErr) {
+          logger.error('[scheduler] Falha em notifyRecovery, prosseguindo para atualizar status do conector', {
+            connector_id: connector.id,
+            channel: connector.channel,
+            error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
+          })
+        }
       }
 
       const intervalMinutes = (connector.config['interval_minutes'] as number | undefined) ?? 120
@@ -604,9 +617,20 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
       const shouldAlert = isAuth
 
       if (shouldAlert) {
-        // Envia notificação imediata. Opcionalmente, poderíamos adicionar flags para evitar spam,
-        // mas erros auth são graves o suficiente para alertar.
-        await systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error)
+        try {
+          await Promise.race([
+            systemNotifications.notifyError(connector, result.error!, !!result.is_auth_error),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('notifyError timeout after 10s')), 10_000)
+            )
+          ])
+        } catch (notifyErr) {
+          logger.error('[scheduler] Falha em notifyError (caminho de erro normal), prosseguindo para atualizar status do conector', {
+            connector_id: connector.id,
+            channel: connector.channel,
+            error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
+          })
+        }
       }
 
       const { error: updateErrorError } = await supabase
@@ -654,9 +678,18 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
         error_count: errorCount,
         first_error_at: firstErrorAt
       }
-      await systemNotifications.notifyError(updatedConnector, errMsg, false)
+      await Promise.race([
+        systemNotifications.notifyError(updatedConnector, errMsg, false),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('notifyError (crash) timeout after 10s')), 10_000)
+        )
+      ])
     } catch (notifyErr) {
-      logger.error('[scheduler] Falha ao disparar notificação de crash', { error: notifyErr })
+      logger.error('[scheduler] Falha ao disparar notificação de crash', {
+        connector_id: connector.id,
+        channel: connector.channel,
+        error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
+      })
     }
 
     // Em caso de erro catastrófico (ex: crash do runner), volta para status error para não travar em 'running'
