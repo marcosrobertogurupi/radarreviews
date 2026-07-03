@@ -182,3 +182,36 @@ Aplicamos as seguintes mitigações em [src/scheduler/index.ts](file:///c:/Users
 ## Arquivos Modificados nesta Fase
 - `migrations/028_fix_reset_stuck_connectors_first_error.sql`
 - `src/scheduler/index.ts`
+
+---
+
+# FASE 7/7 — NOTIFICAÇÕES BLOQUEANDO UPDATE FINAL DE channel_connectors
+
+- **Data/Hora da execução**: 2026-07-02T21:25:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 13 (Isolar systemNotifications.notifyRecovery com try/catch + timeout)**: ✅ Concluída.
+  - **Tarefa 14 (Aplicar o mesmo tratamento em systemNotifications.notifyError)**: ✅ Concluída.
+  - **Tarefa 15 (Verificar se existe padrão parecido em outros pontos do scheduler)**: ✅ Concluída (varredura).
+
+## Causa Raiz Confirmada
+A query em produção provou o sintoma: `sync_jobs.status='done'` com `finished_at` posterior a `channel_connectors.updated_at` do mesmo conector. Isso só é possível se o fluxo em `runConnector` atualizou a tabela `sync_jobs` mas foi interrompido antes do `UPDATE` de `channel_connectors.status`.
+A investigação revelou que as chamadas a `systemNotifications.notifyRecovery(connector)` e `systemNotifications.notifyError(...)` eram efetuadas usando `await` de forma direta e sem tratamento de erros ou timeout. Como essas funções efetuam requisições HTTP externas para o WhatsApp (UAZAPI), falhas temporárias ou lentidões no serviço externo travavam ou quebravam a execução antes que o status do conector fosse restaurado para `'active'` ou `'error'`.
+
+## Detalhes das Alterações
+
+### 1. notifyRecovery isolado (Tarefa 13)
+- **Arquivo modificado**: `src/scheduler/index.ts`
+- **Alteração**: Envolvemos `systemNotifications.notifyRecovery(connector)` em um bloco `try/catch` com `Promise.race` definindo um timeout limite de 10 segundos. Se o envio de notificação travar ou lançar erro, a falha é registrada em log estruturado e a execução prossegue normalmente para o `UPDATE` do conector para `'active'`.
+
+### 2. notifyError isolado em todos os caminhos (Tarefa 14)
+- **Arquivo modificado**: `src/scheduler/index.ts`
+- **Alterações**:
+  - Caminho de erro padrão: Envolvemos `systemNotifications.notifyError(...)` em `try/catch` com `Promise.race` de 10s. Qualquer erro é logado sem interromper a atualização do conector para `'error'`.
+  - Caminho de crash crítico (catch externo do conector): Adicionamos o timeout de 10s com `Promise.race` na notificação e aprimoramos os logs estruturados com `connector_id` e `channel`.
+
+### 3. Varredura de pontos desprotegidos (Tarefa 15)
+- **Varredura**: Efetuamos uma verificação rigorosa em `src/scheduler/index.ts` por outras chamadas a serviços externos (notificações, jobs de reconciliação, relatórios) com `await` direto desprotegido dentro do ciclo do `runOnce()` ou `runConnector()`.
+- **Resultado**: Nenhuma outra chamada desprotegida foi encontrada. Todas as chamadas de inicialização/recorrentes em `startScheduler()` já estavam devidamente envolvidas em tratamentos com `.catch()` ou blocos `try/catch`. As demais interações com o Supabase dentro de `runOnce` e `runConnector` possuem validação explícita de erro.
+
+## Arquivos Modificados nesta Fase
+- `src/scheduler/index.ts`
