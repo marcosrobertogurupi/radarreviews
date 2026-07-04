@@ -45,39 +45,82 @@ export async function scrapeGoogleMapsReviews(
     })
 
     const page = await context.newPage()
-    page.setDefaultTimeout(30000)
+    page.setDefaultTimeout(15000)
+
+    // ── Instrumentação de timing ──
+    const startedAt = Date.now()
+    let lastMarkAt = startedAt
+    const mark = (step: string) => {
+      const now = Date.now()
+      const totalMs = now - startedAt
+      const deltaMs = now - lastMarkAt
+      lastMarkAt = now
+      logger.info(`[GoogleMaps][timing] ${step}`, {
+        placeId,
+        total_s: (totalMs / 1000).toFixed(1),
+        delta_s: (deltaMs / 1000).toFixed(1),
+      })
+    }
 
     // 1. Navegação
     const url = `https://www.google.com/maps/place/?q=place_id:${placeId}&hl=pt-BR`
-    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    mark('before_goto')
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 })
+    mark('after_goto')
     await randomDelay(3000, 2000)
 
     // Aceitar cookies/consentimento se aparecer
     await handleConsent(page)
+    mark('after_consent')
 
     // 2. Clicar na aba de avaliações
     const reviewsTabSelector = await findElement(page, GMAPS_SELECTORS.REVIEWS_TAB)
+    mark('after_find_reviews_tab')
     if (!reviewsTabSelector) {
       throw new Error('Aba de avaliações não encontrada na página do local.')
     }
     await humanClick(page, reviewsTabSelector)
+    mark('after_click_reviews_tab')
     await randomDelay(2000, 1000)
 
     // 3. Aguardar painel de reviews
     const panelSelector = await findElement(page, GMAPS_SELECTORS.REVIEWS_PANEL)
+    mark('after_find_reviews_panel')
     if (!panelSelector) {
       throw new Error('Painel de reviews não carregou após clicar na aba.')
     }
 
     // 4. Ordenar por mais recentes
     await sortByNewest(page)
+    mark('after_sort_by_newest')
     await randomDelay(1500, 500)
 
     // 5. Loop de Scroll e Extração
     let consecutiveEmptyScrolls = 0
     let prevCount = 0
+    let iterCount = 0
+
+    mark('before_scroll_loop')
 
     while (reviews.length < maxReviews) {
+      // Guarda de tempo: 10 minutos máx no loop (margem de 5min para o timeout externo de 15min)
+      if (Date.now() - startedAt > 10 * 60_000) {
+        logger.warn('[GoogleMaps] Loop de scroll atingiu limite de tempo interno (10min). Retornando reviews coletados até agora.', {
+          placeId,
+          reviewsColetados: reviews.length,
+          iteracoes: iterCount,
+        })
+        break
+      }
+
+      // Guarda de iterações: máx 200
+      if (iterCount > 200) {
+        logger.warn('[GoogleMaps] Loop de scroll atingiu limite de iterações (200). Retornando reviews coletados até agora.', {
+          placeId,
+          reviewsColetados: reviews.length,
+        })
+        break
+      }
       // Expandir textos longos
       await expandLongReviews(page)
 
@@ -113,8 +156,14 @@ export async function scrapeGoogleMapsReviews(
       // Rolar o painel
       await scrollPanel(page, panelSelector)
       await randomDelay(1500, 1000)
+
+      iterCount++
+      if (iterCount % 5 === 0) {
+        mark(`scroll_iter_${iterCount}`)
+      }
     }
 
+    mark('done')
     logger.info(`[GoogleMaps] Scraping finalizado. Total coletado: ${reviews.length}`)
 
   } catch (error) {

@@ -215,3 +215,49 @@ A investigação revelou que as chamadas a `systemNotifications.notifyRecovery(c
 
 ## Arquivos Modificados nesta Fase
 - `src/scheduler/index.ts`
+
+---
+
+# FASE 8/8 — INSTRUMENTAR SCRAPER DO GOOGLE MAPS PARA IDENTIFICAR TRAVAMENTO
+
+- **Data/Hora da execução**: 2026-07-03T22:55:00-03:00 (Aproximadamente)
+- **Status das Tarefas**:
+  - **Tarefa 16 (Timing logs entre cada etapa do scrapeGoogleMapsReviews)**: ✅ Concluída.
+  - **Tarefa 17 (Reduzir setDefaultTimeout para 15s + timeout explícito em page.goto)**: ✅ Concluída.
+  - **Tarefa 18 (Guardas de tempo e iterações no loop de scroll)**: ✅ Concluída.
+
+## Detalhes das Alterações
+
+### 1. Instrumentação de timing (Tarefa 16)
+- **Arquivo modificado**: `src/connectors/google_maps/scraper.ts`
+- **Alterações**:
+  - Adicionada função auxiliar `mark(step)` que loga `[GoogleMaps][timing] <step>` com `placeId`, `total_s` (tempo desde o início) e `delta_s` (tempo desde o mark anterior).
+  - Marks inseridos em 10 pontos do fluxo: `before_goto`, `after_goto`, `after_consent`, `after_find_reviews_tab`, `after_click_reviews_tab`, `after_find_reviews_panel`, `after_sort_by_newest`, `before_scroll_loop`, `scroll_iter_N` (a cada 5 iterações), `done`.
+  - Nenhum logger.info existente foi removido — todos os marks são adições.
+
+### 2. Timeouts mais agressivos (Tarefa 17)
+- **Arquivo modificado**: `src/connectors/google_maps/scraper.ts`
+- **Alterações**:
+  - `page.setDefaultTimeout(30000)` → `page.setDefaultTimeout(15000)` — limita o custo de clicks em elementos problemáticos.
+  - `page.goto(url, { waitUntil: 'domcontentloaded' })` → `page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 })` — se o goto demorar mais de 20s, lança erro específico do Playwright.
+
+### 3. Guardas no loop de scroll (Tarefa 18)
+- **Arquivo modificado**: `src/connectors/google_maps/scraper.ts`
+- **Alterações**:
+  - Guarda de tempo: se `Date.now() - startedAt > 10 * 60_000` (10 minutos), faz `break` com `logger.warn`.
+  - Guarda de iterações: se `iterCount > 200`, faz `break` com `logger.warn`.
+  - Ambos apenas fazem `break` — reviews já coletados são retornados normalmente.
+
+## Verificação
+- TypeScript: `tsc --noEmit` sem erros.
+- Nenhum arquivo além do scraper foi modificado.
+
+## Próximos Passos
+- Fazer deploy e aguardar o próximo ciclo de sync do Google Maps.
+- Nos logs do Railway, filtrar por `[GoogleMaps][timing]` para ver a sequência de marks.
+- Se um sync falhar por timeout, a última mark visível revela a etapa culpada.
+- Com essa informação, uma Fase 9 trará correção cirúrgica no ponto identificado.
+
+## Arquivos Modificados nesta Fase
+- `src/connectors/google_maps/scraper.ts`
+- `docs/reputei-fix-conectores-state.md`
