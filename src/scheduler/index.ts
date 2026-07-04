@@ -49,17 +49,41 @@ import { runBenchmarkSnapshotJob } from '../lib/benchmark-snapshot-job.js'
 
 class SimpleSemaphore {
   private activeCount = 0
-  private queue: (() => void)[] = []
+  private queue: Array<{ resolve: () => void }> = []
 
   constructor(private maxConcurrency: number) {}
 
-  async acquire(): Promise<void> {
+  async acquire(timeoutMs?: number): Promise<void> {
     if (this.activeCount < this.maxConcurrency) {
       this.activeCount++
       return
     }
-    return new Promise<void>((resolve) => {
-      this.queue.push(resolve)
+
+    return new Promise<void>((resolve, reject) => {
+      const entry = { resolve: () => {} }
+      let timer: ReturnType<typeof setTimeout> | null = null
+
+      entry.resolve = () => {
+        if (timer) clearTimeout(timer)
+        resolve()
+      }
+
+      this.queue.push(entry)
+
+      if (timeoutMs) {
+        timer = setTimeout(() => {
+          const idx = this.queue.indexOf(entry)
+          if (idx !== -1) {
+            this.queue.splice(idx, 1)
+            reject(new Error(
+              `Semaphore acquire timeout apos ${(timeoutMs / 60_000).toFixed(1)}min aguardando slot na fila`
+            ))
+          }
+          // Se idx === -1, a entrada já foi consumida por release() no
+          // exato mesmo tick (corrida rara) — nesse caso o acquire já
+          // resolveu normalmente e este timer não deve fazer nada.
+        }, timeoutMs)
+      }
     })
   }
 
@@ -67,7 +91,7 @@ class SimpleSemaphore {
     if (this.queue.length > 0) {
       const next = this.queue.shift()
       if (next) {
-        next()
+        next.resolve()
         return
       }
     }
@@ -92,6 +116,11 @@ const BENCHMARK_SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600_000 // 7 dias (snapshots se
 const WATCHDOG_INTERVAL_MS = 10 * 60_000 // 10 minutos (watchdog de conectores travados)
 const WATCHDOG_TIMEOUT_MIN = 45 // Conectores em 'running' por mais de 45min são resetados (scraping pode demorar)
 const CONNECTOR_TIMEOUT_MS = 15 * 60_000 // 15 min por conector — Google Maps com muitas reviews pode demorar
+// Tempo maximo que um job pode esperar um slot livre no semaforo
+// Playwright antes de desistir. Deve ser menor que CONNECTOR_TIMEOUT_MS
+// para produzir um erro especifico e rapido em vez de um job "zumbi"
+// preso na fila ate o timeout generico de 15min.
+const PLAYWRIGHT_SEMAPHORE_ACQUIRE_TIMEOUT_MS = 8 * 60_000 // 8 minutos
 // Limitar o fetch ao mesmo tamanho do batch do RPC — evita marcar 40+ conectores como 'running'
 // quando só 10 serão processados, deixando os outros 30 presos até o watchdog de 45min
 const SYNC_BATCH_SIZE = 10
@@ -389,7 +418,11 @@ export async function runOnce(): Promise<void> {
 
         const runWithSemaphore = async () => {
           if (isPlaywright) {
-            await PLAYWRIGHT_SEMAPHORE.acquire()
+            logger.info('[scheduler] Aguardando slot no semaforo Playwright', {
+              connector_id: connectorWithTenant.id,
+              channel: connectorWithTenant.channel,
+            })
+            await PLAYWRIGHT_SEMAPHORE.acquire(PLAYWRIGHT_SEMAPHORE_ACQUIRE_TIMEOUT_MS)
           }
           try {
             await runConnector(connectorWithTenant, job.id)
