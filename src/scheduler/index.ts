@@ -598,7 +598,11 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
       .eq('id', jobId)
 
     // 3. Lógica de Autocura e Alertas
-    const wasInError = (connector.status as string) !== 'active'
+    // IMPORTANTE: Não usar connector.status aqui — neste ponto o status
+    // já foi alterado para 'running' pelo scheduler, então seria sempre
+    // !== 'active', disparando notificação de recuperação em TODA execução.
+    // Usar error_count > 0 que só é zerado quando o sync anterior foi sucesso.
+    const wasInError = (connector.error_count ?? 0) > 0
     if (success) {
       if (wasInError) {
         try {
