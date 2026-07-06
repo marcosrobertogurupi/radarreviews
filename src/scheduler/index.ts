@@ -442,10 +442,15 @@ export async function runOnce(): Promise<void> {
               error: errMsg,
             })
             
-            // Atualiza status do conector para error
+            // Atualiza status do conector para error.
+            // IMPORTANTE: setar first_error_at (COALESCE) e error_count aqui também —
+            // senão um timeout deixa first_error_at=null e o filtro de fetchDueConnectors
+            // (first_error_at.gte.ontem) exclui o conector PERMANENTEMENTE do retry.
             await supabase.from('channel_connectors').update({
               status: 'error',
               error_message: errMsg,
+              error_count: ((connectorData.error_count as number | null) ?? 0) + 1,
+              first_error_at: (connectorData.first_error_at as string | null) ?? new Date().toISOString(),
               next_sync_at: new Date(Date.now() + 10 * 60_000).toISOString(),
             }).eq('id', connectorData.id)
 
