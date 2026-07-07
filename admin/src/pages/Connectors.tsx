@@ -63,6 +63,8 @@ export default function Connectors() {
   const [apiLatency, setApiLatency] = useState<number | null>(null)
   const [apiErrorMsg, setApiErrorMsg] = useState<string | null>(null)
 
+  const [resettingAll, setResettingAll] = useState(false)
+
   // Filtros da tabela
   const [filterChannel, setFilterChannel] = useState('')
   const [filterBusiness, setFilterBusiness] = useState('')
@@ -205,6 +207,25 @@ export default function Connectors() {
       loadAll()
     } catch {
       toast('Não foi possível conectar à API.', 'error')
+    }
+  }
+
+  async function resetAllConnectors() {
+    if (!window.confirm(`Resetar todos os ${systemHealth.stuckRunning.length} conectores travados?\n\nEles voltarão para o estado "Erro" e serão reprocessados no próximo ciclo do scheduler (~2 min).`)) return
+    setResettingAll(true)
+    try {
+      const resp = await fetch(`${API_URL}/api/admin/connectors/reset-stuck`, { method: 'POST' })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        toast('Erro ao resetar: ' + (data.error ?? resp.statusText), 'error')
+        return
+      }
+      toast(`${data.reset ?? 0} conector(es) resetado(s). O scheduler vai reprocessar em ~2 min.`, 'success')
+      loadAll()
+    } catch {
+      toast('Não foi possível conectar à API.', 'error')
+    } finally {
+      setResettingAll(false)
     }
   }
 
@@ -375,7 +396,10 @@ export default function Connectors() {
       ? (now - mostRecentSync) / 3_600_000
       : null
 
-    return { stuckRunning, syncOverdue, overdueActive, hoursWithoutSync }
+    // 3. Conectores atualmente em estado de erro (falha de coleta)
+    const failedConnectors = connectors.filter(c => c.status === 'error')
+
+    return { stuckRunning, syncOverdue, overdueActive, hoursWithoutSync, failedConnectors }
   }, [connectors])
 
   return (
@@ -466,6 +490,20 @@ export default function Connectors() {
               Nenhum review novo está sendo coletado no momento.
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                onClick={resetAllConnectors}
+                disabled={resettingAll}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                  background: resettingAll ? 'rgba(239,68,68,0.07)' : 'rgba(239,68,68,0.22)',
+                  color: resettingAll ? 'rgba(252,165,165,0.5)' : '#fca5a5',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  cursor: resettingAll ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {resettingAll ? '⏳ Resetando...' : '🔄 Resetar conectores travados'}
+              </button>
               <a
                 href="https://status.railway.com"
                 target="_blank"
@@ -483,6 +521,53 @@ export default function Connectors() {
                 Travados há mais de {STUCK_RUNNING_THRESHOLD_MIN} min ·
                 Serão auto-resetados pelo watchdog quando o servidor voltar
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner: ERRO DE COLETA (conectores em estado de erro) ── */}
+      {systemHealth.failedConnectors.length > 0 && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.08)',
+          border: '1px solid rgba(239, 68, 68, 0.35)',
+          borderRadius: 10,
+          padding: '16px 20px',
+          marginBottom: 16,
+          display: 'flex',
+          gap: 14,
+          alignItems: 'flex-start',
+        }}>
+          <AlertTriangle size={22} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#f87171', marginBottom: 6 }}>
+              ⚠️ Erro de coleta — {systemHealth.failedConnectors.length} conector{systemHealth.failedConnectors.length > 1 ? 'es apresentam' : ' apresenta'} falhas críticas que impedem a busca de reviews
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 10 }}>
+              Alguns canais estão inoperantes. Caso a falha persista por mais de 48h (2 dias), os administradores serão alertados diretamente via WhatsApp. Verifique os conectores abaixo:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {systemHealth.failedConnectors.map(c => {
+                const businessName = businesses[c.business_id] || 'Empresa Desconhecida'
+                const firstErrorText = c.first_error_at ? `desde ${new Date(c.first_error_at).toLocaleString()}` : ''
+                const hoursAgo = c.first_error_at 
+                  ? Math.floor((Date.now() - new Date(c.first_error_at).getTime()) / 3_600_000)
+                  : 0
+                return (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'rgba(239,68,68,0.04)', borderRadius: 6, padding: '8px 12px', border: '1px solid rgba(239,68,68,0.1)' }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                      <span style={{ marginRight: 6 }}>{CHANNEL_ICONS[c.channel] || '📱'}</span>
+                      <strong>{CHANNEL_LABELS[c.channel] || c.channel}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 8 }}>
+                        {businessName} · com erro {firstErrorText} ({hoursAgo}h atrás)
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: 'monospace', maxWidth: '40%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.error_message || 'Erro desconhecido'}>
+                      {c.error_message || 'Erro desconhecido'}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>

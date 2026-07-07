@@ -59,6 +59,8 @@ export interface ChannelConnector {
   alert_6h_sent?: boolean
   /** Flag para alerta de 24h enviado */
   alert_24h_sent?: boolean
+  /** Flag para alerta de 48h enviado */
+  alert_48h_sent?: boolean
   /** Flag para alerta de 72h enviado */
   alert_72h_sent?: boolean
   /** Timestamp de criação do conector */

@@ -657,6 +657,7 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
           first_error_at: null,
           alert_6h_sent: false,
           alert_24h_sent: false,
+          alert_48h_sent: false,
           alert_72h_sent: false,
         })
         .eq('id', connector.id)

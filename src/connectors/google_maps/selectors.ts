@@ -11,6 +11,10 @@ export const GMAPS_SELECTORS = {
 
   // Botão da aba de avaliações
   REVIEWS_TAB: [
+    'button[aria-label*="avalia" i]',
+    'button[aria-label*="review" i]',
+    'div[role="tab"]:has-text("Avalia")',
+    'button[jsaction*="pane.rating"]',
     'button[aria-label*="avaliações"]',
     'button[aria-label*="Avaliações"]',
     '[role="tab"][aria-label*="Avaliações"]',

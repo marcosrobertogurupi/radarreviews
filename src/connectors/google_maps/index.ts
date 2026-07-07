@@ -62,46 +62,59 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   let apiOldFailed = false
   let apiNewFailed = false
 
-  // 1. Tentar Scraping via Playwright (Primário)
+  // 1. Tentar APIs do Google (Novo Primário: Rápido e Estável)
+  logger.info(`[${CHANNEL}] Buscando reviews via APIs do Google (Primário)...`)
+  const apiReviews: NormalizedReview[] = []
+
+  // Tentar API Nova (Relevant)
+  try {
+    const novas = await fetchFromApiNew(placeId)
+    apiReviews.push(...novas.map(r => normalizeNew(r, connector)))
+    logger.info(`[${CHANNEL}] API Nova retornou ${novas.length} reviews.`)
+  } catch (err) {
+    apiNewFailed = true
+    logger.warn(`[${CHANNEL}] API Nova falhou:`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // Tentar API Legada (Newest)
+  try {
+    const legadas = await fetchFromApiOld(placeId)
+    apiReviews.push(...legadas.map(r => normalizeOld(r, connector)))
+    logger.info(`[${CHANNEL}] API Legada retornou ${legadas.length} reviews.`)
+  } catch (err) {
+    apiOldFailed = true
+    logger.warn(`[${CHANNEL}] API Legada falhou:`, {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  reviews = apiReviews
+
+  // 2. Tentar Scraping via Playwright (Secundário/Complemento para histórico profundo)
   if (useScraper) {
     try {
       const rawScraped = await scrapeGoogleMapsReviews(placeId, config)
       if (rawScraped.length > 0) {
-        reviews = rawScraped.map(r => mapReviewToNormalized(r, connector))
-        logger.info(`[${CHANNEL}] Scraper retornou ${reviews.length} reviews.`)
+        const scrapedNormalized = rawScraped.map(r => mapReviewToNormalized(r, connector))
+        // Dedup: Adicionar apenas reviews obtidos pelo scraper que não foram pegos pela API
+        const existingIds = new Set(reviews.map(r => r.external_id))
+        let scrapedAdded = 0
+        for (const sr of scrapedNormalized) {
+          if (!existingIds.has(sr.external_id)) {
+            reviews.push(sr)
+            scrapedAdded++
+          }
+        }
+        logger.info(`[${CHANNEL}] Scraper retornou ${scrapedNormalized.length} reviews (${scrapedAdded} novos mesclados).`)
       }
     } catch (err) {
       scraperFailed = true
-      logger.warn(`[${CHANNEL}] Scraper falhou. Tentando fallback via API...`, {
+      logger.warn(`[${CHANNEL}] Scraper falhou:`, {
         error: err instanceof Error ? err.message : String(err),
       })
     }
-  }
-
-  // 2. Fallback via API (se scraper falhar ou não retornar nada)
-  if (reviews.length === 0) {
-    logger.info(`[${CHANNEL}] Iniciando fallback via APIs do Google.`)
-    const apiReviews: NormalizedReview[] = []
-
-    // Tentar API Legada (Newest)
-    try {
-      const legadas = await fetchFromApiOld(placeId)
-      apiReviews.push(...legadas.map(r => normalizeOld(r, connector)))
-    } catch (err) {
-      apiOldFailed = true
-      logger.warn(`[${CHANNEL}] Fallback API Legada falhou.`)
-    }
-
-    // Tentar API Nova (Relevant)
-    try {
-      const novas = await fetchFromApiNew(placeId)
-      apiReviews.push(...novas.map(r => normalizeNew(r, connector)))
-    } catch (err) {
-      apiNewFailed = true
-      logger.warn(`[${CHANNEL}] Fallback API Nova falhou.`)
-    }
-
-    reviews = apiReviews
   }
 
   if (reviews.length === 0) {

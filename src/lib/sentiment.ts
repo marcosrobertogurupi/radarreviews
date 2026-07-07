@@ -20,6 +20,7 @@ import 'dotenv/config'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createHash } from 'node:crypto'
 import { logger } from './logger.js'
+import { callGeminiWithRetry } from './gemini-rate-limiter.js'
 import type {
   NormalizedReview,
   SentimentResult,
@@ -297,11 +298,18 @@ export async function analyzeSentiment(
   const genAI = getGenAI()
   if (genAI) {
     try {
-      const result = await analyzeWithGemini(genAI, review, text)
+      const result = await callGeminiWithRetry(() => analyzeWithGemini(genAI, review, text))
+      logger.info(
+        '[sentiment] Análise via Gemini 3.5 Flash',
+        { model: AI_CONFIG.model, method: 'gemini', review_id: review.external_id }
+      )
       analysisCache.set(key, result)
       return result
     } catch (error) {
       logger.warn('[sentiment] Gemini indisponível, usando heurística', {
+        model: AI_CONFIG.model,
+        method: 'heuristic',
+        review_id: review.external_id,
         error: error instanceof Error ? error.message : String(error),
       })
     }

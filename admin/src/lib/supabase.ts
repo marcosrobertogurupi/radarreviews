@@ -103,6 +103,10 @@ export interface Connector {
   error_message?: string
   error_count?: number
   first_error_at?: string
+  alert_6h_sent?: boolean
+  alert_24h_sent?: boolean
+  alert_48h_sent?: boolean
+  alert_72h_sent?: boolean
   is_auth_error?: boolean
   is_healing?: boolean
   last_healing_at?: string

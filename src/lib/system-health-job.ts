@@ -40,6 +40,7 @@ export async function checkSystemHealth(): Promise<void> {
     // Converter a row do join para o formato ChannelConnector
     const business = (row as Record<string, unknown>)['monitored_businesses'] as {
       tenant_id: string
+      name: string
     }
     const connector = {
       ...row,
@@ -60,12 +61,46 @@ export async function checkSystemHealth(): Promise<void> {
       
       await supabase
         .from('channel_connectors')
-        .update({ alert_72h_sent: true, alert_24h_sent: true, alert_6h_sent: true })
+        .update({ alert_72h_sent: true, alert_48h_sent: true, alert_24h_sent: true, alert_6h_sent: true })
         .eq('id', connector.id)
 
       alertsSent++
     }
-    else if (diffHours >= 24 && diffHours < 72 && !connector.alert_24h_sent) {
+    else if (diffHours >= 48 && diffHours < 72 && !connector.alert_48h_sent) {
+      await systemNotifications.notifyError(
+        connector, 
+        connector.error_message || 'Falha contínua desconhecida', 
+        false, 
+        48
+      )
+
+      // Alerta via WhatsApp para o Admin se o erro persistir por 48h (2 dias)
+      const adminPhone = process.env['ADMIN_PHONE']
+      const uazapiToken = process.env['UAZAPI_TOKEN']
+      if (adminPhone && uazapiToken) {
+        try {
+          const { sendWhatsAppMessage } = await import('../services/whatsapp/uazapi.js')
+          const baseUrl = process.env['UAZAPI_BASE_URL'] ?? 'https://netservice.uazapi.com'
+          const bizName = business?.name || 'Desconhecido'
+          const msgText = `🚨 *ALERTA CRÍTICO DE INFRAESTRUTURA (48H SEM COLETA)* 🚨\n\nO conector *${connector.channel.toUpperCase()}* da empresa *${bizName}* está apresentando falha contínua há mais de *48 horas*.\n\n*Mensagem de Erro:* ${connector.error_message || 'Erro desconhecido.'}\n\nFavor verificar o conector no painel admin.`
+          
+          await sendWhatsAppMessage({ baseUrl, token: uazapiToken, number: adminPhone, text: msgText })
+          logger.info(`[system-health] Notificação de WhatsApp 48h enviada para o administrador (${adminPhone})`)
+        } catch (wsErr) {
+          logger.error('[system-health] Erro ao enviar WhatsApp de 48h', { error: wsErr })
+        }
+      } else {
+        logger.warn('[system-health] ADMIN_PHONE ou UAZAPI_TOKEN não definidos no .env — pulando envio de WhatsApp 48h.')
+      }
+
+      await supabase
+        .from('channel_connectors')
+        .update({ alert_48h_sent: true, alert_24h_sent: true, alert_6h_sent: true })
+        .eq('id', connector.id)
+
+      alertsSent++
+    }
+    else if (diffHours >= 24 && diffHours < 48 && !connector.alert_24h_sent) {
       await systemNotifications.notifyError(
         connector, 
         connector.error_message || 'Falha contínua desconhecida', 

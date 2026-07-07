@@ -13,6 +13,7 @@ import { supabaseAdmin } from '../lib/supabase.js'
 import { logger } from '../lib/logger.js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { AI_CONFIG } from '../lib/ai-config.js'
+import { callGeminiWithRetry } from '../lib/gemini-rate-limiter.js'
 
 export interface PrescriptiveInsight {
   business_id: string
@@ -245,7 +246,7 @@ export async function runPrescriptiveAnalysisJob(): Promise<void> {
       const context = await buildTenantContext(tenant.id)
       if (!context) continue
 
-      const insights = await generateInsights(context, tenant.id)
+      const insights = await callGeminiWithRetry(() => generateInsights(context, tenant.id))
       if (insights.length > 0) {
         await storeInsightsAsAlertEvents(tenant.id, insights)
         totalInsights += insights.length

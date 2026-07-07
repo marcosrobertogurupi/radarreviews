@@ -88,62 +88,29 @@ type ReclameAquiComplaint = z.infer<typeof ReclameAquiComplaintSchema>
 // Função principal
 // -----------------------------------------------------------------------------
 
-export async function run(connector: ChannelConnector): Promise<JobResult> {
+async function runPlaywrightScraper(
+  connector: ChannelConnector,
+  slug: string,
+  sanitizedSlug: string,
+  timeoutMs: number,
+  maxPages: number,
+  scrapeStartedAt: number,
+  MAX_SCRAPE_MS: number
+): Promise<JobResult> {
   const result: JobResult = {
     reviews_fetched: 0,
     reviews_new: 0,
     reviews_updated: 0,
   }
 
-  if (!connector.external_id) {
-    result.error = `Conector ${connector.id} não tem external_id configurado (slug da empresa obrigatório).`
-    return result
-  }
-
-  const slug = connector.external_id
-  const timeoutMs = (connector.config['timeout_ms'] as number) ?? DEFAULT_TIMEOUT_MS
-  const maxPages = (connector.config['max_pages'] as number) ?? DEFAULT_MAX_PAGES
-
-  // --- ESTRATÉGIA PRINCIPAL: APIFY ---
-  try {
-    if (process.env['APIFY_TOKEN']) {
-      logger.info(`[${CHANNEL}] Tentando coleta via Apify (Principal)`, { connector_id: connector.id, slug })
-      const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
-      const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx)
-      
-      if (apifyComplaints.length > 0) {
-        const normalized = apifyComplaints.map(c => normalize(c, connector))
-        const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
-        
-        return {
-          reviews_fetched: apifyComplaints.length,
-          reviews_new: ingest.reviews_new,
-          reviews_updated: ingest.reviews_updated
-        }
-      }
-    }
-  } catch (apifyError) {
-    logger.warn(`[${CHANNEL}] Falha na Apify, tentando fallback local via Playwright...`, { 
-      error: apifyError instanceof Error ? apifyError.message : String(apifyError) 
-    })
-  }
-
-  // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): PLAYWRIGHT ---
-  logger.info(`[${CHANNEL}] Iniciando scraping local (Fallback)`, {
+  logger.info(`[${CHANNEL}] Iniciando scraping local (Principal)`, {
     connector_id: connector.id,
     slug,
     max_pages: maxPages,
   })
 
-  // Deadline interno para não segurar o slot do semáforo Playwright até o timeout
-  // externo de 15min do scheduler (throughput). Deixa margem antes desse limite.
-  const scrapeStartedAt = Date.now()
-  const MAX_SCRAPE_MS = 8 * 60_000
-
   let browser = null
   try {
-    // Tenta iniciar o Chromium — se o executável não existir, retorna erro fatal imediatamente
-    // para evitar que o conector fique em loop e apareça como "falha crítica" no painel
     try {
       browser = await chromium.launch({
         headless: true,
@@ -159,8 +126,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       const msg = launchErr instanceof Error ? launchErr.message : String(launchErr)
       const isMissingBinary = msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')
       if (isMissingBinary) {
-        // Erro fatal de infraestrutura: Playwright desatualizado no container
-        // O redeploy da imagem Docker resolve — não há lógica de retry aqui
         result.error = `Playwright binary ausente (container desatualizado). Redeploy necessário. Detalhes: ${msg}`
         result.error_type = 'fatal'
         logger.error(`[${CHANNEL}] Playwright binary ausente — redeploy do container necessário`, {
@@ -170,7 +135,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         })
         return result
       }
-      // Outros erros de launch são relançados para o catch externo
       throw launchErr
     }
 
@@ -181,7 +145,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       viewport: { width: 1366, height: 768 },
     })
 
-    // Desabilitar flag de webdriver para reduzir detecção
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
     })
@@ -191,13 +154,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     page.setDefaultNavigationTimeout(timeoutMs * 2)
 
     const allComplaints: ReclameAquiComplaint[] = []
-
-    // Limpeza do slug: garantir minúsculas e hífens no lugar de espaços
-    const sanitizedSlug = slug.trim().toLowerCase().replace(/\s+/g, '-')
-
-    // URLs a tentar — começamos pela lista-reclamacoes, com fallback para a página principal
-    // Para empresas com poucas reclamações (não verificadas), a lista-reclamacoes pode ser
-    // vazia ou redirecionar para a página principal da empresa.
     const urlsToTry = [
       `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=1`,
       `${BASE_URL}/empresa/${sanitizedSlug}/`,
@@ -205,7 +161,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
     for (let urlIdx = 0; urlIdx < urlsToTry.length; urlIdx++) {
       const isMainPage = urlIdx > 0
-      const maxPagesThisSource = isMainPage ? 1 : maxPages   // Página principal = 1 página apenas
+      const maxPagesThisSource = isMainPage ? 1 : maxPages
 
       for (let pageNum = 1; pageNum <= maxPagesThisSource; pageNum++) {
         if (Date.now() - scrapeStartedAt > MAX_SCRAPE_MS) {
@@ -221,8 +177,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         logger.info(`[${CHANNEL}] Navegando`, { connector_id: connector.id, url })
 
         try {
-          // Tenta com domcontentloaded primeiro; se ERR_ABORTED (Cloudflare/redirect),
-          // aguarda um intervalo e tenta novamente com 'load' que é mais tolerante a redirects
           let gotoError: Error | null = null
           try {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs * 2 })
@@ -242,10 +196,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             }
           }
 
-          // Se ainda está em erro após retry, decidir se é fatal ou pular URL
           if (gotoError) {
             const errMsg = gotoError.message
-            // Timeout ou bloqueio permanente = pular esta URL; se for a última, lança para o catch externo
             if (pageNum === 1 && urlIdx === urlsToTry.length - 1) throw gotoError
             logger.warn(`[${CHANNEL}] Pulando URL após falha persistente`, { url, error: errMsg })
             break
@@ -258,20 +210,17 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             logger.info(`[${CHANNEL}] Redirecionado para`, { finalUrl })
           }
 
-          // Estratégia 1: Extrair do __NEXT_DATA__
           const nextDataComplaints = await extractFromNextData(page, sanitizedSlug)
 
           if (nextDataComplaints.length > 0) {
             logger.info(`[${CHANNEL}] __NEXT_DATA__ extraiu ${nextDataComplaints.length}`, { url })
             allComplaints.push(...nextDataComplaints)
             if (nextDataComplaints.length < 10) {
-              // Última página desta fonte — interrompe paginação mas continua para próxima fonte se não houver nada
               break
             }
             continue
           }
 
-          // Estratégia 2: DOM scraping
           const domComplaints = await extractFromDom(page, sanitizedSlug)
 
           if (domComplaints.length > 0) {
@@ -282,7 +231,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           }
 
           logger.info(`[${CHANNEL}] Nenhuma reclamação na URL`, { url })
-          break   // Vai tentar próxima URL (página principal)
+          break
 
         } catch (pageError) {
           logger.warn(`[${CHANNEL}] Erro ao processar`, {
@@ -293,7 +242,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         }
       }
 
-      // Se já temos reclamações, não precisa tentar a próxima URL
       if (allComplaints.length > 0) break
     }
 
@@ -304,10 +252,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       return result
     }
 
-    // Buscar corpo completo das reclamações (sempre buscar para garantir que não venha cortado)
     const fetchBody = (connector.config['fetch_body'] as boolean) ?? true
     if (fetchBody) {
-      // Filtramos apenas as que têm URL válida
       const toFetch = allComplaints.filter(c => c.url && c.url.includes('/reclamacao/'))
       const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 30
       const limitedToFetch = toFetch.slice(0, MAX_BODY_FETCH)
@@ -323,10 +269,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           }
           try {
             await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-            await page.waitForTimeout(2500) // Pequena pausa para garantir carregamento
+            await page.waitForTimeout(2500)
             
             const pageData = await page.evaluate(() => {
-              // 1. Tentar via __NEXT_DATA__ do detalhe (mais garantido)
               const nextEl = document.getElementById('__NEXT_DATA__')
               if (nextEl) {
                 try {
@@ -339,10 +284,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
                       date: String(c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.createdDate ?? ''),
                     }
                   }
-                } catch { /* continua */ }
+                } catch { }
               }
               
-              // 2. Fallback via seletores DOM (seletores mais abrangentes)
               const selectors = [
                 '[class*="complaint-description"]',
                 '[class*="Description"]',
@@ -380,7 +324,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       }
     }
 
-    // Normalizar e ingerir
     const normalized = allComplaints.map(c => normalize(c, connector))
     const ingest = await ingestReviews(
       normalized,
@@ -401,22 +344,107 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
     result.error = errMsg
-    // ERR_ABORTED persistente e bloqueios de rede são transientes (Cloudflare/rate limit)
     const isTransient = errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR') ||
       errMsg.includes('timeout') || errMsg.includes('Timeout')
     result.error_type = isTransient ? 'transient' : 'fatal'
-    logger.error(`[${CHANNEL}] Erro crítico no conector ${connector.id}`, {
+    logger.error(`[${CHANNEL}] Erro crítico no conector Playwright ${connector.id}`, {
       error,
       connector_id: connector.id,
       error_type: result.error_type,
     })
+    throw error
   } finally {
-    // Sempre fecha o browser para liberar recursos (com timeout + kill forçado
-    // para não travar o finally e vazar o slot do semáforo Playwright)
     await closeBrowserSafely(browser)
   }
 
   return result
+}
+
+async function runApifyCollector(
+  actorId: string | undefined,
+  connector: ChannelConnector,
+  slug: string
+): Promise<JobResult> {
+  logger.info(`[${CHANNEL}] Tentando coleta via Apify (Fallback/Secundário)`, { connector_id: connector.id, slug, actorId })
+  const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
+  const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx, actorId)
+  
+  if (apifyComplaints.length > 0) {
+    const normalized = apifyComplaints.map(c => normalize(c, connector))
+    const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
+    
+    return {
+      reviews_fetched: apifyComplaints.length,
+      reviews_new: ingest.reviews_new,
+      reviews_updated: ingest.reviews_updated
+    }
+  }
+
+  return {
+    reviews_fetched: 0,
+    reviews_new: 0,
+    reviews_updated: 0
+  }
+}
+
+export async function run(connector: ChannelConnector): Promise<JobResult> {
+  const result: JobResult = {
+    reviews_fetched: 0,
+    reviews_new: 0,
+    reviews_updated: 0,
+  }
+
+  if (!connector.external_id) {
+    result.error = `Conector ${connector.id} não tem external_id configurado (slug da empresa obrigatório).`
+    return result
+  }
+
+  const slug = connector.external_id
+  const timeoutMs = (connector.config['timeout_ms'] as number) ?? DEFAULT_TIMEOUT_MS
+  const maxPages = (connector.config['max_pages'] as number) ?? DEFAULT_MAX_PAGES
+  const sanitizedSlug = slug.trim().toLowerCase().replace(/\s+/g, '-')
+
+  const scrapeStartedAt = Date.now()
+  const MAX_SCRAPE_MS = 8 * 60_000
+
+  // 1. Tentar Playwright (Principal)
+  try {
+    return await runPlaywrightScraper(
+      connector,
+      slug,
+      sanitizedSlug,
+      timeoutMs,
+      maxPages,
+      scrapeStartedAt,
+      MAX_SCRAPE_MS
+    )
+  } catch (playwrightErr: any) {
+    logger.warn(
+      `[${CHANNEL}] Playwright falhou. Tentando Apify como fallback...`,
+      { error: playwrightErr.message }
+    )
+
+    const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
+    const token = process.env['APIFY_TOKEN']
+    if (!token) {
+      logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback`)
+      result.error = playwrightErr.message
+      result.error_type = playwrightErr.error_type || 'fatal'
+      return result
+    }
+
+    try {
+      return await runApifyCollector(actorId, connector, slug)
+    } catch (apifyErr: any) {
+      logger.error(
+        `[${CHANNEL}] Apify também falhou`,
+        { error: apifyErr.message }
+      )
+      result.error = `Playwright: ${playwrightErr.message}. Apify: ${apifyErr.message}`
+      result.error_type = 'fatal'
+      return result
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------

@@ -32,6 +32,10 @@ vi.mock('../../src/lib/supabase.js', () => ({
   },
 }))
 
+vi.mock('../../src/connectors/google_maps/scraper.js', () => ({
+  scrapeGoogleMapsReviews: vi.fn().mockRejectedValue(new Error('Scraper failed')),
+}))
+
 // Mock do axios
 vi.mock('axios', async importOriginal => {
   const actual = await importOriginal<typeof import('axios')>()

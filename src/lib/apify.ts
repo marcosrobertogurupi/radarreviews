@@ -118,13 +118,15 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 /**
  * Coleta reclamações do Reclame Aqui via Apify
  */
-export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
+export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext, actorId?: string): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
+  const actor = actorId || 'apify~reclame-aqui-scraper'
+
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~reclame-aqui-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       { companySlug, maxItems: limit, scrapeDetailedComplaints: true },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )

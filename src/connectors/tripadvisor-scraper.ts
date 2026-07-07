@@ -152,6 +152,8 @@ async function sortByMostRecent(page: import('playwright-core').Page): Promise<v
   try {
     // Tenta clicar no botão de ordenação atual (padrão: "Mais relevantes")
     const sortBtnSelectors = [
+      'button[data-automation="sortDropdown"]',
+      'button[aria-haspopup="listbox"]',
       'button[aria-label*="Classificar"]',
       'button[aria-label*="Sort"]',
       'span:has-text("Mais relevantes")',
@@ -174,7 +176,10 @@ async function sortByMostRecent(page: import('playwright-core').Page): Promise<v
     }
 
     if (!opened) {
-      logger.warn(`[${CHANNEL}:scraper] Botão de ordenação não encontrado`)
+      logger.warn(`[${CHANNEL}:scraper] Botão de ordenação não encontrado, tentando fallback via URL`)
+      const url = new URL(page.url())
+      url.searchParams.set('sortType', 'RECENCY')
+      await page.goto(url.toString())
       return
     }
 
@@ -201,7 +206,10 @@ async function sortByMostRecent(page: import('playwright-core').Page): Promise<v
       } catch { /* tenta próximo */ }
     }
 
-    logger.warn(`[${CHANNEL}:scraper] Opção "Mais recentes" não encontrada`)
+    logger.warn(`[${CHANNEL}:scraper] Opção "Mais recentes" não encontrada, tentando fallback via URL`)
+    const url = new URL(page.url())
+    url.searchParams.set('sortType', 'RECENCY')
+    await page.goto(url.toString())
   } catch (err) {
     logger.warn(`[${CHANNEL}:scraper] Erro ao ordenar: ${err instanceof Error ? err.message : String(err)}`)
   }

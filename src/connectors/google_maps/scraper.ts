@@ -78,7 +78,9 @@ export async function scrapeGoogleMapsReviews(
     const reviewsTabSelector = await findElement(page, GMAPS_SELECTORS.REVIEWS_TAB)
     mark('after_find_reviews_tab')
     if (!reviewsTabSelector) {
-      throw new Error('Aba de avaliações não encontrada na página do local.')
+      const screenshotPath = `gmaps-fail-${placeId}-${Date.now()}.png`
+      await page.screenshot({ path: screenshotPath }).catch(() => null)
+      throw new Error(`Aba de avaliações não encontrada na página do local. Screenshot: ${screenshotPath}`)
     }
     await humanClick(page, reviewsTabSelector)
     mark('after_click_reviews_tab')

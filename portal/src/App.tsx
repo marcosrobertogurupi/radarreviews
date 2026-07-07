@@ -138,14 +138,21 @@ export default function App() {
         setUserRole(userProfile.perfil || '')
 
         if (userProfile.perfil === 'parceiro') {
-          // Buscar tenants vinculados a este parceiro
+          // Buscar dados do parceiro — incluindo status para verificar suspensão
           const { data: partner } = await supabase
             .from('partners')
-            .select('id')
+            .select('id, status')
             .eq('user_id', userProfile.id)
             .single()
 
           if (partner) {
+            // Bloqueia acesso se o parceiro não estiver ativo (suspenso ou inativo)
+            if (partner.status !== 'active') {
+              setHasTenant(false)
+              setUserRole('parceiro_suspenso')  // Sinaliza motivo do bloqueio para a UI
+              return
+            }
+
             const { data: tList } = await supabase
               .from('tenants')
               .select('id, name')
@@ -340,6 +347,25 @@ export default function App() {
           Acessando seu painel. Aguarde...
         </div>
         <div className="premium-loading-subtext">📡 Carregando sua reputação inteligente...</div>
+      </div>
+    )
+  }
+
+  // Parceiro com conta suspensa ou inativa — bloqueia acesso total
+  if (!hasTenant && userRole === 'parceiro_suspenso') {
+    return (
+      <div style={{ height: '100vh', background: '#090a0f', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#fff', gap: 16, fontFamily: 'Inter, sans-serif' }}>
+        <div style={{ fontSize: 56 }}>🔒</div>
+        <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>Conta de Parceiro Suspensa</h2>
+        <p style={{ color: '#94a3b8', textAlign: 'center', maxWidth: 400, lineHeight: 1.6 }}>
+          Sua conta de parceiro está suspensa ou inativa. Entre em contato com o suporte da Reputei para regularizar o acesso.
+        </p>
+        <button
+          style={{ marginTop: 8, padding: '12px 28px', background: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+          onClick={() => supabase.auth.signOut()}
+        >
+          Sair
+        </button>
       </div>
     )
   }

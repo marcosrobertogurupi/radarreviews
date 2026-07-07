@@ -50,6 +50,12 @@ e exibe análises consolidadas para empresas clientes.
 7. **Erros nunca são silenciados.** Todo catch deve logar o erro em `sync_jobs`
    (campo `error_detail`) e atualizar o status do conector para `'error'`.
 
+8. **Escopo de projetos — Supabase e Railway.**
+   - **Supabase:** todas as alterações (migrations, funções, config) devem ser feitas
+     exclusivamente no projeto **radarviews_producao** (ref: `lkwahbipteiqqzkmfrac`, região `sa-east-1`).
+   - **Railway:** todos os deploys e configurações devem ser feitos exclusivamente
+     no projeto **reputei-api**. Nunca alterar outros projetos da conta.
+
 ---
 
 ## Estrutura de pastas do projeto

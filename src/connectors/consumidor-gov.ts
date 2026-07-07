@@ -73,7 +73,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     let csvUrl = (connector.config['resource_url'] as string)
     if (!csvUrl) {
       let discoverTimeoutHandle: ReturnType<typeof setTimeout> | undefined
-      const discoverPromise = discoverLatestUrl(year, month)
+      const discoverPromise = discoverLatestUrl(connector.id, year, month)
       const discoverTimeoutPromise = new Promise<never>((_, reject) => {
         discoverTimeoutHandle = setTimeout(() => reject(new Error('Timeout de 30 segundos ao descobrir a URL do CSV')), 30000)
       })
@@ -117,21 +117,38 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
           relax_column_count: true
         }))
 
-      let lineCount = 0
-      for await (const row of parser) {
-        lineCount++
-        if (lineCount > 100000) {
-          logger.warn(`[${CHANNEL}] Limite de 100.000 linhas atingido. Interrompendo parsing do CSV.`)
-          break
-        }
+      const lastSync = connector.last_sync_at ? new Date(connector.last_sync_at) : new Date(0)
+      const MAX_ROWS = 100_000
+      let totalRows = 0
+      let newRowsCount = 0
 
+      for await (const row of parser) {
+        totalRows++
         const rowCnpj = String(row[COLS.CNPJ] || '').replace(/\D/g, '')
 
         if (rowCnpj === targetCnpj) {
+          const dataAbertura = row[COLS.DATA_ABERTURA]
+          if (!dataAbertura) continue
+          const [d, m, y] = dataAbertura.split('/')
+          const publishedAt = new Date(`${y}-${m}-${d}T12:00:00Z`)
+
+          if (publishedAt <= lastSync) continue // já processado em execução anterior
+
           result.reviews_fetched++
           foundReviews.push(normalize(row, connector, targetCnpj))
+          newRowsCount++
+
+          if (foundReviews.length >= MAX_ROWS) {
+            logger.warn(
+              `[${CHANNEL}] Limite de 100.000 linhas novas atingido mesmo após filtro incremental`,
+              { totalRowsNoCsv: totalRows, newRowsColetadas: newRowsCount }
+            )
+            break
+          }
         }
       }
+
+      logger.info(`[${CHANNEL}] Parsing de CSV concluído`, { totalRowsNoCsv: totalRows, newRows: newRowsCount })
 
       if (foundReviews.length > 0) {
         const ingest = await ingestReviews(
@@ -248,7 +265,7 @@ function normalize(row: any[], connector: ChannelConnector, cnpj: string): Norma
  * Tenta descobrir a URL final do recurso via API do Portal de Dados Abertos (CKAN).
  * Busca o recurso que contém "Base Completa" e o padrão "MM-YYYY" no nome.
  */
-async function discoverLatestUrl(year: number, month: number): Promise<string> {
+async function discoverLatestUrl(connectorId: string, year: number, month: number): Promise<string> {
   const mm = String(month).padStart(2, '0')
   const term = `${mm}-${year}` 
   
@@ -282,9 +299,10 @@ async function discoverLatestUrl(year: number, month: number): Promise<string> {
       return resource.url
     }
 
-    logger.warn(`[${CHANNEL}] Recurso não encontrado para ${term} na API, tentando fallback estrutural`)
+    throw new Error(`Recurso não encontrado para ${term} na API`)
   } catch (err) {
-    logger.warn(`[${CHANNEL}] Falha ao consultar CKAN API, usando fallback estrutural`, { 
+    await logSyncJobError(connectorId, 'consumidor_gov_ckan', err, { severity: 'info' })
+    logger.info(`[${CHANNEL}] Falha ao consultar CKAN API, usando fallback estrutural`, { 
       error: err instanceof Error ? err.message : String(err) 
     })
   }
@@ -294,3 +312,43 @@ async function discoverLatestUrl(year: number, month: number): Promise<string> {
   // Em produção, o usuário pode sobrescrever via connector.config['resource_url'].
   return `https://dados.mj.gov.br/dataset/0182f1bf-e73d-42b1-ae8c-fa94d9ce9451/resource/786a616a-b4fc-4cc0-a09b-098aa06883ba/download/basecompleta${year}-${mm}.csv`
 }
+
+/**
+ * Registra avisos/erros parciais no sync_job mais recente do conector sem causar falha do job
+ */
+async function logSyncJobError(
+  connectorId: string,
+  errorType: string,
+  error: any,
+  options: { severity: string } = { severity: 'warn' }
+) {
+  try {
+    const { data: job } = await supabase
+      .from('sync_jobs')
+      .select('id, error_detail')
+      .eq('connector_id', connectorId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (job) {
+      const currentDetail = (job.error_detail as Record<string, any>) || {}
+      await supabase
+        .from('sync_jobs')
+        .update({
+          error_detail: {
+            ...currentDetail,
+            [errorType]: {
+              message: error instanceof Error ? error.message : String(error),
+              severity: options.severity,
+              timestamp: new Date().toISOString(),
+            }
+          }
+        })
+        .eq('id', job.id)
+    }
+  } catch (err) {
+    logger.warn(`[${CHANNEL}] Falha ao registrar erro ${errorType} no sync_job`, { error: err })
+  }
+}
+

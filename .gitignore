@@ -32,3 +32,9 @@ tsconfig.tsbuildinfo
 testsprite_tests\tmp\config.json
 
 .vercel
+
+# Local scratch and temporary files
+scratch/
+*.xml
+antigravity_prompts/
+CLAUDE.md

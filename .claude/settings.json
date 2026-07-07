@@ -25,7 +25,8 @@
       "Bash(ls vercel.json)",
       "Bash(ls portal/vercel.json)",
       "Bash(ls admin/vercel.json)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(node scratch/reset_running_now.mjs)"
     ]
   }
 }
