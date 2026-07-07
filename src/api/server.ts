@@ -1119,6 +1119,24 @@ async function handleUpdateConnectorConfig(req: http.IncomingMessage, res: http.
   }
 }
 
+async function handleResetStuckConnectors(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res)
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  try {
+    const { data: count, error } = await supabaseAdmin.rpc('reset_stuck_connectors', { p_timeout_min: 0 })
+    if (error) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, reset: count ?? 0 }))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+  }
+}
+
 async function handleForceSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res)
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
@@ -2079,6 +2097,13 @@ const server = http.createServer(async (req, res) => {
 
   if (url.startsWith('/api/admin/connector')) {
     const method = req.method
+    if (method === 'POST' && url === '/api/admin/connectors/reset-stuck') {
+      handleResetStuckConnectors(req, res).catch(err => {
+        console.error('[reset-stuck] Erro não tratado:', err)
+        if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+      })
+      return
+    }
     if (method === 'POST' && url === '/api/admin/connector') {
       handleCreateConnector(req, res).catch(err => {
         console.error('[create-connector] Erro não tratado:', err)
@@ -2465,15 +2490,18 @@ async function checkConnectorsHealth(): Promise<void> {
       .single()
 
     for (const conn of connectors) {
-      // Evitar notificar repetidamente o mesmo erro se já existe uma notificação pendente
+      // Evitar notificar repetidamente o mesmo erro se já existe uma notificação pendente.
+      // IMPORTANTE: usar .limit(1) e checar o array — NÃO usar .single(), pois .single()
+      // retorna erro (data=null) quando há 0 OU >1 linhas. Com >1 pendentes, o guard
+      // falhava, reenviando alerta + inserindo nova pendente a cada ciclo (runaway de spam).
       const { data: existing } = await supabaseAdmin
         .from('system_notifications')
         .select('id')
         .eq('connector_id', conn.id)
         .eq('status', 'pendente')
-        .single()
+        .limit(1)
 
-      if (existing) continue
+      if (existing && existing.length > 0) continue
 
       // Notificar usando o serviço de notificações do sistema
       const { data: biz } = await supabaseAdmin

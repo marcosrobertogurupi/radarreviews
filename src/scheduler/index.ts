@@ -436,12 +436,36 @@ export async function runOnce(): Promise<void> {
         await Promise.race([runWithSemaphore(), timeoutPromise])
           .catch(async (err) => {
             const errMsg = err instanceof Error ? err.message : String(err)
+
+            // Timeout de FILA do semáforo Playwright NÃO é uma falha do canal —
+            // é uma saturação interna de capacidade (só 3 scrapers Playwright
+            // simultâneos). Tratar como transiente: devolver o conector para
+            // 'active' e reagendar para daqui a pouco, SEM incrementar error_count
+            // nem setar first_error_at. Assim não vira status='error' e não é
+            // escalado pelos jobs de saúde (4h/6h/24h) — evita o storm de alertas.
+            if (errMsg.includes('Semaphore acquire timeout')) {
+              logger.warn('[scheduler] Semáforo Playwright saturado — reenfileirando conector (sem alerta)', {
+                connector_id: connectorData.id,
+                channel: connectorData.channel,
+              })
+              await supabase.from('channel_connectors').update({
+                status: 'active',
+                next_sync_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+              }).eq('id', connectorData.id)
+              await supabase.from('sync_jobs').update({
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error_detail: { message: errMsg, transient: true },
+              }).eq('id', job.id)
+              return
+            }
+
             logger.error('[scheduler] Erro ou timeout ao executar conector', {
               connector_id: connectorData.id,
               channel: connectorData.channel,
               error: errMsg,
             })
-            
+
             // Atualiza status do conector para error.
             // IMPORTANTE: setar first_error_at (COALESCE) e error_count aqui também —
             // senão um timeout deixa first_error_at=null e o filtro de fetchDueConnectors
