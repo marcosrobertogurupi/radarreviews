@@ -28,6 +28,7 @@ import { z } from 'zod'
 import { ingestReviews } from '../lib/ingest.js'
 import { fetchReclameAquiComplaints } from '../lib/apify.js'
 import { logger } from '../lib/logger.js'
+import { closeBrowserSafely } from '../lib/browser.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
@@ -134,6 +135,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     max_pages: maxPages,
   })
 
+  // Deadline interno para não segurar o slot do semáforo Playwright até o timeout
+  // externo de 15min do scheduler (throughput). Deixa margem antes desse limite.
+  const scrapeStartedAt = Date.now()
+  const MAX_SCRAPE_MS = 8 * 60_000
+
   let browser = null
   try {
     // Tenta iniciar o Chromium — se o executável não existir, retorna erro fatal imediatamente
@@ -202,6 +208,12 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       const maxPagesThisSource = isMainPage ? 1 : maxPages   // Página principal = 1 página apenas
 
       for (let pageNum = 1; pageNum <= maxPagesThisSource; pageNum++) {
+        if (Date.now() - scrapeStartedAt > MAX_SCRAPE_MS) {
+          logger.warn(`[${CHANNEL}] Deadline interno (8min) atingido na paginação — seguindo com o que já foi coletado`, {
+            connector_id: connector.id, coletadas: allComplaints.length,
+          })
+          break
+        }
         const url = isMainPage
           ? urlsToTry[urlIdx]!
           : `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=${pageNum}`
@@ -303,6 +315,12 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       if (limitedToFetch.length > 0) {
         logger.info(`[${CHANNEL}] Buscando corpo detalhado de ${limitedToFetch.length} reclamações para evitar texto cortado`)
         for (const complaint of limitedToFetch) {
+          if (Date.now() - scrapeStartedAt > MAX_SCRAPE_MS) {
+            logger.warn(`[${CHANNEL}] Deadline interno (8min) atingido na busca de corpo — seguindo para ingestão`, {
+              connector_id: connector.id,
+            })
+            break
+          }
           try {
             await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
             await page.waitForTimeout(2500) // Pequena pausa para garantir carregamento
@@ -393,10 +411,9 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       error_type: result.error_type,
     })
   } finally {
-    // Sempre fecha o browser para liberar recursos
-    if (browser) {
-      await browser.close()
-    }
+    // Sempre fecha o browser para liberar recursos (com timeout + kill forçado
+    // para não travar o finally e vazar o slot do semáforo Playwright)
+    await closeBrowserSafely(browser)
   }
 
   return result

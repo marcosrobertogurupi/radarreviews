@@ -9,6 +9,7 @@
 
 import { chromium } from 'playwright-core'
 import { logger } from '../lib/logger.js'
+import { closeBrowserSafely } from '../lib/browser.js'
 
 const CHANNEL = 'tripadvisor'
 const REVIEWS_PER_PAGE = 10
@@ -43,6 +44,9 @@ export async function scrapeTripAdvisorReviews(
   const reviews: RawTripAdvisorScrapedReview[] = []
   const seenIds = new Set<string>()
   const cutoffDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000)
+  // Deadline interno para não segurar o slot do semáforo até o timeout externo de 15min
+  const startedAt = Date.now()
+  const MAX_SCRAPE_MS = 8 * 60_000
 
   logger.info(`[${CHANNEL}:scraper] Iniciando`, { listingUrl, maxReviews, sinceDays })
 
@@ -71,6 +75,10 @@ export async function scrapeTripAdvisorReviews(
       pageNum < MAX_PAGES && !reachedDateLimit && reviews.length < maxReviews;
       pageNum++
     ) {
+      if (Date.now() - startedAt > MAX_SCRAPE_MS) {
+        logger.warn(`[${CHANNEL}:scraper] Deadline interno (8min) atingido — retornando ${reviews.length} reviews`)
+        break
+      }
       const offset = pageNum * REVIEWS_PER_PAGE
       const pageUrl = buildPageUrl(listingUrl, offset)
 
@@ -114,7 +122,7 @@ export async function scrapeTripAdvisorReviews(
     })
     throw err
   } finally {
-    await browser.close()
+    await closeBrowserSafely(browser)
   }
 
   logger.info(`[${CHANNEL}:scraper] Finalizado — ${reviews.length} reviews`)

@@ -2,6 +2,7 @@ import { chromium } from 'playwright-core'
 import { GMAPS_SELECTORS } from './selectors.js'
 import { getDaysDiff } from './mapper.js'
 import { logger } from '../../lib/logger.js'
+import { closeBrowserSafely } from '../../lib/browser.js'
 import type { GoogleMapsConfig, RawGoogleReview } from './types.js'
 
 const LAUNCH_ARGS = [
@@ -170,7 +171,7 @@ export async function scrapeGoogleMapsReviews(
     logger.error('[GoogleMaps] Erro durante o scraping:', { error: error instanceof Error ? error.message : String(error) })
     throw error
   } finally {
-    await browser.close()
+    await closeBrowserSafely(browser)
   }
 
   return reviews
