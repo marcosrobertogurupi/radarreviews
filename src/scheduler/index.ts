@@ -48,23 +48,24 @@ import { runPrescriptiveAnalysisJob } from '../services/prescriptiveAnalysis.js'
 import { runBenchmarkSnapshotJob } from '../lib/benchmark-snapshot-job.js'
 
 class SimpleSemaphore {
-  private activeCount = 0
-  private queue: Array<{ resolve: () => void }> = []
+  private activeJobs = new Set<string>()
+  private queue: Array<{ jobId: string; resolve: () => void }> = []
 
   constructor(private maxConcurrency: number) {}
 
-  async acquire(timeoutMs?: number): Promise<void> {
-    if (this.activeCount < this.maxConcurrency) {
-      this.activeCount++
+  async acquire(jobId: string, timeoutMs?: number): Promise<void> {
+    if (this.activeJobs.size < this.maxConcurrency) {
+      this.activeJobs.add(jobId)
       return
     }
 
     return new Promise<void>((resolve, reject) => {
-      const entry = { resolve: () => {} }
+      const entry = { jobId, resolve: () => {} }
       let timer: ReturnType<typeof setTimeout> | null = null
 
       entry.resolve = () => {
         if (timer) clearTimeout(timer)
+        this.activeJobs.add(jobId)
         resolve()
       }
 
@@ -72,7 +73,7 @@ class SimpleSemaphore {
 
       if (timeoutMs) {
         timer = setTimeout(() => {
-          const idx = this.queue.indexOf(entry)
+          const idx = this.queue.findIndex(e => e.jobId === jobId)
           if (idx !== -1) {
             this.queue.splice(idx, 1)
             reject(new Error(
@@ -87,15 +88,24 @@ class SimpleSemaphore {
     })
   }
 
-  release(): void {
-    if (this.queue.length > 0) {
-      const next = this.queue.shift()
-      if (next) {
-        next.resolve()
-        return
+  release(jobId: string): void {
+    // 1. Se estiver na fila de espera, remove dela
+    const qIdx = this.queue.findIndex(e => e.jobId === jobId)
+    if (qIdx !== -1) {
+      this.queue.splice(qIdx, 1)
+      return
+    }
+
+    // 2. Se estiver ativo, remove e libera o próximo
+    if (this.activeJobs.has(jobId)) {
+      this.activeJobs.delete(jobId)
+      if (this.queue.length > 0) {
+        const next = this.queue.shift()
+        if (next) {
+          next.resolve()
+        }
       }
     }
-    this.activeCount--
   }
 }
 
@@ -422,13 +432,13 @@ export async function runOnce(): Promise<void> {
               connector_id: connectorWithTenant.id,
               channel: connectorWithTenant.channel,
             })
-            await PLAYWRIGHT_SEMAPHORE.acquire(PLAYWRIGHT_SEMAPHORE_ACQUIRE_TIMEOUT_MS)
+            await PLAYWRIGHT_SEMAPHORE.acquire(job.id, PLAYWRIGHT_SEMAPHORE_ACQUIRE_TIMEOUT_MS)
           }
           try {
             await runConnector(connectorWithTenant, job.id)
           } finally {
             if (isPlaywright) {
-              PLAYWRIGHT_SEMAPHORE.release()
+              PLAYWRIGHT_SEMAPHORE.release(job.id)
             }
           }
         }
@@ -436,6 +446,10 @@ export async function runOnce(): Promise<void> {
         await Promise.race([runWithSemaphore(), timeoutPromise])
           .catch(async (err) => {
             const errMsg = err instanceof Error ? err.message : String(err)
+
+            if (isPlaywright) {
+              PLAYWRIGHT_SEMAPHORE.release(job.id)
+            }
 
             // Timeout de FILA do semáforo Playwright NÃO é uma falha do canal —
             // é uma saturação interna de capacidade (só 3 scrapers Playwright
