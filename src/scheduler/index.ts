@@ -109,7 +109,7 @@ class SimpleSemaphore {
   }
 }
 
-const PLAYWRIGHT_SEMAPHORE = new SimpleSemaphore(3)
+const PLAYWRIGHT_SEMAPHORE = new SimpleSemaphore(1)
 
 function isPlaywrightChannel(channel: string): boolean {
   return ['google_maps', 'tripadvisor', 'reclame_aqui'].includes(channel)

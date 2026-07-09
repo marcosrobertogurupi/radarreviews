@@ -124,7 +124,10 @@ async function runPlaywrightScraper(
       })
     } catch (launchErr) {
       const msg = launchErr instanceof Error ? launchErr.message : String(launchErr)
-      const isMissingBinary = msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')
+      const isMissingBinary =
+        (msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')) &&
+        !msg.includes('EAGAIN') &&
+        !msg.includes('ENOMEM')
       if (isMissingBinary) {
         result.error = `Playwright binary ausente (container desatualizado). Redeploy necessário. Detalhes: ${msg}`
         result.error_type = 'fatal'
@@ -345,7 +348,8 @@ async function runPlaywrightScraper(
     const errMsg = error instanceof Error ? error.message : String(error)
     result.error = errMsg
     const isTransient = errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR') ||
-      errMsg.includes('timeout') || errMsg.includes('Timeout')
+      errMsg.includes('timeout') || errMsg.includes('Timeout') ||
+      errMsg.includes('EAGAIN') || errMsg.includes('ENOMEM')
     result.error_type = isTransient ? 'transient' : 'fatal'
     logger.error(`[${CHANNEL}] Erro crítico no conector Playwright ${connector.id}`, {
       error,
