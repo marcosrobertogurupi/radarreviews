@@ -257,7 +257,7 @@ async function runPlaywrightScraper(
 
     const fetchBody = (connector.config['fetch_body'] as boolean) ?? true
     if (fetchBody) {
-      const toFetch = allComplaints.filter(c => c.url && c.url.includes('/reclamacao/'))
+      const toFetch = allComplaints.filter(c => c.url && c.url.startsWith('http') && !c.url.includes('/empresa/'))
       const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 30
       const limitedToFetch = toFetch.slice(0, MAX_BODY_FETCH)
 
@@ -502,7 +502,10 @@ async function extractFromNextData(page: import('playwright-core').Page, company
 
     return complaintsRaw
       .map((c: Record<string, unknown>) => {
-        const url = String(c['complaintUrl'] ?? c['url'] ?? `https://www.reclameaqui.com.br/empresa/${companySlug}`)
+        const urlRaw = String(c['complaintUrl'] ?? c['url'] ?? `https://www.reclameaqui.com.br/empresa/${companySlug}`)
+        const url = urlRaw.startsWith('http')
+          ? urlRaw
+          : `https://www.reclameaqui.com.br${urlRaw.startsWith('/') ? '' : '/'}${urlRaw}`
         // Rejeita reclamações cujo URL pertence a outra empresa
         if (url.includes('/empresa/') && !url.includes(`/empresa/${companySlug}/`)) return null
 
