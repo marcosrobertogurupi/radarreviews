@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   const makeSubquery = (results: any[]) => results
 
   const fromFn = (table: string) => {
+    let currentCol: string | null = null
     let currentId: string | null = null
     let inValues: any[] | null = null
     let countMode = false
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => {
         return query
       },
       eq: (_col: string, val: any) => {
+        currentCol = _col
         currentId = val
         return query
       },
@@ -78,10 +80,15 @@ const mocks = vi.hoisted(() => {
         }
 
         if (table === 'monitored_businesses') {
-          const found = currentId
-            ? state.businesses.find(b => b.id === currentId)
-            : null
-          resolvedValue = { data: found ?? null, error: found ? null : { message: 'Não encontrado' } }
+          if (currentCol === 'tenant_id') {
+            const list = state.businesses.filter(b => b.tenant_id === currentId)
+            resolvedValue = { data: list, error: null }
+          } else {
+            const found = currentId
+              ? state.businesses.find(b => b.id === currentId)
+              : null
+            resolvedValue = { data: found ?? null, error: found ? null : { message: 'Não encontrado' } }
+          }
         } else if (table === 'tenants') {
           const found = currentId
             ? state.tenants.find(t => t.id === currentId)

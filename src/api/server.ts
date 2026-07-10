@@ -1042,14 +1042,23 @@ export async function handleCreateConnector(req: http.IncomingMessage, res: http
     const maxChannels = planData?.max_channels ?? 3
 
     // 4. Contar conectores ativos do tenant (via monitored_businesses)
+    const { data: tenantBusinesses, error: bizsError } = await supabaseAdmin
+      .from('monitored_businesses')
+      .select('id')
+      .eq('tenant_id', business.tenant_id)
+
+    if (bizsError) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: `Erro ao buscar empresas do tenant: ${bizsError.message}` }))
+      return
+    }
+
+    const bizIds = (tenantBusinesses ?? []).map(b => b.id)
+
     const { count: currentCount } = await supabaseAdmin
       .from('channel_connectors')
       .select('id', { count: 'exact', head: true })
-      .in('business_id', supabaseAdmin
-        .from('monitored_businesses')
-        .select('id')
-        .eq('tenant_id', business.tenant_id) as any
-      )
+      .in('business_id', bizIds)
 
     if ((currentCount ?? 0) >= maxChannels) {
       res.writeHead(422, { 'Content-Type': 'application/json' })
