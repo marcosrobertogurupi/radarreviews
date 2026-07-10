@@ -117,17 +117,37 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 
 /**
  * Coleta reclamações do Reclame Aqui via Apify
+ *
+ * Actor padrão: viralanalyzer/reclameaqui-scraper
+ * Docs: https://apify.com/viralanalyzer/reclameaqui-scraper
+ *
+ * Input esperado pelo actor:
+ *   companies: string[]   — slugs das empresas (ex: ["nubank", "itau"])
+ *   maxComplaints: number  — máximo por empresa (default 20, max 100)
+ *   includeCompanyStats: boolean — inclui score, response rate, etc.
+ *   statusFilter?: string  — "all" | "Respondida" | "Não respondida" | etc.
+ *
+ * Output do actor (por item):
+ *   complaint_id, company_slug, title, description, status, category,
+ *   created_at, updated_at, author, city, state, rating, is_resolved,
+ *   company_response, response_time_hours, views, url, company_score, etc.
  */
 export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext, actorId?: string): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
-  const actor = actorId || 'apify~reclame-aqui-scraper'
+  // Actor correto da comunidade Apify — o anterior 'apify~reclame-aqui-scraper' não existe (404)
+  const actor = actorId || 'viralanalyzer/reclameaqui-scraper'
 
   try {
     const response = await axios.post(
       `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
-      { companySlug, maxItems: limit, scrapeDetailedComplaints: true },
+      {
+        companies: [companySlug],
+        maxComplaints: Math.min(limit, 100), // API limita em 100
+        includeCompanyStats: false, // Não precisamos de stats — só reclamações
+        statusFilter: 'all',
+      },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
@@ -144,14 +164,17 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
       })
     }
 
+    // Mapear output do actor viralanalyzer para o formato que o conector espera
     return items.map(item => ({
-      id: item.id || item.complaintId,
+      id: item.complaint_id || item.id || item.complaintId,
       title: item.title,
-      description: item.description || item.text,
+      description: item.description || item.text || item.company_response,
       status: item.status,
-      author: item.authorName || item.author,
-      date: item.datetime || item.date || item.createdAt,
-      url: item.url
+      author: item.author || item.authorName,
+      date: item.created_at || item.datetime || item.date || item.createdAt,
+      url: item.url,
+      isResolved: item.is_resolved ?? (item.status === 'Resolvida'),
+      rating: item.rating,
     }))
   } catch (err: any) {
     if (err.response?.data) {
