@@ -268,7 +268,7 @@ export default function Support({ tenantId }: { tenantId: string }) {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+          <div className="form-actions">
             <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setView('list')}>Cancelar</button>
             <button 
               className="btn btn-primary" 
@@ -401,6 +401,69 @@ export default function Support({ tenantId }: { tenantId: string }) {
         .status-badge { 
           padding: 4px 10px; border-radius: 100px; font-size: 11px; font-weight: 700; 
           text-transform: uppercase; border: 1px solid transparent; display: inline-block;
+        }
+
+        /* Novas Estilizações de Formulário (Alinhado ao Cadastro) */
+        .form-group {
+          margin-bottom: 20px;
+        }
+        .form-group label {
+          display: block;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-bottom: 8px;
+        }
+        .form-input {
+          width: 100%;
+          padding: 12px 16px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+          font-family: 'Inter', sans-serif;
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+          box-sizing: border-box;
+        }
+        .form-input:focus {
+          border-color: var(--accent);
+          background: rgba(255,255,255,0.07);
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .form-input::placeholder {
+          color: var(--text-muted);
+        }
+        textarea.form-input {
+          resize: vertical;
+          min-height: 130px;
+          line-height: 1.5;
+        }
+        select.form-input {
+          appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238892aa'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 14px center;
+          background-size: 16px;
+          padding-right: 40px;
+          cursor: pointer;
+        }
+        .form-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 24px;
+        }
+        .form-actions .btn {
+          padding: 11px 20px;
+          font-size: 14px;
+          font-weight: 600;
+          border-radius: 8px;
+          justify-content: center;
+          align-items: center;
+          display: flex;
         }
       `}</style>
     </div>
