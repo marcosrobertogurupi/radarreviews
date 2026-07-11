@@ -20,21 +20,14 @@ export default function TrialExpired({ plan, onLogout }: Props) {
       <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
 
         {/* Logo */}
-        <div style={{
-          width: 56, height: 56, borderRadius: 16, margin: '0 auto 20px',
-          background: 'linear-gradient(135deg, #6366f1, #06b6d4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 26, boxShadow: '0 0 32px rgba(99,102,241,0.3)',
-        }}>📡</div>
-
-        <h1 style={{
-          fontFamily: 'Outfit', fontWeight: 800, fontSize: 28,
-          background: 'linear-gradient(90deg, #fff, #06b6d4)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text', marginBottom: 8,
-        }}>
-          Reputei
-        </h1>
+        <img
+          src="/logo-reputei.png"
+          alt="Reputei — Radar de Reviews"
+          style={{
+            width: 140, height: 'auto', margin: '0 auto 16px',
+            display: 'block', filter: 'drop-shadow(0 0 24px rgba(99,102,241,0.3))',
+          }}
+        />
 
         {/* Card principal */}
         <div className="card" style={{ padding: 32, marginTop: 24, textAlign: 'left' }}>

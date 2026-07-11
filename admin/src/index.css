@@ -87,13 +87,10 @@ html, body, #root {
 .sidebar-logo-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  box-shadow: 0 0 20px var(--accent-glow);
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 12px var(--accent-glow));
 }
 
 .sidebar-logo-text {

@@ -57,10 +57,11 @@ export default function Login({ externalError }: LoginProps) {
 
         <div className="card" style={{ padding: '40px 32px' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 12, background: 'rgba(99, 102, 241, 0.1)', color: '#a5b4fc', fontSize: 24, marginBottom: 16 }}>
-            📡
-          </div>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>Radar de Reviews</h1>
+          <img
+            src="/logo-reputei.png"
+            alt="Reputei — Radar de Reviews"
+            style={{ width: 140, height: 'auto', marginBottom: 16, filter: 'drop-shadow(0 0 20px rgba(99,102,241,0.3))' }}
+          />
           <p style={{ margin: '8px 0 0 0', color: 'var(--text-muted)', fontSize: 14 }}>Faça login para gerenciar sua reputação</p>
         </div>
 

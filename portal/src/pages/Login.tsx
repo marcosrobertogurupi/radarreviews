@@ -54,15 +54,14 @@ export default function Login({ onSignup }: Props) {
 
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 16, margin: '0 auto 16px',
-            background: 'linear-gradient(135deg, #6366f1, #06b6d4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 26, boxShadow: '0 0 32px rgba(99,102,241,0.35)',
-          }}>📡</div>
-          <h1 style={{ fontFamily: 'Outfit', fontWeight: 800, fontSize: 28, background: 'linear-gradient(90deg, #fff, #06b6d4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-            Reputei
-          </h1>
+          <img
+            src="/logo-reputei.png"
+            alt="Reputei — Radar de Reviews"
+            style={{
+              width: 160, height: 'auto', margin: '0 auto 12px',
+              display: 'block', filter: 'drop-shadow(0 0 24px rgba(99,102,241,0.3))',
+            }}
+          />
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 4 }}>
             Acesso ao Portal
           </p>

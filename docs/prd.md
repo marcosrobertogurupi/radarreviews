@@ -12,6 +12,18 @@ O **Radar de Reviews (Reputei)** é um SaaS multi-tenant de monitoramento de rep
 ### 1.1 Proposta de Valor
 Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de seus clientes, automatizarem o processo de suporte técnico com IA de ponta (Agentic RAG) e agirem rapidamente diante de crises reputacionais (alertas de sentimentos e surtos de críticas).
 
+### 1.2 Identidade Visual
+
+- **Logotipo oficial:** Radar estilizado com olho central (símbolo de vigilância e monitoramento), anéis concêntricos com mira e varredura, tipografia "reputei" em caixa baixa com o "i" final em ciano. Tagline: "— RADAR DE REVIEWS —".
+- **Arquivo de referência:** `logo-reputei.png` (disponível em `admin/public/`, `portal/public/`, `partner/public/` e `website/public/`).
+- **Paleta de cores:**
+  - Roxo primário: `#863bff` / `#6366f1` (accent)
+  - Ciano secundário: `#06b6d4` / `#47bfff` (accent-2)
+  - Fundo escuro: `#0a0e1a` (bg-base)
+  - Lilás claro: `#ede6ff` (highlights)
+- **Tipografia da marca:** "reputei" em fonte arredondada, peso 800, minúsculas. "i" final com destaque ciano.
+- **Uso no sistema:** O logotipo deve aparecer nas sidebars (portal, admin, parceiro), nas telas de login, na tela de trial expirado e na navbar do site institucional.
+
 ---
 
 ## 2. Atores do Sistema

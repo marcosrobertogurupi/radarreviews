@@ -111,7 +111,7 @@ export default function App() {
       <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">🤝</div>
+          <img className="sidebar-logo-icon" src="/logo-reputei.png" alt="Reputei" />
           <div className="sidebar-logo-text">Reputei</div>
         </div>
         <div style={{ padding: '0 16px 16px' }}>

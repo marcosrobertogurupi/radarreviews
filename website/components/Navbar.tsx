@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { Radio } from 'lucide-react'
 
 export default function Navbar() {
   return (
@@ -10,9 +9,12 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Radio size={24} className="text-white" />
-            </div>
+            <img
+              src="/logo-reputei.png"
+              alt="Reputei — Radar de Reviews"
+              className="h-10 w-auto"
+              style={{ filter: 'drop-shadow(0 0 12px rgba(99,102,241,0.3))' }}
+            />
             <span className="text-2xl font-black tracking-tight text-white font-outfit">
               Reputei
             </span>
