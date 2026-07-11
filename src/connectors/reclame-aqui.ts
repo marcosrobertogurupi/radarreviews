@@ -124,10 +124,25 @@ async function runPlaywrightScraper(
       })
     } catch (launchErr) {
       const msg = launchErr instanceof Error ? launchErr.message : String(launchErr)
+
+      // EAGAIN / ENOMEM = pressão de recursos no container — erro transiente
+      // que se resolve sozinho quando um slot de memória/processo libera.
+      // Retornar imediatamente como transiente em vez de cair no fallback Apify
+      // (que gasta créditos desnecessariamente e também pode falhar).
+      const isResourceExhaustion = msg.includes('EAGAIN') || msg.includes('ENOMEM')
+      if (isResourceExhaustion) {
+        result.error = `Chromium launch falhou (recurso temporariamente indisponível): ${msg}`
+        result.error_type = 'transient'
+        logger.warn(`[${CHANNEL}] Chromium launch EAGAIN/ENOMEM — erro transiente, será retentado no próximo ciclo`, {
+          connector_id: connector.id,
+          slug,
+          error: msg,
+        })
+        return result
+      }
+
       const isMissingBinary =
-        (msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')) &&
-        !msg.includes('EAGAIN') &&
-        !msg.includes('ENOMEM')
+        msg.includes("Executable doesn't exist") || msg.includes('ENOENT') || msg.includes('chrome-headless-shell')
       if (isMissingBinary) {
         result.error = `Playwright binary ausente (container desatualizado). Redeploy necessário. Detalhes: ${msg}`
         result.error_type = 'fatal'
@@ -423,17 +438,34 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       MAX_SCRAPE_MS
     )
   } catch (playwrightErr: any) {
+    // Determinar se o erro do Playwright é transiente
+    const pwMsg = playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)
+    const isTransientPw = pwMsg.includes('EAGAIN') || pwMsg.includes('ENOMEM') ||
+      pwMsg.includes('ERR_ABORTED') || pwMsg.includes('net::ERR') ||
+      pwMsg.includes('timeout') || pwMsg.includes('Timeout')
+
+    // Se o erro é transiente, NÃO gastar créditos Apify — retornar direto
+    if (isTransientPw) {
+      logger.warn(
+        `[${CHANNEL}] Playwright falhou com erro transiente — será retentado no próximo ciclo (sem fallback Apify)`,
+        { error: pwMsg }
+      )
+      result.error = pwMsg
+      result.error_type = 'transient'
+      return result
+    }
+
     logger.warn(
       `[${CHANNEL}] Playwright falhou. Tentando Apify como fallback...`,
-      { error: playwrightErr.message }
+      { error: pwMsg }
     )
 
     const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
     const token = process.env['APIFY_TOKEN']
     if (!token) {
       logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback`)
-      result.error = playwrightErr.message
-      result.error_type = playwrightErr.error_type || 'fatal'
+      result.error = pwMsg
+      result.error_type = 'fatal'
       return result
     }
 
@@ -444,7 +476,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         `[${CHANNEL}] Apify também falhou`,
         { error: apifyErr.message }
       )
-      result.error = `Playwright: ${playwrightErr.message}. Apify: ${apifyErr.message}`
+      result.error = `Playwright: ${pwMsg}. Apify: ${apifyErr.message}`
       result.error_type = 'fatal'
       return result
     }
