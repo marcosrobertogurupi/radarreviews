@@ -10,7 +10,7 @@ export default function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
             <img
-              src="/logo-reputei.png"
+              src="/logo-icon-reputei.png"
               alt="Reputei — Radar de Reviews"
               className="h-10 w-auto"
               style={{ filter: 'drop-shadow(0 0 12px rgba(99,102,241,0.3))' }}
