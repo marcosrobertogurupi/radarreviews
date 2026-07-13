@@ -277,7 +277,12 @@ export default function Connectors() {
         const err = await resp.json().catch(() => ({ error: resp.statusText }))
         return toast('Erro ao salvar: ' + (err.error ?? resp.statusText), 'error')
       }
-      toast('Conector criado com sucesso!', 'success')
+      const result = await resp.json().catch(() => ({}))
+      if (result.reactivated) {
+        toast('Conector já existia e foi reativado com sucesso!', 'success')
+      } else {
+        toast('Conector criado com sucesso!', 'success')
+      }
       setShowCreateModal(false)
       setNewConn({ ...newConn, external_id: '', instagram_username: '', hashtags: '', fb_url: '' })
       loadAll()

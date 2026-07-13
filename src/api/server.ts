@@ -1072,6 +1072,40 @@ export async function handleCreateConnector(req: http.IncomingMessage, res: http
       return
     }
 
+    // Verificar se já existe conector para este business+channel
+    const { data: existing } = await supabaseAdmin
+      .from('channel_connectors')
+      .select('id, status, external_id')
+      .eq('business_id', body.business_id)
+      .eq('channel', body.channel)
+      .maybeSingle()
+
+    if (existing) {
+      // Reativar/atualizar o conector existente em vez de falhar com constraint
+      const { data: updated, error: updateErr } = await supabaseAdmin
+        .from('channel_connectors')
+        .update({
+          external_id: body.external_id,
+          status: 'active',
+          config: body.config ?? { interval_minutes: 60 },
+          error_message: null,
+          next_sync_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (updateErr) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: updateErr.message }))
+        return
+      }
+      console.log(`[create-connector] Conector existente ${existing.id} reativado (business=${body.business_id}, channel=${body.channel})`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ...updated, reactivated: true }))
+      return
+    }
+
     const { data, error } = await supabaseAdmin
       .from('channel_connectors')
       .insert({
@@ -1088,6 +1122,7 @@ export async function handleCreateConnector(req: http.IncomingMessage, res: http
       res.end(JSON.stringify({ error: error.message }))
       return
     }
+    console.log(`[create-connector] Novo conector ${data.id} criado (business=${body.business_id}, channel=${body.channel})`)
     res.writeHead(201, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(data))
   } catch (err) {
