@@ -426,9 +426,17 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const scrapeStartedAt = Date.now()
   const MAX_SCRAPE_MS = 8 * 60_000
 
+  // Quantas vezes consecutivas este conector já falhou?
+  // Se error_count > 0, significa que o Playwright falhou no ciclo anterior —
+  // erros EAGAIN/ENOMEM são persistentes quando o container está sob pressão.
+  const previousErrorCount = (connector.error_count as number | null) ?? 0
+
   // 1. Tentar Playwright (Principal)
+  let playwrightResult: JobResult | null = null
+  let playwrightError: string | null = null
+
   try {
-    return await runPlaywrightScraper(
+    playwrightResult = await runPlaywrightScraper(
       connector,
       slug,
       sanitizedSlug,
@@ -438,48 +446,67 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
       MAX_SCRAPE_MS
     )
   } catch (playwrightErr: any) {
-    // Determinar se o erro do Playwright é transiente
-    const pwMsg = playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)
-    const isTransientPw = pwMsg.includes('EAGAIN') || pwMsg.includes('ENOMEM') ||
-      pwMsg.includes('ERR_ABORTED') || pwMsg.includes('net::ERR') ||
-      pwMsg.includes('timeout') || pwMsg.includes('Timeout')
+    playwrightError = playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)
+  }
 
-    // Se o erro é transiente, NÃO gastar créditos Apify — retornar direto
-    if (isTransientPw) {
-      logger.warn(
-        `[${CHANNEL}] Playwright falhou com erro transiente — será retentado no próximo ciclo (sem fallback Apify)`,
-        { error: pwMsg }
-      )
-      result.error = pwMsg
-      result.error_type = 'transient'
-      return result
-    }
+  // Se o Playwright retornou resultado sem erro, usar direto
+  if (playwrightResult && !playwrightResult.error) {
+    return playwrightResult
+  }
 
+  // Unificar a mensagem de erro (pode vir do return ou do throw)
+  const pwMsg = playwrightError ?? playwrightResult?.error ?? 'Erro desconhecido no Playwright'
+  const isResourceExhaustion = pwMsg.includes('EAGAIN') || pwMsg.includes('ENOMEM')
+  const isTransientPw = isResourceExhaustion ||
+    pwMsg.includes('ERR_ABORTED') || pwMsg.includes('net::ERR') ||
+    pwMsg.includes('timeout') || pwMsg.includes('Timeout')
+
+  // Se é o primeiro erro transiente (EAGAIN/ENOMEM) e NÃO há falhas anteriores,
+  // retornar como transiente para dar ao Playwright uma chance no próximo ciclo.
+  // Mas se o conector JÁ tem error_count > 0, significa que o EAGAIN é recorrente
+  // e o Playwright provavelmente não vai funcionar — cair no fallback Apify.
+  if (isTransientPw && previousErrorCount === 0) {
     logger.warn(
-      `[${CHANNEL}] Playwright falhou. Tentando Apify como fallback...`,
+      `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez) — será retentado no próximo ciclo`,
+      { error: pwMsg, connector_id: connector.id }
+    )
+    result.error = pwMsg
+    result.error_type = 'transient'
+    return result
+  }
+
+  // 2. Fallback: Apify (para erros persistentes ou não-transientes)
+  if (isTransientPw) {
+    logger.warn(
+      `[${CHANNEL}] Playwright falhou com EAGAIN/ENOMEM pela ${previousErrorCount + 1}ª vez consecutiva — ativando fallback Apify`,
+      { error: pwMsg, connector_id: connector.id, previousErrorCount }
+    )
+  } else {
+    logger.warn(
+      `[${CHANNEL}] Playwright falhou com erro não-transiente. Tentando Apify como fallback...`,
       { error: pwMsg }
     )
+  }
 
-    const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
-    const token = process.env['APIFY_TOKEN']
-    if (!token) {
-      logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback`)
-      result.error = pwMsg
-      result.error_type = 'fatal'
-      return result
-    }
+  const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
+  const token = process.env['APIFY_TOKEN']
+  if (!token) {
+    logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback`)
+    result.error = pwMsg
+    result.error_type = isTransientPw ? 'transient' : 'fatal'
+    return result
+  }
 
-    try {
-      return await runApifyCollector(actorId, connector, slug)
-    } catch (apifyErr: any) {
-      logger.error(
-        `[${CHANNEL}] Apify também falhou`,
-        { error: apifyErr.message }
-      )
-      result.error = `Playwright: ${pwMsg}. Apify: ${apifyErr.message}`
-      result.error_type = 'fatal'
-      return result
-    }
+  try {
+    return await runApifyCollector(actorId, connector, slug)
+  } catch (apifyErr: any) {
+    logger.error(
+      `[${CHANNEL}] Apify também falhou`,
+      { error: apifyErr.message }
+    )
+    result.error = `Playwright: ${pwMsg}. Apify: ${apifyErr.message}`
+    result.error_type = 'fatal'
+    return result
   }
 }
 
