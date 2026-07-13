@@ -520,7 +520,11 @@ export async function runOnce(): Promise<void> {
  */
 async function fetchDueConnectors(): Promise<ChannelConnector[]> {
   const now = new Date().toISOString()
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  // Janela de 72h para retry de conectores em erro.
+  // Erros transientes (EAGAIN, timeout) usam first_error_at deslizante (resetado
+  // a cada falha), então na prática nunca ultrapassam esta janela.
+  // Erros fatais/auth param de ser retentados após 72h — até intervenção manual.
+  const retryWindowStart = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
 
   const { data, error } = await supabase
     .from('channel_connectors')
@@ -541,8 +545,8 @@ async function fetchDueConnectors(): Promise<ChannelConnector[]> {
     `)
     .in('status', ['active', 'error']) // Buscar ativos OU em erro (para tentar a cura)
     .eq('monitored_businesses.is_active', true)
-    // Regra: ativo OU (erro MAS o primeiro erro foi há menos de 24h)
-    .or(`status.eq.active,and(status.eq.error,first_error_at.gte.${yesterday})`)
+    // Regra: ativo OU (erro MAS o primeiro erro foi há menos de 72h)
+    .or(`status.eq.active,and(status.eq.error,first_error_at.gte.${retryWindowStart})`)
     .or(`next_sync_at.lte.${now},next_sync_at.is.null`)
     .order('next_sync_at', { ascending: true, nullsFirst: true })
     .limit(SYNC_BATCH_SIZE)
@@ -687,11 +691,23 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
 
     } else {
       const isAuth = !!result.is_auth_error || result.error_type === 'fatal'
+      const isTransient = result.error_type === 'transient'
       const errorCount = (connector.error_count ?? 0) + 1
-      const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
-      const isWithin24h = (Date.now() - new Date(firstErrorAt).getTime()) < 24 * 60 * 60 * 1000
 
-      const backoffMinutes = Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
+      // Para erros transientes (EAGAIN, ENOMEM, timeout de rede), usar janela
+      // deslizante: first_error_at = agora. Isso impede que o filtro de 72h em
+      // fetchDueConnectors exclua permanentemente conectores que falham por
+      // pressão de recursos do container (a falha pode durar dias, mas se
+      // resolver sozinha o conector deve ser retentado automaticamente).
+      // Para erros fatais/auth, manter o comportamento original (fixar no 1º erro).
+      const firstErrorAt = isTransient
+        ? new Date().toISOString()
+        : (connector.first_error_at ?? new Date().toISOString())
+
+      // Backoff mais curto para transientes (max 15min), mais longo para fatais (max 60min)
+      const backoffMinutes = isTransient
+        ? Math.min(15, 5 * Math.pow(2, Math.min(2, errorCount - 1)))
+        : Math.min(60, 5 * Math.pow(2, Math.min(4, errorCount - 1)))
       
       // Alertas síncronos (imediatos) apenas para erros fatais ou de autenticação.
       // Erros transientes serão monitorados pelo system-health-job (6h e 24h).
