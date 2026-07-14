@@ -390,9 +390,9 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     let q = supabase
       .from('system_notifications')
       .select('*')
-      .eq('status', 'pendente')
+      .in('status', ['pendente', 'auto_resolvido'])
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(10)
     
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
@@ -602,26 +602,35 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           <div style={{ gridColumn: '1 / -1', marginBottom: 24 }}>
             <div className="section-title">🛡️ Alertas de Infraestrutura e Consumo</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-              {systemNotifications.map(n => (
-                <div key={n.id} className="card card-glow" style={{ border: '1px solid #ef4444', padding: 16, '--glow-color': 'rgba(239, 68, 68, 0.1)' } as any}>
+              {systemNotifications.map(n => {
+                const isAutocura = n.status === 'auto_resolvido' || n.type === 'transient_error'
+                const badgeColor = isAutocura ? '#f59e0b' : '#ef4444'
+                const badgeLabel = isAutocura ? 'AUTOCURA' : 'CRÍTICO'
+                const glowColor = isAutocura ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.1)'
+                return (
+                <div key={n.id} className="card card-glow" style={{ border: `1px solid ${badgeColor}`, padding: 16, '--glow-color': glowColor, opacity: isAutocura ? 0.85 : 1 } as any}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <div style={{ background: '#ef4444', color: '#fff', borderRadius: 4, padding: '2px 6px', fontSize: 10, fontWeight: 700 }}>CRÍTICO</div>
+                    <div style={{ background: badgeColor, color: '#fff', borderRadius: 4, padding: '2px 6px', fontSize: 10, fontWeight: 700 }}>{badgeLabel}</div>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(n.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>{n.message}</div>
                   <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                    <button 
-                      onClick={async () => {
-                        await supabase.from('system_notifications').update({ status: 'resolvido' }).eq('id', n.id)
-                        loadSystemNotifications()
-                      }}
-                      style={{ fontSize: 11, background: 'var(--border)', color: 'var(--text-primary)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
-                    >
-                      Marcar como lido
-                    </button>
+                    {isAutocura ? (
+                      <span style={{ fontSize: 11, color: '#f59e0b' }}>⚙️ Resolvido automaticamente</span>
+                    ) : (
+                      <button 
+                        onClick={async () => {
+                          await supabase.from('system_notifications').update({ status: 'resolvido' }).eq('id', n.id)
+                          loadSystemNotifications()
+                        }}
+                        style={{ fontSize: 11, background: 'var(--border)', color: 'var(--text-primary)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer' }}
+                      >
+                        Marcar como lido
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )}

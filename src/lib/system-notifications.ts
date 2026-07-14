@@ -7,9 +7,11 @@ import type { ChannelConnector } from '../types/connector.js'
  * Tipos de notificação do sistema
  */
 export type SystemNotificationType = 
-  | 'auth_failure'    // Falha de autenticação/token
-  | 'sync_error'      // Erro persistente de sincronização
-  | 'recovery_success' // Recuperação automática bem-sucedida
+  | 'auth_failure'      // Falha de autenticação/token
+  | 'sync_error'        // Erro persistente de sincronização
+  | 'recovery_success'  // Recuperação automática bem-sucedida
+  | 'transient_error'   // Erro transiente (autocura) — só log, sem WhatsApp
+  | 'no_data_alert'     // Sem coleta de reviews há X horas — dispara WhatsApp
 
 /**
  * Serviço de notificações para saúde do sistema (Health Checks).
@@ -87,6 +89,38 @@ export const systemNotifications = {
 
     // 3. Disparar para N8N (opcional, mas bom para histórico)
     await this.fireExternalAlert(connector, 'RESOLVIDO', 'Canal recuperado e operando normalmente.', false)
+  },
+
+  /**
+   * Registra erro transiente no banco (sininho do Admin), SEM disparar WhatsApp/N8N.
+   * Usado para erros que a autocura resolve sozinha (EAGAIN, ENOMEM, timeout, rede).
+   * O admin pode consultar esses eventos no painel a qualquer momento.
+   */
+  async logTransientError(connector: ChannelConnector, error: string) {
+    logger.info(`[system-notifications] Registrando erro transiente (autocura) para ${connector.channel}`, {
+      connector_id: connector.id,
+      error,
+    })
+
+    const { error: dbError } = await supabase
+      .from('system_notifications')
+      .insert({
+        tenant_id: connector.tenant_id,
+        business_id: connector.business_id,
+        connector_id: connector.id,
+        channel: connector.channel,
+        type: 'transient_error' as SystemNotificationType,
+        message: error,
+        status: 'auto_resolvido',
+        payload: {
+          error_count: (connector.error_count ?? 0) + 1,
+          autocura: true,
+        }
+      })
+
+    if (dbError) {
+      logger.error('[system-notifications] Falha ao salvar log de erro transiente', { error: dbError.message })
+    }
   },
 
   /**

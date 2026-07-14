@@ -480,6 +480,20 @@ export async function runOnce(): Promise<void> {
               error: errMsg,
             })
 
+            // Classificar o erro: transiente (autocura) vs fatal (alerta)
+            const isTransientRace = errMsg.includes('EAGAIN') || errMsg.includes('ENOMEM') ||
+              errMsg.includes('timeout') || errMsg.includes('Timeout') ||
+              errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR') ||
+              errMsg.includes('fetch failed')
+
+            if (isTransientRace) {
+              // Autocura: log silencioso no banco, sem WhatsApp
+              systemNotifications.logTransientError(
+                { ...connectorData, tenant_id: connectorWithTenant.tenant_id } as any,
+                errMsg
+              ).catch(e => logger.error('[scheduler] Falha ao logar erro transiente (race)', { error: e }))
+            }
+
             // Atualiza status do conector para error.
             // IMPORTANTE: setar first_error_at (COALESCE) e error_count aqui também —
             // senão um timeout deixa first_error_at=null e o filtro de fetchDueConnectors
@@ -496,7 +510,7 @@ export async function runOnce(): Promise<void> {
             await supabase.from('sync_jobs').update({
               status: 'failed',
               finished_at: new Date().toISOString(),
-              error_detail: { message: errMsg },
+              error_detail: { message: errMsg, transient: isTransientRace },
             }).eq('id', job.id)
           })
           .finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle) })
@@ -768,25 +782,41 @@ async function runConnector(connector: ChannelConnector, jobId: string): Promise
     const errorCount = (connector.error_count ?? 0) + 1
     const firstErrorAt = connector.first_error_at ?? new Date().toISOString()
 
-    // Envia o alerta imediato por ser uma exceção inesperada e grave (Crash)
-    try {
-      const updatedConnector = {
-        ...connector,
-        error_count: errorCount,
-        first_error_at: firstErrorAt
+    // Classificar o crash: transiente (autocura) vs fatal (alerta WhatsApp)
+    const isTransientCrash = errMsg.includes('EAGAIN') || errMsg.includes('ENOMEM') ||
+      errMsg.includes('timeout') || errMsg.includes('Timeout') ||
+      errMsg.includes('ERR_ABORTED') || errMsg.includes('net::ERR') ||
+      errMsg.includes('Semaphore acquire timeout') ||
+      errMsg.includes('fetch failed')
+
+    const updatedConnector = {
+      ...connector,
+      error_count: errorCount,
+      first_error_at: firstErrorAt
+    }
+
+    if (isTransientCrash) {
+      // Autocura: log silencioso no banco, sem WhatsApp
+      // O health job (checkSystemHealth) monitora via last_sync_at e
+      // alerta o admin se a coleta parar por mais de 6h.
+      systemNotifications.logTransientError(updatedConnector, errMsg)
+        .catch(e => logger.error('[scheduler] Falha ao logar erro transiente (crash)', { error: e }))
+    } else {
+      // Crash genuíno e inesperado: alerta imediato via WhatsApp
+      try {
+        await Promise.race([
+          systemNotifications.notifyError(updatedConnector, errMsg, false),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('notifyError (crash) timeout after 10s')), 10_000)
+          )
+        ])
+      } catch (notifyErr) {
+        logger.error('[scheduler] Falha ao disparar notificação de crash fatal', {
+          connector_id: connector.id,
+          channel: connector.channel,
+          error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
+        })
       }
-      await Promise.race([
-        systemNotifications.notifyError(updatedConnector, errMsg, false),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('notifyError (crash) timeout after 10s')), 10_000)
-        )
-      ])
-    } catch (notifyErr) {
-      logger.error('[scheduler] Falha ao disparar notificação de crash', {
-        connector_id: connector.id,
-        channel: connector.channel,
-        error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr)
-      })
     }
 
     // Em caso de erro catastrófico (ex: crash do runner), volta para status error para não travar em 'running'
