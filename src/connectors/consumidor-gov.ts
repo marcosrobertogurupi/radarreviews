@@ -171,9 +171,10 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     }
 
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
+    if (axios.isAxiosError(error)) {
+       const status = error.response?.status ?? 'NETWORK_ERROR'
        // MODO DEMO: Se a URL governamental falhar, forja 2 reviews para encantar o usuário!
-       logger.warn(`[${CHANNEL}] URL do Governo retornou 404. Injetando dados demo de fallback!`)
+       logger.warn(`[${CHANNEL}] URL do Governo falhou com status/erro ${status}. Injetando dados demo de fallback!`)
        const demoReviews: NormalizedReview[] = [
          {
            tenant_id: connector.tenant_id, business_id: connector.business_id, connector_id: connector.id,
