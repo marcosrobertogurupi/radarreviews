@@ -137,7 +137,9 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
   // Actor correto da comunidade Apify — o anterior 'apify~reclame-aqui-scraper' não existe (404)
-  const actor = actorId || 'viralanalyzer/reclameaqui-scraper'
+  // A API do Apify requer o separador '~' em vez de '/' para resolver o ator.
+  const rawActor = actorId || 'viralanalyzer~reclameaqui-scraper'
+  const actor = rawActor.replace('/', '~')
 
   try {
     const response = await axios.post(
@@ -152,6 +154,12 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
     )
 
     const items = response.data as any[]
+    
+    // Verificar se a Apify retornou um objeto de diagnóstico (ex: soft-deadline ou erro de proxy)
+    const diagnostic = items.find(item => item && item.setup_status === 'DIAGNOSTIC_GUIDE')
+    if (diagnostic) {
+      throw new Error(`Apify retornou erro de diagnostico: ${diagnostic.message || 'soft-deadline ou erro de proxy do Reclame Aqui'}`)
+    }
     
     if (ctx?.tenant_id) {
       await logApiUsage({
@@ -197,23 +205,21 @@ export async function fetchTrustpilotReviews(
   if (!token) throw new Error('APIFY_TOKEN não configurado nas variáveis de ambiente')
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
 
-  const actorId = 'casper11515~trustpilot-reviews-scraper'
+  const actorId = 'pear_fight~trustpilot-scraper'
   const timeoutSecs = 180 // Máximo 3 minutos para Trustpilot
   
   console.log(`[Apify] Chamando scraper para ${domain}...`)
 
   let runId = ''
   try {
-    const endAtPageNumber = Math.ceil(limit / 20) || 1
-
     console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
     const runResponse = await axios.post(
-      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}&timeout=${timeoutSecs}&memory=${DEFAULT_MEMORY_MB}`,
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}&timeout=${timeoutSecs}&memory=1024`,
       { 
-        companyWebsite: sanitizedDomain, 
-        endAtPageNumber,
-        filterByDatePeriod: options.filterByDatePeriod || 'any date',
-        sortBy: options.sortBy || 'recency'
+        companyUrls: [
+          `https://www.trustpilot.com/review/${sanitizedDomain}`
+        ],
+        maxReviews: limit
       }
     )
 
@@ -260,38 +266,42 @@ export async function fetchTrustpilotReviews(
       })
     }
 
-    return items.map(item => {
-      let dateStr = item.reviewDate || item.createdAt || item.date || item.publishedDate || new Date().toISOString()
-      try {
-        const d = new Date(dateStr)
-        if (isNaN(d.getTime())) dateStr = new Date().toISOString()
-        else dateStr = d.toISOString()
-      } catch {
-        dateStr = new Date().toISOString()
-      }
+    return items
+      .filter(item => item && item.type === 'review')
+      .map(item => {
+        let dateStr = item.date || item.reviewDate || item.createdAt || item.publishedDate || new Date().toISOString()
+        try {
+          const d = new Date(dateStr)
+          if (isNaN(d.getTime())) dateStr = new Date().toISOString()
+          else dateStr = d.toISOString()
+        } catch {
+          dateStr = new Date().toISOString()
+        }
 
-      return {
-        id: item.reviewId || item.id || `tp_${Math.random().toString(36).slice(2, 9)}`,
-        stars: item.reviewRatingScore || item.rating || item.stars || 5,
-        title: item.reviewTitle || item.title || '',
-        text: item.reviewDescription || item.text || item.content || item.body || '',
-        createdAt: dateStr,
-        consumer: { 
-          id: item.reviewerId || item.userId || item.consumerId || 'anon', 
-          displayName: item.reviewer || item.userName || item.authorName || item.author || 'Cliente Trustpilot' 
-        },
-        links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${sanitizedDomain}` }]
-      }
-    })
-  } catch (err: any) {
-    if (runId && !err.message.includes('abortado')) {
+        const reviewId = item.reviewUrl ? item.reviewUrl.split('/').pop() : undefined
+
+        return {
+          id: reviewId || item.reviewId || item.id || `tp_${Math.random().toString(36).slice(2, 9)}`,
+          stars: item.rating || item.reviewRatingScore || item.stars || 5,
+          title: item.title || item.reviewTitle || '',
+          text: item.text || item.reviewDescription || item.content || item.body || '',
+          createdAt: dateStr,
+          consumer: { 
+            id: item.reviewerId || item.userId || item.consumerId || 'anon', 
+            displayName: item.author || item.reviewer || item.userName || item.authorName || 'Cliente Trustpilot' 
+          },
+          links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${sanitizedDomain}` }]
+        }
+      })
+  } catch (error: any) {
+    if (runId && !error.message?.includes('abortado')) {
       // Em caso de qualquer erro inesperado, tenta abortar para garantir
       await abortRun(runId).catch(() => {})
     }
-    if (err.response?.data) {
-      console.error(`[Apify] Detalhes do erro Trustpilot:`, JSON.stringify(err.response.data))
+    if (error.response?.data) {
+      console.error(`[Apify] Detalhes do erro Trustpilot:`, JSON.stringify(error.response.data))
     }
-    throw err
+    throw error
   }
 }
 
