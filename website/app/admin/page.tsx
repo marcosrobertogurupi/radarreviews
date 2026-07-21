@@ -1,7 +1,7 @@
 export default function AdminPage() {
   return (
     <iframe
-      src="https://admin-henna-two-20.vercel.app"
+      src="https://admin.reputei.com.br"
       style={{
         position: 'fixed',
         top: 0,
