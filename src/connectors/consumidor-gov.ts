@@ -171,28 +171,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     }
 
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-       const status = error.response?.status ?? 'NETWORK_ERROR'
-       // MODO DEMO: Se a URL governamental falhar, forja 2 reviews para encantar o usuário!
-       logger.warn(`[${CHANNEL}] URL do Governo falhou com status/erro ${status}. Injetando dados demo de fallback!`)
-       const demoReviews: NormalizedReview[] = [
-         {
-           tenant_id: connector.tenant_id, business_id: connector.business_id, connector_id: connector.id,
-           channel: CHANNEL, external_id: `cg-${Date.now()}-1`, published_at: new Date().toISOString(),
-           sentiment: 'negative', title: 'Cobrança Indevida', body: 'Fui cobrado duas vezes na fatura.',
-           is_resolved: false, rating: 2, tags: ['Cobrança', 'Cartão'], raw_data: {}
-         },
-         {
-           tenant_id: connector.tenant_id, business_id: connector.business_id, connector_id: connector.id,
-           channel: CHANNEL, external_id: `cg-${Date.now()}-2`, published_at: new Date(Date.now() - 86400000).toISOString(),
-           sentiment: 'negative', title: 'Problema no App', body: 'O app trava toda hora.',
-           is_resolved: true, rating: 5, tags: ['Aplicativo'], raw_data: {}
-         }
-       ]
-       const ingest = await ingestReviews(demoReviews, CHANNEL, connector.id, connector.business_id)
-       result.reviews_fetched = 2; result.reviews_new = ingest.reviews_new; result.reviews_updated = ingest.reviews_updated;
-       return result;
-    }
+
 
     result.error = error instanceof Error ? error.message : String(error)
     logger.error(`[${CHANNEL}] Falha no processamento`, { error, connector_id: connector.id })
