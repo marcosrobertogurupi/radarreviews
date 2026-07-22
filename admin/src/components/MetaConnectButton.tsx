@@ -10,7 +10,7 @@ export function MetaConnectButton({ tenantId, businessId }: MetaConnectButtonPro
 
   const handleConnect = () => {
     setLoading(true)
-    const apiBase = import.meta.env.VITE_API_URL || 'https://reputei-api.up.railway.app'
+    const apiBase = import.meta.env.VITE_API_URL || 'https://reputei-api-production.up.railway.app'
     // Remove trailing slash if exists
     const cleanApiBase = apiBase.replace(/\/$/, '')
     
