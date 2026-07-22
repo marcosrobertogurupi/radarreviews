@@ -214,10 +214,21 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
     applySearch()
   }, [search, reviews])
 
+  // Garante que a página atual não fique fora dos limites se a lista diminuir
+  useEffect(() => {
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+    if (totalPages > 0 && page >= totalPages) {
+      setPage(totalPages - 1)
+    }
+  }, [filtered.length, page])
+
   async function loadReviews(silent = false) {
-    if (!silent) setLoading(true)
-    else setRefreshing(true)
-    setPage(0)
+    if (!silent) {
+      setLoading(true)
+      setPage(0)
+    } else {
+      setRefreshing(true)
+    }
 
     let query = supabase
       .from('reviews')
@@ -288,7 +299,7 @@ export default function Reviews({ tenants, selectedTenantId, onTenantChange }: P
           className="filter-search"
           placeholder="🔍 Buscar por texto, autor, resumo..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setPage(0) }}
         />
       </div>
 

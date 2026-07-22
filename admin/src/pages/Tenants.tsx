@@ -420,191 +420,199 @@ export default function Tenants() {
           <div className="empty-state-text">Nenhum assinante cadastrado</div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
           {tenants.map(t => {
             const isActive = t.is_active ?? true
+            const subStatus = t.plan_status || t.subscription_status || 'active'
+
+            let statusColor = '#10b981'
+            let statusBg = 'rgba(16, 185, 129, 0.1)'
+            let statusBorder = 'rgba(16, 185, 129, 0.2)'
+            let statusLabel = 'Ativo'
+            let statusEmoji = '🟢'
+
+            if (!isActive) {
+              statusColor = '#ef4444'
+              statusBg = 'rgba(239, 68, 68, 0.1)'
+              statusBorder = 'rgba(239, 68, 68, 0.2)'
+              statusLabel = 'Bloqueado'
+              statusEmoji = '⚫'
+            } else if (subStatus === 'suspended') {
+              statusColor = '#ef4444'
+              statusBg = 'rgba(239, 68, 68, 0.1)'
+              statusBorder = 'rgba(239, 68, 68, 0.2)'
+              statusLabel = 'Suspenso'
+              statusEmoji = '🔴'
+            } else if (subStatus === 'canceled') {
+              statusColor = '#9ca3af'
+              statusBg = 'rgba(156, 163, 175, 0.1)'
+              statusBorder = 'rgba(156, 163, 175, 0.2)'
+              statusLabel = 'Cancelado'
+              statusEmoji = '⚫'
+            } else if (subStatus === 'past_due') {
+              statusColor = '#f59e0b'
+              statusBg = 'rgba(245, 158, 11, 0.1)'
+              statusBorder = 'rgba(245, 158, 11, 0.2)'
+              statusLabel = 'Atrasado'
+              statusEmoji = '🟡'
+            } else if (subStatus === 'trial') {
+              const trialExpired = t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
+              if (trialExpired) {
+                statusColor = '#f59e0b'
+                statusBg = 'rgba(245, 158, 11, 0.1)'
+                statusBorder = 'rgba(245, 158, 11, 0.2)'
+                statusLabel = 'Trial Expirado'
+                statusEmoji = '⏰'
+              } else {
+                statusColor = '#60a5fa'
+                statusBg = 'rgba(96, 165, 250, 0.1)'
+                statusBorder = 'rgba(96, 165, 250, 0.2)'
+                statusLabel = 'Trial Ativo'
+                statusEmoji = '⏳'
+              }
+            }
+
+            const p = PLAN_CONFIG[t.plan ?? 'trial'] ?? PLAN_CONFIG['trial']
+
             return (
-            <div key={t.id} className="card" style={{ padding: 20, opacity: isActive ? 1 : 0.6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-                  <div style={{ background: isActive ? 'rgba(99,102,241,0.1)' : 'rgba(156,163,175,0.1)', padding: 10, borderRadius: 8, flexShrink: 0 }}>
-                    <Building2 size={24} color={isActive ? "#a5b4fc" : "#9ca3af"} />
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                      <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</h3>
-                      {(() => {
-                        const subStatus = t.plan_status || t.subscription_status || 'active'
-                        
-                        let statusColor = '#10b981'
-                        let statusBg = 'rgba(16, 185, 129, 0.1)'
-                        let statusBorder = 'rgba(16, 185, 129, 0.2)'
-                        let label = 'Ativo'
-                        let emoji = '🟢'
-
-                        if (!isActive) {
-                          statusColor = '#ef4444'
-                          statusBg = 'rgba(239, 68, 68, 0.1)'
-                          statusBorder = 'rgba(239, 68, 68, 0.2)'
-                          label = 'Bloqueado'
-                          emoji = '⚫'
-                        } else if (subStatus === 'suspended') {
-                          statusColor = '#ef4444'
-                          statusBg = 'rgba(239, 68, 68, 0.1)'
-                          statusBorder = 'rgba(239, 68, 68, 0.2)'
-                          label = 'Suspenso'
-                          emoji = '🔴'
-                        } else if (subStatus === 'canceled') {
-                          statusColor = '#9ca3af'
-                          statusBg = 'rgba(156, 163, 175, 0.1)'
-                          statusBorder = 'rgba(156, 163, 175, 0.2)'
-                          label = 'Cancelado'
-                          emoji = '⚫'
-                        } else if (subStatus === 'past_due') {
-                          statusColor = '#f59e0b'
-                          statusBg = 'rgba(245, 158, 11, 0.1)'
-                          statusBorder = 'rgba(245, 158, 11, 0.2)'
-                          label = 'Atrasado'
-                          emoji = '🟡'
-                        } else if (subStatus === 'trial') {
-                          const trialExpired = t.trial_ends_at && new Date(t.trial_ends_at) < new Date()
-                          if (trialExpired) {
-                            statusColor = '#f59e0b'
-                            statusBg = 'rgba(245, 158, 11, 0.1)'
-                            statusBorder = 'rgba(245, 158, 11, 0.2)'
-                            label = 'Trial Expirado'
-                            emoji = '⏰'
-                          } else {
-                            statusColor = '#60a5fa'
-                            statusBg = 'rgba(96, 165, 250, 0.1)'
-                            statusBorder = 'rgba(96, 165, 250, 0.2)'
-                            label = 'Trial Ativo'
-                            emoji = '⏳'
-                          }
-                        }
-
-                        return (
-                          <div style={{ 
-                            display: 'flex', alignItems: 'center', gap: 4, 
-                            fontSize: 11, padding: '2px 8px', borderRadius: 99, 
-                            whiteSpace: 'nowrap',
-                            background: statusBg,
-                            color: statusColor,
-                            border: `1px solid ${statusBorder}`
-                          }}>
-                            <span>{emoji}</span>
-                            {label}
-                          </div>
-                        )
-                      })()}
+              <div key={t.id} className="card" style={{ padding: 20, opacity: isActive ? 1 : 0.65, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  {/* Top Header: Icon + Name (left) & Actions Toolbar (right) */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                      <div style={{ background: isActive ? 'rgba(99,102,241,0.1)' : 'rgba(156,163,175,0.1)', padding: 8, borderRadius: 8, flexShrink: 0 }}>
+                        <Building2 size={22} color={isActive ? "#a5b4fc" : "#9ca3af"} />
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: 1.3 }} title={t.name}>
+                        {t.name}
+                      </h3>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.slug}</code>
-                      {(() => {
-                        const p = PLAN_CONFIG[t.plan ?? 'trial'] ?? PLAN_CONFIG['trial']
-                        return (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: `${p.color}22`, color: p.color, border: `1px solid ${p.color}44` }}>
-                            {p.label}
-                          </span>
-                        )
-                      })()}
-                      {(t.plan_status === 'trial' || t.subscription_status === 'trial') && t.trial_ends_at && (
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                          Expira: {new Date(t.trial_ends_at).toLocaleDateString()}
-                        </span>
+
+                    {/* Action Buttons Toolbar */}
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0, background: 'rgba(255,255,255,0.04)', padding: 3, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                      {(t.plan_status === 'trial' || t.subscription_status === 'trial') && (
+                        <button onClick={() => extendTrial(t)} className="btn-icon" style={{ padding: 5, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer' }} title="+7 dias de trial">
+                          <Plus size={14} color="#f59e0b" />
+                        </button>
                       )}
+                      <button onClick={() => {
+                        const b = businesses[t.id]?.[0]
+                        setEditingTenant({ ...t, cnpj: b?.cnpj || '' })
+                      }} className="btn-icon" style={{ padding: 5, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer' }} title="Editar assinante">
+                        <Edit size={14} color="#60a5fa" />
+                      </button>
+                      <button onClick={() => { setCredentialsTenant(t); setCredentials({ email: '', password: '' }) }} className="btn-icon" style={{ padding: 5, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer' }} title="Alterar e-mail / senha do portal">
+                        <KeyRound size={14} color="#a78bfa" />
+                      </button>
+                      <button onClick={() => toggleActive(t)} className="btn-icon" style={{ padding: 5, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer' }} title={isActive ? 'Pausar monitoramento' : 'Ativar monitoramento'}>
+                        <Power size={14} color={isActive ? "#10b981" : "#ef4444"} />
+                      </button>
+                      <button onClick={() => handleDelete(t)} className="btn-icon" style={{ padding: 5, borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer' }} title="Deletar permanentemente">
+                        <Trash2 size={14} color="#fca5a5" />
+                      </button>
                     </div>
+                  </div>
+
+                  {/* Badges & Meta Row (Organized below title and toolbar) */}
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                    <code style={{ fontSize: 11, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4 }}>
+                      {t.slug}
+                    </code>
+
+                    <div style={{ 
+                      display: 'inline-flex', alignItems: 'center', gap: 4, 
+                      fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 99, 
+                      whiteSpace: 'nowrap',
+                      background: statusBg,
+                      color: statusColor,
+                      border: `1px solid ${statusBorder}`
+                    }}>
+                      <span>{statusEmoji}</span>
+                      {statusLabel}
+                    </div>
+
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: `${p.color}22`, color: p.color, border: `1px solid ${p.color}44`, whiteSpace: 'nowrap' }}>
+                      {p.label}
+                    </span>
+
+                    {(t.plan_status === 'trial' || t.subscription_status === 'trial') && t.trial_ends_at && (
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                        Expira: {new Date(t.trial_ends_at).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 8, flexShrink: 0 }}>
-                  {(t.plan_status === 'trial' || t.subscription_status === 'trial') && (
-                    <button onClick={() => extendTrial(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="+7 dias de trial">
-                      <Plus size={14} color="#f59e0b" />
-                    </button>
+                {/* Monitored Businesses Section */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Empresas Monitoradas ({businesses[t.id]?.length || 0}):
+                  </h4>
+                  {businesses[t.id]?.length ? (
+                    <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {businesses[t.id].map(b => (
+                        <li key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>
+                            <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{b.name}</span>
+                            {b.cnpj && <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 6 }}>({b.cnpj})</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                            <button 
+                              onClick={() => setEditingBusiness(b)} 
+                              className="btn-icon" 
+                              style={{ padding: 4, background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                              title="Editar CNPJ / Nome"
+                            >
+                              <Edit size={12} color="#60a5fa" />
+                            </button>
+                            {businesses[t.id]?.length > 1 && (
+                              <button 
+                                onClick={() => handleDeleteBusiness(b)} 
+                                className="btn-icon" 
+                                style={{ padding: 4, background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                                title="Excluir Unidade"
+                              >
+                                <Trash2 size={12} color="#fca5a5" />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma empresa conectada.</div>
                   )}
-                  <button onClick={() => {
-                    const b = businesses[t.id]?.[0]
-                    setEditingTenant({ ...t, cnpj: b?.cnpj || '' })
-                  }} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Editar assinante">
-                    <Edit size={14} color="#60a5fa" />
-                  </button>
-                  <button onClick={() => { setCredentialsTenant(t); setCredentials({ email: '', password: '' }) }} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Alterar e-mail / senha do portal">
-                    <KeyRound size={14} color="#a78bfa" />
-                  </button>
-                  <button onClick={() => toggleActive(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title={isActive ? 'Pausar monitoramento' : 'Ativar monitoramento'}>
-                    <Power size={14} color={isActive ? "#10b981" : "#ef4444"} />
-                  </button>
-                  <button onClick={() => handleDelete(t)} className="btn-icon" style={{ padding: 6, opacity: 0.8 }} title="Deletar permanentemente">
-                    <Trash2 size={14} color="#fca5a5" />
+                  
+                  <button
+                    onClick={() => {
+                      setNewBusinessTenantId(t.id)
+                      setNewBusiness({ name: '', cnpj: '' })
+                      setShowNewBusinessModal(true)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                      width: '100%',
+                      background: 'rgba(99,102,241,0.08)',
+                      color: '#a5b4fc',
+                      border: '1px dashed rgba(99,102,241,0.3)',
+                      borderRadius: 6,
+                      padding: '6px 8px',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      marginTop: 10,
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <Plus size={13} /> Adicionar Unidade / Filial
                   </button>
                 </div>
-
               </div>
-              
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: 11, color: 'var(--text-muted)' }}>Empresas Monitoradas:</h4>
-                {businesses[t.id]?.length ? (
-                  <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', fontSize: 13 }}>
-                    {businesses[t.id].map(b => (
-                      <li key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
-                        <div>
-                          {b.name} <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{b.cnpj && `(${b.cnpj})`}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button 
-                            onClick={() => setEditingBusiness(b)} 
-                            className="btn-icon" 
-                            style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
-                            title="Editar CNPJ / Nome"
-                          >
-                            <Edit size={12} color="#60a5fa" />
-                          </button>
-                          {businesses[t.id]?.length > 1 && (
-                            <button 
-                              onClick={() => handleDeleteBusiness(b)} 
-                              className="btn-icon" 
-                              style={{ padding: 4, background: 'rgba(255,255,255,0.03)' }}
-                              title="Excluir Unidade"
-                            >
-                              <Trash2 size={12} color="#fca5a5" />
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma empresa conectada.</div>
-                )}
-                
-                <button
-                  onClick={() => {
-                    setNewBusinessTenantId(t.id)
-                    setNewBusiness({ name: '', cnpj: '' })
-                    setShowNewBusinessModal(true)
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: 'rgba(99,102,241,0.08)',
-                    color: '#a5b4fc',
-                    border: '1px dashed rgba(99,102,241,0.3)',
-                    borderRadius: 6,
-                    padding: '4px 8px',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    marginTop: 8,
-                    fontFamily: 'Inter, sans-serif'
-                  }}
-                >
-                  <Plus size={12} /> Adicionar Unidade / Filial
-                </button>
-              </div>
-            </div>
-          )})}
+            )
+          })}
         </div>
       )}
 

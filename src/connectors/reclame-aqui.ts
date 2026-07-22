@@ -299,7 +299,7 @@ async function runPlaywrightScraper(
                   if (c && (c.description || c.text)) {
                     return {
                       body: String(c.description ?? c.text ?? ''),
-                      date: String(c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.createdDate ?? ''),
+                      date: String(c.created ?? c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.created ?? c.legacyComplaint?.createdDate ?? ''),
                     }
                   }
                 } catch { }
@@ -322,10 +322,21 @@ async function runPlaywrightScraper(
                 }
               }
 
-              const timeEl = document.querySelector('time[datetime], [class*="date"], [class*="Date"]')
+              let timeVal = document.querySelector('time[datetime]')?.getAttribute('datetime') ?? null
+              if (!timeVal) {
+                const allEls = Array.from(document.querySelectorAll('span, p, div, time, small'))
+                for (const el of allEls) {
+                  const txt = el.textContent?.trim() ?? ''
+                  if (/(\d{2}\/\d{2}\/\d{2,4})|(há\s+\d+)/i.test(txt) && txt.length < 60) {
+                    timeVal = el.getAttribute('datetime') ?? txt
+                    break
+                  }
+                }
+              }
+
               return {
                 body: bodyText,
-                date: timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? null,
+                date: timeVal,
               }
             })
 
@@ -568,13 +579,24 @@ async function extractFromNextData(page: import('playwright-core').Page, company
         // Rejeita reclamações cujo URL pertence a outra empresa
         if (url.includes('/empresa/') && !url.includes(`/empresa/${companySlug}/`)) return null
 
+        const dateVal = String(
+          c['created'] ??
+          c['createdDate'] ??
+          c['date'] ??
+          c['data'] ??
+          c['createdAt'] ??
+          (c['legacyComplaint'] as Record<string, unknown> | undefined)?.['created'] ??
+          (c['legacyComplaint'] as Record<string, unknown> | undefined)?.['createdDate'] ??
+          ''
+        )
+
         const parsed = ReclameAquiComplaintSchema.safeParse({
           id: String(c['id'] ?? c['_id'] ?? ''),
           title: String(c['title'] ?? c['titulo'] ?? ''),
           description: String(c['description'] ?? c['descricao'] ?? c['text'] ?? ''),
           status: String(c['status'] ?? ''),
           author: String(c['demanderName'] ?? c['author'] ?? c['nome'] ?? ''),
-          date: String(c['createdDate'] ?? c['date'] ?? c['data'] ?? c['createdAt'] ?? (c['legacyComplaint'] as Record<string,unknown> | undefined)?.['createdDate'] ?? ''),
+          date: dateVal,
           url,
           isResolved: Boolean(c['evaluated'] ?? false),
         })
@@ -616,8 +638,22 @@ async function extractFromDom(page: import('playwright-core').Page, companySlug:
           const container = link.closest('li, article, div[class*="item"], div[class*="Item"]') ?? link
 
           const titleEl = container.querySelector('h4, h3, [class*="title"], [class*="Title"]')
-          const dateEl = container.querySelector('time, [class*="date"], [class*="Date"]')
           const statusEl = container.querySelector('[class*="status"], [class*="Status"], [class*="badge"]')
+
+          let dateStr = ''
+          const dateEl = container.querySelector('time, [class*="date"], [class*="Date"]')
+          if (dateEl) {
+            dateStr = dateEl.getAttribute('datetime') ?? dateEl.textContent?.trim() ?? ''
+          } else {
+            const children = Array.from(container.querySelectorAll('span, p, div, small, time'))
+            for (const child of children) {
+              const text = child.textContent?.trim() ?? ''
+              if (/(\d{2}\/\d{2}\/\d{2,4})|(há\s+\d+)|(há\s+pouco)/i.test(text) && text.length < 60) {
+                dateStr = child.getAttribute('datetime') ?? text
+                break
+              }
+            }
+          }
 
           const href = (link as HTMLAnchorElement).href
           // Extrair o ID/slug da URL: /reclamacao/empresa/titulo-XXXXXXXX/
@@ -629,7 +665,7 @@ async function extractFromDom(page: import('playwright-core').Page, companySlug:
           return {
             id,
             title: titleEl?.textContent?.trim() ?? '',
-            date: dateEl?.getAttribute('datetime') ?? dateEl?.textContent?.trim() ?? '',
+            date: dateStr,
             status: statusEl?.textContent?.trim() ?? '',
             url: href,
           }
@@ -736,8 +772,32 @@ function parseDate(dateStr: string): string | null {
   if (!dateStr || dateStr.trim() === '') return null
   const s = dateStr.toLowerCase().trim()
 
-  // 1. Datas relativas: "há 2 dias", "há 3 horas", "há 1 minuto"
-  if (s.startsWith('há')) {
+  // 1. ISO 8601 (ex: "2026-07-16T14:39:56.000Z")
+  try {
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime()) && d.getFullYear() > 2000 && dateStr.includes('T')) return d.toISOString()
+  } catch { /* continua */ }
+
+  // 2. Formato brasileiro com hora: "17/04/2024 às 15:30" ou "17/04/24 15:30"
+  const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})[^\d]*(\d{2}):(\d{2})/)
+  if (brDateTime) {
+    const [, day, month, yearStr, hour, min] = brDateTime
+    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
+    const d = new Date(`${year}-${month}-${day}T${hour}:${min}:00-03:00`)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  }
+
+  // 3. Formato brasileiro simples: "17/04/2024" ou "17/04/24"
+  const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})/)
+  if (brMatch) {
+    const [, day, month, yearStr] = brMatch
+    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
+    const d = new Date(`${year}-${month}-${day}T12:00:00-03:00`)
+    if (!isNaN(d.getTime())) return d.toISOString()
+  }
+
+  // 4. Datas relativas: "há 2 dias", "há 3 horas", "há 1 minuto" (em qualquer parte do texto)
+  if (s.includes('há')) {
     const now = new Date()
     const match = s.match(/há\s+(\d+)\s+(dia|hora|minuto|mês|ano)s?/)
     if (match) {
@@ -753,31 +813,13 @@ function parseDate(dateStr: string): string | null {
     if (s.includes('instante') || s.includes('pouco')) return now.toISOString()
   }
 
-  // 2. ISO 8601 (ex: "2024-04-17T15:30:00.000Z")
+  // 5. Fallback para new Date em outros formatos genéricos
   try {
     const d = new Date(dateStr)
     if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.toISOString()
   } catch { /* continua */ }
 
-  // 3. Formato brasileiro com hora: "17/04/2024 às 15:30" ou "17/04/24 15:30"
-  const brDateTime = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})[^\d]*(\d{2}):(\d{2})/)
-  if (brDateTime) {
-    const [, day, month, yearStr, hour, min] = brDateTime
-    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
-    const d = new Date(`${year}-${month}-${day}T${hour}:${min}:00-03:00`)
-    if (!isNaN(d.getTime())) return d.toISOString()
-  }
-
-  // 4. Formato brasileiro simples: "17/04/2024" ou "17/04/24"
-  const brMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{2,4})/)
-  if (brMatch) {
-    const [, day, month, yearStr] = brMatch
-    const year = yearStr!.length === 2 ? `20${yearStr}` : yearStr!
-    const d = new Date(`${year}-${month}-${day}T12:00:00-03:00`)
-    if (!isNaN(d.getTime())) return d.toISOString()
-  }
-
-  // 5. Timestamp unix em milissegundos
+  // 6. Timestamp unix em milissegundos
   if (/^\d{13}$/.test(dateStr.trim())) {
     const d = new Date(parseInt(dateStr, 10))
     if (!isNaN(d.getTime())) return d.toISOString()

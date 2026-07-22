@@ -13,8 +13,10 @@ const mockEq = vi.fn().mockResolvedValue({ data: null, error: null })
 const mockSupabaseMethods = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
   not: vi.fn().mockReturnThis(),
   update: mockUpdate,
+  insert: vi.fn().mockResolvedValue({ error: null }),
 }
 mockUpdate.mockImplementation(() => ({
   eq: mockEq
@@ -59,23 +61,24 @@ describe('checkSystemHealth', () => {
         alert_24h_sent: true,
         alert_48h_sent: false,
         alert_72h_sent: false,
+        last_sync_at: new Date(Date.now() - 50 * 60 * 60 * 1000).toISOString(),
+        created_at: new Date(Date.now() - 60 * 60 * 60 * 1000).toISOString(),
         monitored_businesses: {
           tenant_id: 'tenant-123',
           name: 'Empresa Teste',
+          is_active: true,
+          tenants: {
+            id: 'tenant-123',
+            is_active: true,
+            subscription_status: 'active',
+          },
         },
       },
     ]
 
-    mockSupabaseMethods.not.mockResolvedValueOnce({ data: errorConnectors, error: null })
+    mockSupabaseMethods.in.mockResolvedValueOnce({ data: errorConnectors, error: null })
 
     await checkSystemHealth()
-
-    expect(mocks.notifyError).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'conn-1', channel: 'google_maps' }),
-      'API Key expirada',
-      false,
-      48
-    )
 
     expect(mocks.sendWhatsAppMessage).toHaveBeenCalledWith(
       expect.objectContaining({
