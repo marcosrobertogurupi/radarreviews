@@ -1,4 +1,4 @@
-// File: C:\Users\Marcos\.gemini\antigravity\scratch\radar-views\website\app\portalcliente\page.tsx
+// File: C:\Users\Marcos\.gemini\antigravity-ide\scratch\radar-views\website\app\portalcliente\page.tsx
 import * as entry from '../../../../app/portalcliente/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

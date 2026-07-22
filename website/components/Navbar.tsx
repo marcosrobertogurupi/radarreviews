@@ -24,18 +24,14 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <Link href="/" className="text-gray-300 hover:text-white transition-colors">Home</Link>
             <Link href="/parceiros" className="text-gray-300 hover:text-white transition-colors">Parceiros</Link>
-            <a
-              href="https://app.reputei.com.br"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/portalcliente"
               className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full transition-all border border-gray-700 font-medium whitespace-nowrap"
             >
               Portal (Cliente/Parceiro)
-            </a>
+            </Link>
             <a
               href="https://admin.reputei.com.br"
-              target="_blank"
-              rel="noopener noreferrer"
               className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all shadow-lg shadow-indigo-500/20 font-medium"
             >
               Painel Admin

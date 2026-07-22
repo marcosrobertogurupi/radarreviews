@@ -7,7 +7,7 @@ import {
   Loader2, Star, Megaphone, Building, CheckSquare, Square
 } from 'lucide-react'
 
-const API_URL = (import.meta.env.VITE_API_URL ?? 'https://reputei-api-production.up.railway.app').replace(/\/+$/, '')
+const API_URL = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
 
 interface Score {
   id: string

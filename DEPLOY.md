@@ -42,11 +42,11 @@ GEMINI_API_KEY       = <sua chave Gemini do arquivo .env>
 
 ### 1.3 Aguardar o deploy
 Após configurar as variáveis, o Railway faz o deploy automaticamente.
-Anote a URL gerada — algo como `https://reputei-api-production.up.railway.app`.
+Anote a URL gerada — algo como `https://api-production-24e1.up.railway.app`.
 
 ### 1.4 Testar a API
 ```
-GET https://reputei-api-production.up.railway.app/health
+GET https://api-production-24e1.up.railway.app/health
 → {"ok":true,"ts":"..."}
 ```
 
@@ -72,7 +72,7 @@ Responda as perguntas:
 ```
 VITE_SUPABASE_URL      = https://lkwahbipteiqqzkmfrac.supabase.co
 VITE_SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxrd2FoYmlwdGVpcXF6a21mcmFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MTM4MjcsImV4cCI6MjA5MTQ4OTgyN30.tTEK34V1G1aIPDggdzv2lPx07eOOE2_umrRLoXErN6U
-VITE_API_URL           = https://reputei-api-production.up.railway.app
+VITE_API_URL           = https://api-production-24e1.up.railway.app
 ```
 
 > Substitua a URL da API pela URL real gerada no Railway (Passo 1).

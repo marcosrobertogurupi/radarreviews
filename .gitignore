@@ -38,3 +38,5 @@ scratch/
 *.xml
 antigravity_prompts/
 CLAUDE.md
+.vercel
+.env*

@@ -1,18 +1,6 @@
+import { redirect } from 'next/navigation'
+
 export default function AdminPage() {
-  return (
-    <iframe
-      src="https://admin.reputei.com.br"
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        border: 'none',
-        margin: 0,
-        padding: 0,
-      }}
-      title="Painel Admin Reputei"
-    />
-  )
+  redirect('https://admin.reputei.com.br')
 }
+

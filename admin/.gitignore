@@ -27,3 +27,4 @@ dist-ssr
 !.vercel/project.json
 
 .vercel
+.env*
