@@ -3,11 +3,45 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/admin/:path*",
+      "source": "/assets/(.*)",
+      "has": [
+        { "type": "host", "value": "admin.reputei.com.br" }
+      ],
+      "destination": "/admin/assets/$1"
+    },
+    {
+      "source": "/(.*\\.(png|jpe?g|gif|ico|svg|json|webmanifest|txt))",
+      "has": [
+        { "type": "host", "value": "admin.reputei.com.br" }
+      ],
+      "destination": "/admin/$1"
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        { "type": "host", "value": "admin.reputei.com.br" }
+      ],
       "destination": "/admin/index.html"
     },
     {
-      "source": "/portal/:path*",
+      "source": "/assets/(.*)",
+      "has": [
+        { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
+      ],
+      "destination": "/portal/assets/$1"
+    },
+    {
+      "source": "/(.*\\.(png|jpe?g|gif|ico|svg|json|webmanifest|txt))",
+      "has": [
+        { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
+      ],
+      "destination": "/portal/$1"
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
+      ],
       "destination": "/portal/index.html"
     }
   ]
