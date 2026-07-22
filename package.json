@@ -20,6 +20,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.46.2",
+    "@zip.js/zip.js": "^2.8.33",
     "axios": "^1.7.9",
     "cheerio": "^1.2.0",
     "csv-parse": "^5.6.0",

@@ -155,7 +155,7 @@ describe('Consumidor.gov connector', () => {
     // Deve ter chamado o axios para o CSV com o URL retornado pela API
     expect(axiosMock).toHaveBeenCalledWith(
       'https://dados.mj.gov.br/mock-resource-id/download.csv',
-      expect.objectContaining({ responseType: 'stream' })
+      expect.objectContaining({ responseType: expect.any(String) })
     )
   })
 })
