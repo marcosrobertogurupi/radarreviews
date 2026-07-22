@@ -103,4 +103,9 @@ export function ratingStars(rating: number): string {
   return '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating))
 }
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001'
+export const API_URL = (() => {
+  const envUrl = import.meta.env.VITE_API_URL as string | undefined
+  if (envUrl && envUrl.includes('reputei-api-production')) return 'https://api-production-24e1.up.railway.app'
+  if (envUrl && envUrl.includes('reputei-api.railway.app')) return 'https://api-production-24e1.up.railway.app'
+  return (envUrl || 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+})()

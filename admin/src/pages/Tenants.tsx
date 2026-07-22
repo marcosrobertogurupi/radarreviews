@@ -101,7 +101,7 @@ export default function Tenants() {
     e.preventDefault()
     setSaving(true)
 
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+    const baseUrl = API_URL
 
     try {
       const res = await fetch(`${baseUrl}/api/onboarding`, {
@@ -139,7 +139,7 @@ export default function Tenants() {
     e.preventDefault()
     if (!editingTenant) return
 
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+    const baseUrl = API_URL
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const resp = await fetch(`${baseUrl}/api/admin/tenant/${editingTenant.id}`, {
@@ -186,7 +186,7 @@ export default function Tenants() {
       dangerous: !newVal,
       onConfirm: async () => {
         setConfirmDialog(null)
-        const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+        const baseUrl = API_URL
         try {
           const { data: { session } } = await supabase.auth.getSession()
           const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}/active`, {
@@ -219,7 +219,7 @@ export default function Tenants() {
       confirmLabel: '+7 dias',
       onConfirm: async () => {
         setConfirmDialog(null)
-        const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+        const baseUrl = API_URL
         try {
           const { data: { session } } = await supabase.auth.getSession()
           const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
@@ -249,7 +249,7 @@ export default function Tenants() {
     if (!credentials.email && !credentials.password) return toast('Informe ao menos e-mail ou senha.', 'info')
     setSavingCreds(true)
 
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+    const baseUrl = API_URL
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`${baseUrl}/api/admin/credentials`, {
@@ -281,7 +281,7 @@ export default function Tenants() {
     if (!editingBusiness) return
     setSaving(true)
 
-    const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+    const baseUrl = API_URL
     try {
       const resp = await fetch(`${baseUrl}/api/admin/tenant/${editingBusiness.tenant_id}`, {
         method: 'PATCH',
@@ -379,7 +379,7 @@ export default function Tenants() {
         try {
           const { data: { session } } = await supabase.auth.getSession()
           if (!session) return toast('Sessão expirada. Faça login novamente.', 'error')
-          const baseUrl = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+          const baseUrl = API_URL
           const resp = await fetch(`${baseUrl}/api/admin/tenant/${t.id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${session.access_token}` },

@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Facebook, Loader2 } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 
 interface MetaConnectButtonProps {
   tenantId: string
@@ -10,7 +12,7 @@ export function MetaConnectButton({ tenantId, businessId }: MetaConnectButtonPro
 
   const handleConnect = () => {
     setLoading(true)
-    const apiBase = import.meta.env.VITE_API_URL || 'https://api-production-24e1.up.railway.app'
+    const apiBase = API_URL
     // Remove trailing slash if exists
     const cleanApiBase = apiBase.replace(/\/$/, '')
     

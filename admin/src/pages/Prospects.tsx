@@ -5,7 +5,7 @@ import {
   Target, Users, Send, CheckCircle, AlertOctagon, HelpCircle,
   Play, Check, Edit3, Trash2, Mail, MessageSquare, ExternalLink, Loader2, ArrowRight
 } from 'lucide-react'
-const API_URL = (import.meta.env.VITE_API_URL ?? 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+import { API_URL } from '../lib/utils'
 
 interface Campaign {
   id: string
