@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Plus, Search, Building, MoreVertical, Calendar } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 
 interface ClientsProps {
   session: Session
@@ -12,7 +13,7 @@ export default function Clients({ session }: ClientsProps) {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/partner/clients`, {
+    fetch(`${API_URL}/api/partner/clients`, {
       headers: { 'Authorization': `Bearer ${session.access_token}` }
     })
     .then(r => r.json())

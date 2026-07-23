@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Users, UserCheck, DollarSign, TrendingUp, AlertCircle, ArrowRight } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 
 interface DashboardProps {
   session: Session
@@ -13,7 +14,7 @@ export default function Dashboard({ session, partner, onNavigate }: DashboardPro
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/partner/commissions`, {
+    fetch(`${API_URL}/api/partner/commissions`, {
       headers: { 'Authorization': `Bearer ${session.access_token}` }
     })
     .then(r => r.json())

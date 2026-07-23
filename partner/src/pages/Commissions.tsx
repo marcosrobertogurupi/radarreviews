@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { DollarSign, Search, FileText, Download } from 'lucide-react'
+import { API_URL } from '../lib/utils'
 
 interface CommissionsProps {
   session: Session
@@ -12,7 +13,7 @@ export default function Commissions({ session }: CommissionsProps) {
   const [filterStatus, setFilterStatus] = useState<string>('all')
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/partner/commissions`, {
+    fetch(`${API_URL}/api/partner/commissions`, {
       headers: { 'Authorization': `Bearer ${session.access_token}` }
     })
     .then(r => r.json())

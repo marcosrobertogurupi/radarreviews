@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Filter, CheckCircle, XCircle, Clock, CreditCard, ChevronDown, DollarSign } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { API_URL } from '../lib/utils'
 
 export default function PartnerCommissions() {
   const [commissions, setCommissions] = useState<any[]>([])
@@ -16,7 +17,7 @@ export default function PartnerCommissions() {
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/commissions`, {
+      const r = await fetch(`${API_URL}/api/admin/commissions`, {
         headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
       })
       const data = await r.json()
@@ -33,7 +34,7 @@ export default function PartnerCommissions() {
     
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/commissions/${id}/status`, {
+      const res = await fetch(`${API_URL}/api/admin/commissions/${id}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

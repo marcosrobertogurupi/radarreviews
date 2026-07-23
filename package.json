@@ -20,6 +20,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.46.2",
+    "@types/pg": "^8.20.0",
     "@zip.js/zip.js": "^2.8.33",
     "axios": "^1.7.9",
     "cheerio": "^1.2.0",
@@ -29,6 +30,7 @@
     "iconv-lite": "^0.7.2",
     "isomorphic-dompurify": "^3.15.0",
     "nodemailer": "^8.0.7",
+    "pg": "^8.22.0",
     "playwright": "^1.59.1",
     "playwright-core": "^1.59.1",
     "tsx": "^4.19.2",

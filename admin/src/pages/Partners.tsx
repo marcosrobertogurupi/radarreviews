@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Building2, MoreVertical, ShieldCheck, Mail, Phone, Edit, Trash2, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { API_URL } from '../lib/utils'
 
 export default function Partners() {
   const [partners, setPartners] = useState<any[]>([])
@@ -31,7 +32,7 @@ export default function Partners() {
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners`, {
+      const r = await fetch(`${API_URL}/api/admin/partners`, {
         headers: { 'Authorization': `Bearer ${session?.access_token || ''}` }
       })
       const data = await r.json()
@@ -83,7 +84,7 @@ export default function Partners() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners/${partner.id}`, {
+      const res = await fetch(`${API_URL}/api/admin/partners/${partner.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -106,7 +107,7 @@ export default function Partners() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/partners/${partner.id}`, {
+      const res = await fetch(`${API_URL}/api/admin/partners/${partner.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session?.access_token || ''}`
@@ -129,8 +130,8 @@ export default function Partners() {
       const { data: { session } } = await supabase.auth.getSession()
       
       const url = editingPartnerId 
-        ? `${import.meta.env.VITE_API_URL}/api/admin/partners/${editingPartnerId}`
-        : `${import.meta.env.VITE_API_URL}/api/admin/partners`
+        ? `${API_URL}/api/admin/partners/${editingPartnerId}`
+        : `${API_URL}/api/admin/partners`
         
       const method = editingPartnerId ? 'PUT' : 'POST'
       
@@ -149,8 +150,14 @@ export default function Partners() {
         body: JSON.stringify(payload)
       })
       if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error)
+        let errText = ''
+        try {
+          const errorData = await res.json()
+          errText = errorData.error || errorData.message
+        } catch {
+          errText = `Erro HTTP ${res.status}: ${res.statusText}`
+        }
+        throw new Error(errText || 'Erro ao salvar parceiro')
       }
       setModalOpen(false)
       setEditingPartnerId(null)
@@ -160,9 +167,12 @@ export default function Partners() {
         partner_type: 'agency', commission_setup_rate: 20, commission_recurring_rate: 10, status: 'active'
       })
     } catch (err: any) {
-      let msg = err.message
-      if (msg === 'Failed to fetch') msg = 'Erro de conexão com o servidor. Tente novamente.'
-      if (msg.includes('already been registered')) msg = 'Este e-mail já está em uso por outro parceiro ou usuário.'
+      let msg = err.message || 'Erro desconhecido'
+      if (msg === 'Failed to fetch' || msg.includes('Failed to fetch')) {
+        msg = 'Erro de conexão com o servidor. Verifique se o servidor backend está online.'
+      } else if (msg.includes('already been registered')) {
+        msg = 'Este e-mail já está em uso por outro parceiro ou usuário.'
+      }
       setFormError(msg)
     }
   }

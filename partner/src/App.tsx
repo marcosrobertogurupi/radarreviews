@@ -50,7 +50,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return
     // Fetch partner details
-    fetch(`${import.meta.env.VITE_API_URL}/api/partner/dashboard`, {
+    fetch(`${API_URL}/api/partner/dashboard`, {
       headers: { 'Authorization': `Bearer ${session.access_token}` }
     })
     .then(r => r.json())

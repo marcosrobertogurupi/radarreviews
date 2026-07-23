@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { Review, AlertEvent } from '../lib/supabase'
 import {
   CHANNEL_LABELS, CHANNEL_ICONS, SENTIMENT_LABELS, SENTIMENT_COLORS,
-  timeAgo, scoreToEmoji, ratingStars,
+  timeAgo, scoreToEmoji, ratingStars, API_URL,
 } from '../lib/utils'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -66,7 +66,7 @@ export default function Dashboard({ tenantId }: Props) {
         .eq('tenant_id', tenantId)
       const bizIds = (bizData ?? []).map(b => b.id)
 
-      const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+      const API_BASE = API_URL
       const token = (await supabase.auth.getSession()).data.session?.access_token
       const repScorePromise: Promise<ReputationScore[]> = token
         ? fetch(`${API_BASE}/api/reputation-score`, { headers: { Authorization: `Bearer ${token}` } })

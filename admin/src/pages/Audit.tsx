@@ -46,7 +46,7 @@ export default function Audit() {
       if (filters.status)   params.set('status', filters.status)
 
       const resp = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/admin/relatorios/auditoria?${params}`,
+        `${API_URL}/api/admin/relatorios/auditoria?${params}`,
         { headers: { 'Authorization': `Bearer ${session.access_token}` } }
       )
       if (resp.ok) setAuditLogs(await resp.json())

@@ -142,15 +142,18 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
   const actor = rawActor.replace('/', '~')
 
   try {
+    const raTimeoutSecs = 300 // 5 minutos para o Reclame Aqui superar Cloudflare
+    const raMemoryMb = 1024   // 1GB de RAM é necessário para o Chrome no container da Apify
+
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${raTimeoutSecs}&memory=${raMemoryMb}`,
       {
         companies: [companySlug],
         maxComplaints: Math.min(limit, 100), // API limita em 100
         includeCompanyStats: false, // Não precisamos de stats — só reclamações
         statusFilter: 'all',
       },
-      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
+      { timeout: (raTimeoutSecs + 30) * 1000 }
     )
 
     const items = response.data as any[]

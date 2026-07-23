@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ArrowLeft, UserCheck, CheckCircle2 } from 'lucide-react'
 import { useToast } from '../components/Toast'
+import { API_URL } from '../lib/utils'
 
 interface ClientNewProps {
   session: Session
@@ -17,16 +18,16 @@ export default function ClientNew({ session, onCreated }: ClientNewProps) {
     business_name: '',
     email: '',
     phone: '',
-    plan_slug: 'basic_trimestral'
+    plan_slug: 'starter_mes'
   })
 
   // Os planos serão fixos para simplificar a demo, mas poderiam vir de API
   const plans = [
-    { id: 'basic_tri', name: 'Basic — Trimestral — R$ 357' },
-    { id: 'basic_sem', name: 'Basic — Semestral — R$ 642' },
-    { id: 'basic_ano', name: 'Basic — Anual — R$ 1.142' },
-    { id: 'complete_tri', name: 'Complete — Trimestral — R$ 717' },
-    { id: 'complete_sem', name: 'Complete — Semestral — R$ 1.290' },
+    { id: 'starter_mes', name: 'Starter — Mensal — R$ 99/mês' },
+    { id: 'starter_ano', name: 'Starter — Anual — R$ 948' },
+    { id: 'pro_mes', name: 'Pro — Mensal — R$ 149/mês' },
+    { id: 'pro_ano', name: 'Pro — Anual — R$ 1.428' },
+    { id: 'complete_mes', name: 'Complete — Mensal — R$ 239/mês' },
     { id: 'complete_ano', name: 'Complete — Anual — R$ 2.292' }
   ]
 
@@ -35,7 +36,7 @@ export default function ClientNew({ session, onCreated }: ClientNewProps) {
     setLoading(true)
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/partner/clients`, {
+      const res = await fetch(`${API_URL}/api/partner/clients`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
