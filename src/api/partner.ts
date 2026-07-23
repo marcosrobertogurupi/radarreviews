@@ -240,7 +240,7 @@ export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.S
       // 3. Criar tenant com partner_id vinculado
       const tenantInsert: Record<string, unknown> = {
         name: businessName.trim(), slug, plan,
-        plan_status: 'trial', trial_ends_at: trialEndsAt,
+        plan_status: 'trial', subscription_status: 'trial', trial_ends_at: trialEndsAt,
         partner_id: auth.partnerId,
       };
       const { data: tenant, error: tenantErr } = await supabaseAdmin

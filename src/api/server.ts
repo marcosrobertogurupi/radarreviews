@@ -314,7 +314,7 @@ export async function handleOnboarding(
       .from('tenants')
       .insert({
         name: businessName.trim(), slug, plan,
-        plan_status: 'trial', trial_ends_at: trialEndsAt,
+        plan_status: 'trial', subscription_status: 'trial', trial_ends_at: trialEndsAt,
         ...(resolvedPartnerId ? { partner_id: resolvedPartnerId } : {}),
       })
       .select('id').single()
