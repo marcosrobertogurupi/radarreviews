@@ -22,7 +22,7 @@ import { tripadvisorSearchTask, tripadvisorReviewsTaskGet } from '../lib/datafor
 import { handleMetaAuthConnect, handleMetaAuthCallback, handleMetaWebhook } from './meta.js'
 import { createAsaasCustomer, createAsaasSubscription, getAsaasSubscriptionPayments, getAsaasPixQrCode, getAsaasSubscription } from '../lib/asaas.js'
 import { handleAsaasWebhook } from './asaas-webhook.js'
-import { askClaude } from '../services/ai/claude.js'
+import { askClaude, askClaudeDetailed } from '../services/ai/claude.js'
 import { sendDirectResponse } from '../services/ai/responder.js'
 import { sendWhatsAppMessage } from '../services/whatsapp/uazapi.js'
 import { notifyAdminChannels } from '../lib/notify.js'
@@ -40,6 +40,8 @@ import { handleCommercialAdmin } from './commercialAdmin.js'
 import { handlePartnerRoutes } from './partner.js'
 import { handlePartnerAdminRoutes } from './partnerAdmin.js'
 import { AI_CONFIG } from '../lib/ai-config.js'
+import { callGeminiWithRetry } from '../lib/gemini-rate-limiter.js'
+import { checkTenantAIQuota, recordAIUsage } from '../services/ai/ai-usage.js'
 import { calculateAllScoresForTenant } from '../services/reputationScore.js'
 import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
 import { handleGoogleConnect, handleGoogleCallback, handleGoogleStatus, handleGoogleDisconnect } from './googleAuth.js'
@@ -660,14 +662,29 @@ async function handleCopilot(
     res.writeHead(429); res.end(JSON.stringify({ error: 'Muitas requisições (Rate limit exceeded).' })); return;
   }
 
+  // Verificação de cota mensal de IA por tenant
+  const aiQuota = await checkTenantAIQuota(auth.tenantId)
+  if (!aiQuota.allowed) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: aiQuota.reason ?? 'Acesso ao Reputei IA indisponível ou cota excedida.' }))
+    return
+  }
+
   try {
     const ctx = await getTenantContext(auth.tenantId)
     const systemPrompt = buildSystemPrompt(ctx)
     let reply = ''
+    let usedModel = ''
+    let promptTokens = 0
+    let completionTokens = 0
 
-    // Tentar Claude primeiro (conforme solicitado pelo usuário)
+    // Tentar Claude primeiro
     try {
-      reply = await askClaude(systemPrompt, message, history)
+      const claudeRes = await askClaudeDetailed(systemPrompt, message, history)
+      reply = claudeRes.reply
+      usedModel = 'claude-3-5-haiku-20241022'
+      promptTokens = claudeRes.promptTokens || Math.ceil((systemPrompt.length + message.length) / 4)
+      completionTokens = claudeRes.completionTokens || Math.ceil(reply.length / 4)
       console.log(`[copilot] Resposta gerada via Claude para tenant ${auth.tenantId}`)
     } catch (claudeErr) {
       console.warn('[copilot] Claude falhou ou sem chave. Usando Gemini como fallback.', claudeErr)
@@ -685,10 +702,24 @@ async function handleCopilot(
       }))
 
       const chat = model.startChat({ history: chatHistory })
-      const result = await chat.sendMessage(message)
+      const result = await callGeminiWithRetry(() => chat.sendMessage(message))
       reply = result.response.text().trim()
+      usedModel = AI_CONFIG.model
+      
+      const usageMeta = (result.response as any)?.usageMetadata
+      promptTokens = usageMeta?.promptTokenCount || Math.ceil((systemPrompt.length + message.length) / 4)
+      completionTokens = usageMeta?.candidatesTokenCount || Math.ceil(reply.length / 4)
       console.log(`[copilot] Resposta gerada via Gemini fallback para tenant ${auth.tenantId}`)
     }
+
+    // Registrar consumo
+    recordAIUsage({
+      tenantId: auth.tenantId,
+      requestType: 'copilot',
+      modelUsed: usedModel,
+      promptTokens,
+      completionTokens,
+    }).catch(err => console.error('[copilot] Erro ao gravar log de uso de IA:', err))
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ reply }))
@@ -696,9 +727,150 @@ async function handleCopilot(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[copilot] Erro:', msg)
-    res.writeHead(500)
-    res.end(JSON.stringify({ error: `Erro ao processar: ${msg}` }))
+    const isQuotaError = msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate limit')
+    const userFacingError = isQuotaError
+      ? 'O serviço de IA excedeu o limite temporário de requisições. Por favor, aguarde cerca de 1 minuto e tente novamente, ou configure um plano pago da API de IA.'
+      : `Erro ao processar mensagem com IA: ${msg}`
+    res.writeHead(isQuotaError ? 429 : 500)
+    res.end(JSON.stringify({ error: userFacingError }))
   }
+}
+
+// ── Métricas de IA e Gestão de Cotas Admin ─────────────────────────
+
+async function handleAdminAIUsageReport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Acesso negado.' })); return
+  }
+
+  try {
+    const { data: tenants, error: tErr } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, plan, ai_quota_limit, ai_quota_used, ai_blocked, is_active, created_at')
+      .order('name', { ascending: true })
+
+    if (tErr) throw tErr
+
+    const { data: usageLogs, error: uErr } = await supabaseAdmin
+      .from('tenant_ai_usage_logs')
+      .select('tenant_id, request_type, model_used, prompt_tokens, completion_tokens, estimated_cost_usd, created_at')
+
+    if (uErr) throw uErr
+
+    const logs = usageLogs ?? []
+    
+    const report = (tenants ?? []).map(t => {
+      const tLogs = logs.filter(l => l.tenant_id === t.id)
+      const totalRequests = tLogs.length
+      const totalPromptTokens = tLogs.reduce((acc, curr) => acc + (curr.prompt_tokens || 0), 0)
+      const totalCompletionTokens = tLogs.reduce((acc, curr) => acc + (curr.completion_tokens || 0), 0)
+      const totalCostUsd = tLogs.reduce((acc, curr) => acc + (Number(curr.estimated_cost_usd) || 0), 0)
+
+      return {
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        plan: t.plan,
+        quota_limit: t.ai_quota_limit ?? 500000,
+        quota_used: t.ai_quota_used ?? 0,
+        ai_blocked: t.ai_blocked ?? false,
+        is_active: t.is_active,
+        total_requests: totalRequests,
+        total_prompt_tokens: totalPromptTokens,
+        total_completion_tokens: totalCompletionTokens,
+        total_tokens: totalPromptTokens + totalCompletionTokens,
+        estimated_cost_usd: Math.round(totalCostUsd * 10000) / 10000,
+      }
+    })
+
+    const globalStats = {
+      total_tenants: report.length,
+      total_requests: report.reduce((a, b) => a + b.total_requests, 0),
+      total_tokens: report.reduce((a, b) => a + b.total_tokens, 0),
+      total_cost_usd: Math.round(report.reduce((a, b) => a + b.estimated_cost_usd, 0) * 10000) / 10000,
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ report, summary: globalStats }))
+  } catch (err: any) {
+    console.error('[admin-ai-usage] Erro:', err)
+    res.writeHead(500); res.end(JSON.stringify({ error: err.message ?? 'Erro ao gerar relatório de IA' }))
+  }
+}
+
+async function handleAdminUpdateTenantAIConfig(
+  req: http.IncomingMessage, 
+  res: http.ServerResponse, 
+  tenantId: string
+): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+    res.writeHead(403); res.end(JSON.stringify({ error: 'Acesso negado.' })); return
+  }
+
+  let body = ''
+  for await (const chunk of req) body += chunk
+  let parsed: { ai_quota_limit?: number; ai_blocked?: boolean; reset_quota?: boolean }
+  try { parsed = JSON.parse(body) } catch { res.writeHead(400); res.end(JSON.stringify({ error: 'JSON inválido' })); return }
+
+  const updates: Record<string, any> = {}
+  if (typeof parsed.ai_quota_limit === 'number') updates.ai_quota_limit = parsed.ai_quota_limit
+  if (typeof parsed.ai_blocked === 'boolean') updates.ai_blocked = parsed.ai_blocked
+  if (parsed.reset_quota === true) updates.ai_quota_used = 0
+
+  if (Object.keys(updates).length === 0) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'Nenhum campo para atualizar.' })); return
+  }
+
+  const { error } = await supabaseAdmin.from('tenants').update(updates).eq('id', tenantId)
+
+  if (error) {
+    res.writeHead(500); res.end(JSON.stringify({ error: error.message })); return
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ ok: true }))
+}
+
+async function handlePortalAIQuota(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) {
+    res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+  }
+
+  const { data: tenant, error } = await supabaseAdmin
+    .from('tenants')
+    .select('ai_quota_limit, ai_quota_used, ai_blocked')
+    .eq('id', auth.tenantId)
+    .maybeSingle()
+
+  if (error || !tenant) {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ quotaLimit: 500000, quotaUsed: 0, blocked: false, percentage: 0 }))
+    return
+  }
+
+  const limit = tenant.ai_quota_limit ?? 500000
+  const used = tenant.ai_quota_used ?? 0
+  const pct = Math.min(100, Math.round((used / Math.max(1, limit)) * 100))
+
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({
+    quotaLimit: limit,
+    quotaUsed: used,
+    blocked: tenant.ai_blocked ?? false,
+    percentage: pct
+  }))
 }
 
 // ── Atualizar credenciais de um tenant ───────────────────────────
@@ -738,14 +910,46 @@ async function handleUpdateCredentials(
       res.writeHead(404); res.end(JSON.stringify({ error: 'Tenant sem usuário vinculado' })); return
     }
 
-    const updates: { email?: string; password?: string } = {}
-    if (email?.trim()) updates.email = email.trim()
-    if (password)      updates.password = password
+    const updates: { email?: string; password?: string; email_confirm?: boolean } = {}
+    if (email?.trim()) {
+      const cleanEmail = email.trim().toLowerCase()
+
+      // Verificar se o e-mail já pertence a outro usuário no Supabase Auth
+      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+      const inUseByOther = existingUsers?.users.find(
+        u => u.email?.toLowerCase() === cleanEmail && u.id !== tu.user_id
+      )
+      if (inUseByOther) {
+        res.writeHead(409, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Este e-mail já está cadastrado para outro usuário.' }))
+        return
+      }
+
+      updates.email = cleanEmail
+      updates.email_confirm = true
+    }
+    if (password) updates.password = password
 
     const { error } = await supabaseAdmin.auth.admin.updateUserById(tu.user_id, updates)
     if (error) {
+      let friendlyError = error.message
+      if (
+        error.message.toLowerCase().includes('already') ||
+        error.message.toLowerCase().includes('error updating user')
+      ) {
+        friendlyError = 'Este e-mail já está em uso por outro usuário ou é inválido.'
+      }
       const status = error.message.toLowerCase().includes('already') ? 409 : 500
-      res.writeHead(status); res.end(JSON.stringify({ error: error.message })); return
+      res.writeHead(status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: friendlyError }))
+      return
+    }
+
+    if (email?.trim()) {
+      await supabaseAdmin
+        .from('tenants')
+        .update({ admin_email: email.trim().toLowerCase() })
+        .eq('id', tenantId)
     }
 
     console.log(`[credentials] Tenant ${tenantId} atualizado — user ${tu.user_id}`)
@@ -755,7 +959,8 @@ async function handleUpdateCredentials(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[credentials] Erro:', msg)
-    res.writeHead(500); res.end(JSON.stringify({ error: msg }))
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: msg }))
   }
 }
 
@@ -2376,6 +2581,32 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(data))
+  }
+
+  if (url === '/api/admin/tenants/ai-usage' && req.method === 'GET') {
+    handleAdminAIUsageReport(req, res).catch(err => {
+      console.error('[admin-ai-usage] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url.startsWith('/api/admin/tenants/') && url.endsWith('/ai-config') && req.method === 'PUT') {
+    const parts = url.split('/')
+    const tenantId = parts[4] ?? ''
+    handleAdminUpdateTenantAIConfig(req, res, tenantId).catch(err => {
+      console.error('[admin-ai-config] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/portal/ai-quota' && req.method === 'GET') {
+    handlePortalAIQuota(req, res).catch(err => {
+      console.error('[portal-ai-quota] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
   }
 
   if (url.startsWith('/api/admin/support')) {

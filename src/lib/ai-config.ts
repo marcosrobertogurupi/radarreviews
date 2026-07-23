@@ -6,7 +6,7 @@
  */
 
 export const AI_CONFIG = {
-  model: 'models/gemini-3.5-flash',
+  model: 'gemini-2.5-flash',
   embeddingModel: 'models/gemini-embedding-001',
   temperature: 0.1, 
   maxOutputTokens: 1024,

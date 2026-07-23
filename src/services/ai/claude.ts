@@ -2,15 +2,17 @@ import 'dotenv/config'
 import axios from 'axios'
 import { logger } from '../../lib/logger.js'
 
-export interface ClaudeResponse {
+export interface ClaudeDetailedResponse {
   reply: string
+  promptTokens: number
+  completionTokens: number
 }
 
 /**
  * Serviço de IA usando Claude da Anthropic (via API REST)
- * Modelo: claude-3-haiku-20240307 (rápido e barato para o Copiloto)
+ * Modelo: claude-3-5-haiku-20241022
  */
-export async function askClaude(systemPrompt: string, message: string, history: Array<{ role: string; text: string }> = []): Promise<string> {
+export async function askClaudeDetailed(systemPrompt: string, message: string, history: Array<{ role: string; text: string }> = []): Promise<ClaudeDetailedResponse> {
   const apiKey = process.env['ANTHROPIC_API_KEY']
   
   if (!apiKey) {
@@ -28,7 +30,7 @@ export async function askClaude(systemPrompt: string, message: string, history: 
 
   try {
     const response = await axios.post('https://api.anthropic.com/v1/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages
@@ -41,9 +43,16 @@ export async function askClaude(systemPrompt: string, message: string, history: 
     })
 
     const reply = response.data.content[0].text
-    return reply
+    const promptTokens = response.data.usage?.input_tokens ?? 0
+    const completionTokens = response.data.usage?.output_tokens ?? 0
+    return { reply, promptTokens, completionTokens }
   } catch (err) {
     logger.error('[claude] Erro na chamada API Anthropic:', { error: err })
     throw err
   }
+}
+
+export async function askClaude(systemPrompt: string, message: string, history: Array<{ role: string; text: string }> = []): Promise<string> {
+  const res = await askClaudeDetailed(systemPrompt, message, history)
+  return res.reply
 }

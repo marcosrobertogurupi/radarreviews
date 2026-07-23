@@ -7,6 +7,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { NormalizedReview } from '../../src/types/review.js'
 
+vi.mock('../../src/lib/supabase.js', () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+      update: vi.fn().mockReturnThis(),
+    })),
+  },
+  supabaseAdmin: {
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+      update: vi.fn().mockReturnThis(),
+    })),
+  },
+}))
+
 // Mock do @google/generative-ai (chamado apenas quando GEMINI_API_KEY está definida)
 vi.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: vi.fn().mockImplementation(() => ({

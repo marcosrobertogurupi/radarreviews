@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound } from 'lucide-react'
+import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound, Bot } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { AIUsageReportModal } from '../components/AIUsageReportModal'
 
 const PLAN_CONFIG: Record<string, { label: string; color: string; max_channels: number }> = {
   trial:      { label: 'Trial',      color: '#6b7280', max_channels: 3  },
@@ -65,6 +66,8 @@ export default function Tenants() {
   const [credentialsTenant, setCredentialsTenant] = useState<Tenant | null>(null)
   const [credentials, setCredentials] = useState({ email: '', password: '' })
   const [savingCreds, setSavingCreds] = useState(false)
+
+  const [showAiReport, setShowAiReport] = useState(false)
 
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel?: string; dangerous?: boolean; onConfirm: () => void
@@ -269,6 +272,7 @@ export default function Tenants() {
       setCredentialsTenant(null)
       setCredentials({ email: '', password: '' })
       toast('Credenciais atualizadas com sucesso!', 'success')
+      loadAll()
     } catch {
       toast('Não foi possível conectar à API.', 'error')
     } finally {
@@ -407,9 +411,14 @@ export default function Tenants() {
           <h1 className="page-title">Assinantes</h1>
           <p className="page-subtitle">Gestão de assinantes (Tenants), status e monitoramento em cascata.</p>
         </div>
-        <button className="btn" onClick={() => setShowModal(true)}>
-          <Plus size={16} /> Novo Assinante
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-ghost" onClick={() => setShowAiReport(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+            <Bot size={16} color="#6366f1" /> Cotas & Custos de IA
+          </button>
+          <button className="btn" onClick={() => setShowModal(true)}>
+            <Plus size={16} /> Novo Assinante
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -1020,6 +1029,12 @@ export default function Tenants() {
           onCancel={() => setConfirmDialog(null)}
         />
       )}
+
+      <AIUsageReportModal
+        isOpen={showAiReport}
+        onClose={() => setShowAiReport(false)}
+        onUpdateSuccess={loadAll}
+      />
     </div>
   )
 }

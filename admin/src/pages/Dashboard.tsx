@@ -301,16 +301,38 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   async function loadRanking() {
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
 
-    // Busca direta em reviews — funciona mesmo sem review_stats_daily populada
-    const { data: reviews } = await supabase
+    // 1. Tentar buscar reviews negativas/críticas dos últimos 30 dias
+    let { data: reviews } = await supabase
       .from('reviews')
       .select('tenant_id, sentiment, dissatisfaction_score')
       .gte('published_at', since30)
       .in('sentiment', ['negative', 'critical'])
 
-    if (!reviews || reviews.length === 0) return
+    const tenantsIn30 = new Set(reviews?.map(r => r.tenant_id).filter(Boolean))
 
-    // Agrupar por tenant
+    // 2. Se houver menos de 5 assinantes nos últimos 30 dias, buscar o histórico completo de reviews negativas/críticas
+    if (!reviews || tenantsIn30.size < 5) {
+      const { data: allReviews } = await supabase
+        .from('reviews')
+        .select('tenant_id, sentiment, dissatisfaction_score')
+        .in('sentiment', ['negative', 'critical'])
+
+      reviews = allReviews ?? []
+    }
+
+    if (!reviews || reviews.length === 0) {
+      setRankingData([])
+      return
+    }
+
+    // 3. Garantir lista de nomes dos assinantes
+    let tenantList = tenants
+    if (!tenantList || tenantList.length === 0) {
+      const { data: tData } = await supabase.from('tenants').select('id, name')
+      if (tData) tenantList = tData
+    }
+
+    // 4. Agrupar por tenant
     const groups: Record<string, { totalScore: number; negCount: number }> = {}
     for (const r of reviews) {
       if (!r.tenant_id) continue
@@ -321,7 +343,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
     const ranking = Object.entries(groups).map(([tid, g]) => ({
       id: tid,
-      name: tenants.find(t => t.id === tid)?.name || 'Desconhecido',
+      name: tenantList.find(t => t.id === tid)?.name || 'Desconhecido',
       avgScore: Math.round(g.totalScore / g.negCount),
       count: g.negCount,
     }))

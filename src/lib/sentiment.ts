@@ -21,6 +21,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createHash } from 'node:crypto'
 import { logger } from './logger.js'
 import { callGeminiWithRetry } from './gemini-rate-limiter.js'
+import { checkTenantAIQuota, recordAIUsage } from '../services/ai/ai-usage.js'
 import type {
   NormalizedReview,
   SentimentResult,
@@ -294,16 +295,40 @@ export async function analyzeSentiment(
     return cached
   }
 
+  // Checar cota do tenant antes de chamar Gemini
+  const quota = review.tenant_id ? await checkTenantAIQuota(review.tenant_id) : { allowed: true, reason: undefined }
+  if (!quota.allowed) {
+    logger.warn('[sentiment] Cota de IA excedida ou tenant bloqueado, usando heurística', {
+      tenant_id: review.tenant_id,
+      reason: quota.reason,
+    })
+    const heuristicResult = analyzeByHeuristic(review, text)
+    analysisCache.set(key, heuristicResult)
+    return heuristicResult
+  }
+
   // Tentar análise com Gemini
   const genAI = getGenAI()
   if (genAI) {
     try {
       const result = await callGeminiWithRetry(() => analyzeWithGemini(genAI, review, text))
       logger.info(
-        '[sentiment] Análise via Gemini 3.5 Flash',
+        '[sentiment] Análise via Gemini Flash',
         { model: AI_CONFIG.model, method: 'gemini', review_id: review.external_id }
       )
       analysisCache.set(key, result)
+
+      // Registrar consumo de tokens de IA
+      if (review.tenant_id) {
+        recordAIUsage({
+          tenantId: review.tenant_id,
+          requestType: 'sentiment',
+          modelUsed: AI_CONFIG.model,
+          promptTokens: Math.max(100, Math.ceil(text.length / 4) + 200),
+          completionTokens: 80,
+        }).catch((err) => logger.warn('[sentiment] Falha ao gravar log de uso de IA:', err))
+      }
+
       return result
     } catch (error) {
       logger.warn('[sentiment] Gemini indisponível, usando heurística', {
