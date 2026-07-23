@@ -63,12 +63,14 @@ export async function scrapeGoogleMapsReviews(
       })
     }
 
-    // 1. Navegação
+    // 1. Navegação com a URL direta do Place ID (networkidle garante o carregamento completo do painel)
     const url = `https://www.google.com/maps/place/?q=place_id:${placeId}&hl=pt-BR`
     mark('before_goto')
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 })
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 25_000 }).catch(() => null)
     mark('after_goto')
-    await randomDelay(3000, 2000)
+    await randomDelay(2000, 1000)
+
+
 
     // Aceitar cookies/consentimento se aparecer
     await handleConsent(page)

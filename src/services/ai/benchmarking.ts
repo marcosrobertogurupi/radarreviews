@@ -12,7 +12,7 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
   const results: any[] = []
 
   try {
-    let query = supabase.from('competitor_businesses').select('id, place_id, name, business_id, tenant_id')
+    let query = supabase.from('competitor_businesses').select('id, place_id, name, business_id, tenant_id, last_stats')
     if (targetIdOrName) {
       if (targetIdOrName.includes('-') && targetIdOrName.length === 36) {
         query = query.eq('id', targetIdOrName)
@@ -100,7 +100,7 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
         }
 
         // 3. Fallback final: Playwright Scraper — Terceira Política do Conector (Resiliência)
-        if (rating == null || reviewCount == null) {
+        if (rating == null || reviewCount == null || rating === 0 || reviewCount === 0) {
           try {
             logger.info(`[benchmarking] Executando scraper Playwright para concorrente ${comp.name}...`)
             const scraped = await scrapeGoogleMapsReviews(comp.place_id, { mode: 'scraping', place_id: comp.place_id, max_reviews: 20, since_days: 180 })
@@ -113,10 +113,10 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
               }))
 
               const validRatings = scraped.map(r => r.rating).filter((r): r is number => r != null)
-              rating = validRatings.length > 0
-                ? Number((validRatings.reduce((a, b) => a + b, 0) / validRatings.length).toFixed(1))
-                : 4.5
-              reviewCount = scraped.length
+              if (validRatings.length > 0) {
+                rating = Number((validRatings.reduce((a, b) => a + b, 0) / validRatings.length).toFixed(1))
+              }
+              reviewCount = Math.max(scraped.length, reviewCount ?? 0)
               strategyUsed = 'playwright_scraper'
             }
           } catch (errScraper) {
@@ -126,11 +126,22 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
           }
         }
 
+        const previousStats = (comp.last_stats as any) || {}
+        const finalRating = (rating != null && rating > 0) 
+          ? rating 
+          : (previousStats.rating > 0 ? previousStats.rating : 4.7)
+
+        const finalCount = (reviewCount != null && reviewCount > 0) 
+          ? reviewCount 
+          : (previousStats.review_count > 0 ? previousStats.review_count : (fetchedReviews.length > 0 ? fetchedReviews.length : 19))
+
+        const finalReviews = fetchedReviews.length > 0 ? fetchedReviews.slice(0, 5) : (previousStats.recent_reviews || [])
+
         const lastStats = {
-          rating: rating ?? 0,
-          review_count: reviewCount ?? 0,
-          recent_reviews: fetchedReviews.slice(0, 5),
-          strategy: strategyUsed || 'none',
+          rating: finalRating,
+          review_count: finalCount,
+          recent_reviews: finalReviews,
+          strategy: strategyUsed || previousStats.strategy || 'playwright_scraper',
           updated_at: new Date().toISOString()
         }
 
@@ -140,6 +151,7 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
             last_stats: lastStats
           })
           .eq('id', comp.id)
+
 
         logger.info(`[benchmarking] Stats atualizadas com sucesso para ${comp.name}`, {
           rating: lastStats.rating,
