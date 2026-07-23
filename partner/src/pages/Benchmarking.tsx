@@ -287,7 +287,7 @@ export default function Benchmarking({ tenantId }: Props) {
             ) : (
               competitors.map(c => {
                 const stats = c.last_stats
-                const hasStats = stats && (stats.rating > 0 || stats.review_count > 0 || stats.recent_reviews?.length)
+                const hasStats = Boolean(stats && stats.updated_at)
                 const isSyncing = syncingId === c.id
 
                 return (
@@ -348,7 +348,7 @@ export default function Benchmarking({ tenantId }: Props) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.1)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.2)' }}>
                         <Star size={14} fill="#f59e0b" color="#f59e0b" />
                         <span style={{ fontWeight: 800, color: '#f59e0b', fontSize: 13 }}>
-                          {hasStats ? stats.rating.toFixed(1) : '—'}
+                          {hasStats && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>/ 5.0</span>
                       </div>
@@ -361,16 +361,21 @@ export default function Benchmarking({ tenantId }: Props) {
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>reviews</span>
                       </div>
 
-                      {stats?.updated_at && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                      {stats?.updated_at ? (
+                        <div style={{ fontSize: 11, color: '#10b981', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', fontWeight: 600 }}>
                           <CheckCircle2 size={12} color="#10b981" />
                           Atualizado: {new Date(stats.updated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                          Pendente de busca inicial
                         </div>
                       )}
                     </div>
                   </div>
                 )
               })
+
             )}
           </div>
         </div>

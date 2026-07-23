@@ -74,24 +74,28 @@ export async function scrapeGoogleMapsReviews(
     await handleConsent(page)
     mark('after_consent')
 
-    // 2. Clicar na aba de avaliações
+    // 2. Clicar na aba de avaliações (Tolerante a falhas)
     const reviewsTabSelector = await findElement(page, GMAPS_SELECTORS.REVIEWS_TAB)
     mark('after_find_reviews_tab')
-    if (!reviewsTabSelector) {
-      const screenshotPath = `gmaps-fail-${placeId}-${Date.now()}.png`
-      await page.screenshot({ path: screenshotPath }).catch(() => null)
-      throw new Error(`Aba de avaliações não encontrada na página do local. Screenshot: ${screenshotPath}`)
+    if (reviewsTabSelector) {
+      await humanClick(page, reviewsTabSelector).catch(() => null)
+      mark('after_click_reviews_tab')
+      await randomDelay(2000, 1000)
+    } else {
+      // Tentar clicar em qualquer elemento contendo "Avaliações" ou "reviews"
+      try {
+        const tabBtn = page.locator('button, [role="tab"]').filter({ hasText: /avaliaç|review/i }).first()
+        if (await tabBtn.count() > 0) {
+          await tabBtn.click()
+          await page.waitForTimeout(2000)
+        }
+      } catch { /* ignore */ }
     }
-    await humanClick(page, reviewsTabSelector)
-    mark('after_click_reviews_tab')
-    await randomDelay(2000, 1000)
 
     // 3. Aguardar painel de reviews
     const panelSelector = await findElement(page, GMAPS_SELECTORS.REVIEWS_PANEL)
     mark('after_find_reviews_panel')
-    if (!panelSelector) {
-      throw new Error('Painel de reviews não carregou após clicar na aba.')
-    }
+
 
     // 4. Ordenar por mais recentes
     await sortByNewest(page)
@@ -156,9 +160,14 @@ export async function scrapeGoogleMapsReviews(
         prevCount = reviews.length
       }
 
-      // Rolar o painel
-      await scrollPanel(page, panelSelector)
+      // Rolar o painel se existente
+      if (panelSelector) {
+        await scrollPanel(page, panelSelector)
+      } else {
+        await page.evaluate(() => window.scrollBy(0, 1000)).catch(() => null)
+      }
       await randomDelay(1500, 1000)
+
 
       iterCount++
       if (iterCount % 5 === 0) {
