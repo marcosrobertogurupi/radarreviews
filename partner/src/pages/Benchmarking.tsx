@@ -56,6 +56,7 @@ export default function Benchmarking({ tenantId }: Props) {
       .from('competitor_businesses')
       .insert({
         business_id: businessId,
+        tenant_id: tenantId,
         name: newComp.name,
         place_id: newComp.place_id
       })
