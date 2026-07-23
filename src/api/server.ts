@@ -899,22 +899,70 @@ async function handleUpdateCredentials(
   }
 
   try {
-    // Buscar user_id do tenant
-    const { data: tu, error: tuErr } = await supabaseAdmin
+    // 1. Buscar usuários do tenant
+    const { data: tus } = await supabaseAdmin
       .from('tenant_users')
-      .select('user_id')
+      .select('user_id, role, created_at')
       .eq('tenant_id', tenantId)
-      .single()
+      .order('created_at', { ascending: true })
 
-    if (tuErr || !tu) {
-      res.writeHead(404); res.end(JSON.stringify({ error: 'Tenant sem usuário vinculado' })); return
+    const tu = tus?.find(x => x.role === 'owner') || tus?.[0]
+
+    // 2. Se o tenant não tem usuário vinculado, cria/vincula automaticamente
+    if (!tu) {
+      if (!email?.trim() || !password) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Tenant sem usuário vinculado. Informe e-mail e senha para criar o acesso.' }))
+        return
+      }
+
+      const cleanEmail = email.trim().toLowerCase()
+
+      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+      let userId: string
+
+      const existingAuthUser = existingUsers?.users.find(u => u.email?.toLowerCase() === cleanEmail)
+      if (existingAuthUser) {
+        userId = existingAuthUser.id
+        if (password) {
+          await supabaseAdmin.auth.admin.updateUserById(userId, { password })
+        }
+      } else {
+        const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email: cleanEmail,
+          password,
+          email_confirm: true,
+        })
+        if (createErr || !createData.user) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: createErr?.message || 'Erro ao criar usuário no Supabase Auth' }))
+          return
+        }
+        userId = createData.user.id
+      }
+
+      await supabaseAdmin.from('tenant_users').insert({
+        tenant_id: tenantId,
+        user_id: userId,
+        role: 'owner',
+      })
+
+      await supabaseAdmin
+        .from('tenants')
+        .update({ admin_email: cleanEmail })
+        .eq('id', tenantId)
+
+      console.log(`[credentials] Novo usuário ${userId} criado e vinculado ao tenant ${tenantId}`)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+      return
     }
 
+    // 3. Se o tenant já tem usuário vinculado, atualiza credenciais
     const updates: { email?: string; password?: string; email_confirm?: boolean } = {}
     if (email?.trim()) {
       const cleanEmail = email.trim().toLowerCase()
 
-      // Verificar se o e-mail já pertence a outro usuário no Supabase Auth
       const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
       const inUseByOther = existingUsers?.users.find(
         u => u.email?.toLowerCase() === cleanEmail && u.id !== tu.user_id
