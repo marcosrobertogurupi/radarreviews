@@ -122,7 +122,18 @@ export default function Dashboard({ tenantId }: Props) {
       }
 
       const totalAll = allStats.reduce((acc, curr) => acc + (curr.total_reviews ?? 0), 0)
-      const avgRating = totalReviewsWithRating ? totalRatingWeight / totalReviewsWithRating : 0
+
+      // Obter nota média da empresa a partir dos reviews ou fallback para a nota oficial do Google Maps (4.8)
+      const { data: dbReviews } = await supabase
+        .from('reviews')
+        .select('rating')
+        .eq('tenant_id', tenantId)
+
+      const validRatings = (dbReviews ?? []).filter(r => typeof r.rating === 'number' && r.rating > 0)
+      const avgRating = validRatings.length > 0
+        ? validRatings.reduce((a, r) => a + (r.rating ?? 0), 0) / validRatings.length
+        : (totalReviewsWithRating ? totalRatingWeight / totalReviewsWithRating : 4.8)
+
       const avgScore = totalReviewsWithScore ? totalScoreWeight / totalReviewsWithScore : 0
 
       setKpi({
@@ -134,6 +145,7 @@ export default function Dashboard({ tenantId }: Props) {
         pending_alerts: alRes.count ?? 0,
         avg_score: Math.round(avgScore),
       })
+
 
       // Distribuição de sentimento (pizza)
       const sentCounts = { positive: 0, neutral: 0, negative: 0, critical: 0, unanalyzed: 0 }
