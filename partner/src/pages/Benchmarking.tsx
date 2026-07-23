@@ -89,25 +89,24 @@ export default function Benchmarking({ tenantId }: Props) {
 
   async function loadMyStats() {
     if (!tenantId) return
-    const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
-    const { data: stats } = await supabase
-      .from('review_stats_daily')
-      .select('avg_rating, total_reviews')
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('rating')
       .eq('tenant_id', tenantId)
-      .gte('date', since30)
 
-    const rows = stats ?? []
-    const totalReviews = rows.reduce((a, r) => a + (r.total_reviews ?? 0), 0)
-    const avgRating = totalReviews > 0
-      ? rows.reduce((a, r) => a + (r.avg_rating ?? 0) * (r.total_reviews ?? 0), 0) / totalReviews
+    const validRows = (reviews ?? []).filter(r => typeof r.rating === 'number' && r.rating > 0)
+    const totalCount = reviews?.length ?? 0
+    const avgRating = validRows.length > 0
+      ? validRows.reduce((a, r) => a + (r.rating ?? 0), 0) / validRows.length
       : 0
 
     setMyBusiness(prev => ({
       ...prev,
       rating: Number(avgRating.toFixed(1)),
-      reviewsCount: totalReviews
+      reviewsCount: totalCount
     }))
   }
+
 
   async function loadCompetitors(silent = false) {
     if (!silent) setLoading(true)

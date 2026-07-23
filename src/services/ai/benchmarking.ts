@@ -129,11 +129,11 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
         const previousStats = (comp.last_stats as any) || {}
         const finalRating = (rating != null && rating > 0) 
           ? rating 
-          : (previousStats.rating > 0 ? previousStats.rating : 4.7)
+          : (previousStats.rating > 0 ? previousStats.rating : 0)
 
         const finalCount = (reviewCount != null && reviewCount > 0) 
           ? reviewCount 
-          : (previousStats.review_count > 0 ? previousStats.review_count : (fetchedReviews.length > 0 ? fetchedReviews.length : 19))
+          : (previousStats.review_count > 0 ? previousStats.review_count : fetchedReviews.length)
 
         const finalReviews = fetchedReviews.length > 0 ? fetchedReviews.slice(0, 5) : (previousStats.recent_reviews || [])
 
@@ -144,6 +144,7 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
           strategy: strategyUsed || previousStats.strategy || 'playwright_scraper',
           updated_at: new Date().toISOString()
         }
+
 
         await supabase
           .from('competitor_businesses')
