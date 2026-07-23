@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { Plus, Trash2, TrendingUp, Star, Users, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { API_URL } from '../lib/utils'
+import { Plus, Trash2, TrendingUp, Star, Users, RefreshCw, CheckCircle2, Edit3, X } from 'lucide-react'
 
 interface CompetitorStats {
   rating: number
@@ -31,6 +32,8 @@ export default function Benchmarking({ tenantId }: Props) {
   const [competitors, setCompetitors] = useState<Competitor[]>([])
   const [loading, setLoading] = useState(true)
   const [newComp, setNewComp] = useState({ name: '', place_id: '' })
+  const [editingComp, setEditingComp] = useState<Competitor | null>(null)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
   const [businessId, setBusinessId] = useState('')
   const [myBusiness, setMyBusiness] = useState<{ name: string; rating: number; reviewsCount: number }>({
     name: 'Sua Empresa',
@@ -122,7 +125,7 @@ export default function Benchmarking({ tenantId }: Props) {
     e.preventDefault()
     if (!newComp.name || !newComp.place_id || !businessId) return
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('competitor_businesses')
       .insert({
         business_id: businessId,
@@ -130,11 +133,65 @@ export default function Benchmarking({ tenantId }: Props) {
         name: newComp.name,
         place_id: newComp.place_id
       })
+      .select('id')
+      .single()
 
     if (error) {
       alert('Erro ao adicionar concorrente: ' + error.message)
     } else {
       setNewComp({ name: '', place_id: '' })
+      loadCompetitors(true)
+      if (data?.id) {
+        forceSyncCompetitor(data.id)
+      }
+    }
+  }
+
+  async function updateCompetitor(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingComp || !editingComp.name || !editingComp.place_id) return
+
+    const { error } = await supabase
+      .from('competitor_businesses')
+      .update({
+        name: editingComp.name,
+        place_id: editingComp.place_id
+      })
+      .eq('id', editingComp.id)
+
+    if (error) {
+      alert('Erro ao editar concorrente: ' + error.message)
+    } else {
+      const compId = editingComp.id
+      setEditingComp(null)
+      loadCompetitors(true)
+      forceSyncCompetitor(compId)
+    }
+  }
+
+  async function forceSyncCompetitor(competitorId: string) {
+    setSyncingId(competitorId)
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token
+      const res = await fetch(`${API_URL}/api/competitor/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ competitorId })
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        console.warn('Erro na sincronização:', errData?.error || res.statusText)
+      } else {
+        console.log(`[competitor-sync] Sincronização concluída com sucesso para ${competitorId}`)
+      }
+    } catch (err) {
+      console.error('Falha ao conectar na API de sincronização:', err)
+    } finally {
+      setSyncingId(null)
       loadCompetitors(true)
     }
   }
@@ -212,7 +269,7 @@ export default function Benchmarking({ tenantId }: Props) {
           </form>
         </div>
 
-        {/* Lista de Concorrentes com Estatísticas em Tempo Real */}
+        {/* Lista de Concorrentes com Estatísticas e Ações (Editar / Forçar Sincronização / Remover) */}
         <div className="card" style={{ padding: 0 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Concorrentes Monitorados ({competitors.length})</span>
@@ -231,6 +288,8 @@ export default function Benchmarking({ tenantId }: Props) {
               competitors.map(c => {
                 const stats = c.last_stats
                 const hasStats = stats && (stats.rating > 0 || stats.review_count > 0 || stats.recent_reviews?.length)
+                const isSyncing = syncingId === c.id
+
                 return (
                   <div key={c.id} style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -238,14 +297,50 @@ export default function Benchmarking({ tenantId }: Props) {
                         <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>{c.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>ID: {c.place_id}</div>
                       </div>
-                      <button 
-                        onClick={() => removeCompetitor(c.id)}
-                        className="btn-icon" 
-                        title="Remover concorrente"
-                        style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+
+                      {/* Botões de Ação por Concorrente */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                          onClick={() => forceSyncCompetitor(c.id)}
+                          disabled={isSyncing}
+                          className="btn-icon"
+                          title="Forçar Sincronização / Buscar Reviews"
+                          style={{
+                            color: isSyncing ? 'var(--accent)' : 'var(--text-secondary)',
+                            background: 'var(--bg-darker)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            padding: '6px 8px',
+                            cursor: isSyncing ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            fontSize: 11,
+                            fontWeight: 600
+                          }}
+                        >
+                          <RefreshCw size={13} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
+                          {isSyncing ? 'Buscando...' : 'Sincronizar'}
+                        </button>
+
+                        <button 
+                          onClick={() => setEditingComp(c)}
+                          className="btn-icon"
+                          title="Editar concorrente"
+                          style={{ color: 'var(--text-secondary)', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}
+                        >
+                          <Edit3 size={14} />
+                        </button>
+
+                        <button 
+                          onClick={() => removeCompetitor(c.id)}
+                          className="btn-icon" 
+                          title="Remover concorrente"
+                          style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Métricas do Concorrente */}
@@ -359,7 +454,74 @@ export default function Benchmarking({ tenantId }: Props) {
           💡 Atualizado dinamicamente via inteligência de monitoramento do Google Maps.
         </p>
       </div>
+
+      {/* Modal de Edição de Concorrente */}
+      {editingComp && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, padding: 20
+        }}>
+          <div className="card" style={{ width: '100%', maxWidth: 450, padding: 24, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Edit3 size={18} color="var(--accent)" /> Editar Concorrente
+              </div>
+              <button 
+                onClick={() => setEditingComp(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={updateCompetitor} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label className="modal-label" style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Nome do Concorrente</label>
+                <input 
+                  type="text" 
+                  className="filter-search" 
+                  style={{ width: '100%', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-primary)' }}
+                  value={editingComp.name}
+                  onChange={e => setEditingComp({ ...editingComp, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="modal-label" style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Google Place ID</label>
+                <input 
+                  type="text" 
+                  className="filter-search" 
+                  style={{ width: '100%', background: 'var(--bg-darker)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-primary)', fontFamily: 'monospace' }}
+                  value={editingComp.place_id}
+                  onChange={e => setEditingComp({ ...editingComp, place_id: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12 }}>
+                <button 
+                  type="button" 
+                  onClick={() => setEditingComp(null)}
+                  style={{ background: 'var(--bg-darker)', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 18px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Salvar e Sincronizar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
 

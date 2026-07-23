@@ -43,6 +43,7 @@ import { AI_CONFIG } from '../lib/ai-config.js'
 import { calculateAllScoresForTenant } from '../services/reputationScore.js'
 import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
 import { handleGoogleConnect, handleGoogleCallback, handleGoogleStatus, handleGoogleDisconnect } from './googleAuth.js'
+import { updateCompetitorStats } from '../services/ai/benchmarking.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -2491,8 +2492,43 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (url === '/api/competitor/sync' && req.method === 'POST') {
+    handleCompetitorSync(req, res).catch(err => {
+      console.error('[competitor-sync] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro ao sincronizar concorrente' })) }
+    })
+    return
+  }
+
   res.writeHead(404); res.end('Not found')
 })
+
+async function handleCompetitorSync(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+  if (req.method !== 'POST')   { res.writeHead(405); res.end('Method not allowed'); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) {
+    res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+  }
+
+  const body = await readBody(req) as { competitorId?: string }
+  if (!body.competitorId) {
+    res.writeHead(400); res.end(JSON.stringify({ error: 'competitorId é obrigatório' })); return
+  }
+
+  try {
+    console.log(`[competitor-sync] Forçando busca para concorrente ${body.competitorId}...`)
+    const result = await updateCompetitorStats(body.competitorId)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, ...result }))
+  } catch (err: any) {
+    console.error('[competitor-sync] Erro:', err?.message || err)
+    res.writeHead(500); res.end(JSON.stringify({ error: err?.message || 'Erro ao sincronizar concorrente' }))
+  }
+}
+
 
 // ── Escalada de alertas críticos → n8n ───────────────────────────
 
