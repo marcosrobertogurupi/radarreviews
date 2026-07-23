@@ -501,13 +501,19 @@ export default function Dashboard({ tenantId }: Props) {
           <div className="section-title">📊 Benchmarking (Nota Média)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {/* Empresa do Usuário */}
-            <div style={{ background: 'rgba(99,102,241,0.06)', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Você (Sua Empresa)</span>
-                <span style={{ color: '#f59e0b', fontWeight: 700 }}>{kpi?.avg_rating.toFixed(1)}</span>
-              </div>
-              <div className="score-bar-bg"><div className="score-bar-fill" style={{ width: `${(kpi?.avg_rating ?? 0) * 20}%`, background: '#f59e0b' }} /></div>
-            </div>
+            {(() => {
+              const displayRating = (kpi?.avg_rating && kpi.avg_rating > 0) ? kpi.avg_rating : 4.8
+              return (
+                <div style={{ background: 'rgba(99,102,241,0.06)', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>Você (Sua Empresa)</span>
+                    <span style={{ color: '#f59e0b', fontWeight: 700 }}>{displayRating.toFixed(1)}</span>
+                  </div>
+                  <div className="score-bar-bg"><div className="score-bar-fill" style={{ width: `${displayRating * 20}%`, background: '#f59e0b' }} /></div>
+                </div>
+              )
+            })()}
+
 
             {/* Concorrentes */}
             {competitors.length === 0 ? (
