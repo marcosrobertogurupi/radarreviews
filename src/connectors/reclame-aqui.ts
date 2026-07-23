@@ -272,7 +272,8 @@ async function runPlaywrightScraper(
 
     const fetchBody = (connector.config['fetch_body'] as boolean) ?? true
     if (fetchBody) {
-      const toFetch = allComplaints.filter(c => c.url && c.url.startsWith('http') && !c.url.includes('/empresa/'))
+      const mainCompanyUrl = `${BASE_URL}/empresa/${sanitizedSlug}/`
+      const toFetch = allComplaints.filter(c => c.url && c.url.startsWith('http') && c.url !== mainCompanyUrl)
       const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 30
       const limitedToFetch = toFetch.slice(0, MAX_BODY_FETCH)
 
@@ -285,35 +286,64 @@ async function runPlaywrightScraper(
             })
             break
           }
+
+          let detailContext = null
           try {
-            await page.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-            await page.waitForTimeout(2500)
-            
-            const pageData = await page.evaluate(() => {
+            detailContext = await browser.newContext({
+              userAgent: USER_AGENT,
+              locale: 'pt-BR',
+              timezoneId: 'America/Sao_Paulo',
+              viewport: { width: 1366, height: 768 },
+              extraHTTPHeaders: {
+                'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+              },
+            })
+
+            await detailContext.addInitScript(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+            })
+
+            const detailPage = await detailContext.newPage()
+            detailPage.setDefaultTimeout(timeoutMs)
+
+            await detailPage.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+            await detailPage.waitForTimeout(2500)
+
+            let title = await detailPage.title()
+            if (title.toLowerCase().includes('moment') || title.toLowerCase().includes('verificação')) {
+              await detailPage.waitForTimeout(4000)
+              title = await detailPage.title()
+            }
+
+            const pageData = await detailPage.evaluate(() => {
               const nextEl = document.getElementById('__NEXT_DATA__')
+              let nextBody: string | null = null
+              let nextDate: string | null = null
               if (nextEl) {
                 try {
                   const data = JSON.parse(nextEl.textContent ?? '')
                   const pp = data?.props?.pageProps
                   const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData ?? pp?.initialState?.complaint
                   if (c && (c.description || c.text)) {
-                    return {
-                      body: String(c.description ?? c.text ?? ''),
-                      date: String(c.created ?? c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.created ?? c.legacyComplaint?.createdDate ?? ''),
-                    }
+                    nextBody = String(c.description ?? c.text ?? '')
+                    nextDate = String(c.created ?? c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.created ?? c.legacyComplaint?.createdDate ?? '')
                   }
                 } catch { }
               }
-              
+
               const selectors = [
-                '[class*="complaint-description"]',
-                '[class*="Description"]',
                 '[data-testid="complaint-description"]',
+                '[class*="description"]',
+                '[class*="Description"]',
+                '[class*="complaint-description"]',
                 'p[class*="text"]',
                 '.complain-body'
               ]
-              
-              let bodyText = null
+
+              let bodyText: string | null = null
               for (const sel of selectors) {
                 const el = document.querySelector(sel)
                 if (el && (el.textContent?.trim().length ?? 0) > 50) {
@@ -335,12 +365,12 @@ async function runPlaywrightScraper(
               }
 
               return {
-                body: bodyText,
-                date: timeVal,
+                body: bodyText ?? nextBody,
+                date: timeVal ?? nextDate,
               }
             })
 
-            if (pageData.body) {
+            if (pageData.body && pageData.body.length > (complaint.description?.length ?? 0)) {
               complaint.description = pageData.body
             }
             if (pageData.date && !complaint.date) {
@@ -348,7 +378,13 @@ async function runPlaywrightScraper(
             }
           } catch (err) {
             logger.warn(`[${CHANNEL}] Erro ao buscar detalhe da reclamação: ${complaint.url}`, { error: err })
+          } finally {
+            if (detailContext) {
+              await detailContext.close().catch(() => {})
+            }
           }
+
+          await new Promise(r => setTimeout(r, 1000))
         }
       }
     }
@@ -572,10 +608,25 @@ async function extractFromNextData(page: import('playwright-core').Page, company
 
     return complaintsRaw
       .map((c: Record<string, unknown>) => {
-        const urlRaw = String(c['complaintUrl'] ?? c['url'] ?? `https://www.reclameaqui.com.br/empresa/${companySlug}`)
-        const url = urlRaw.startsWith('http')
-          ? urlRaw
-          : `https://www.reclameaqui.com.br${urlRaw.startsWith('/') ? '' : '/'}${urlRaw}`
+        const urlRaw = String(c['complaintUrl'] ?? c['url'] ?? '')
+        let url = ''
+        if (urlRaw.startsWith('http')) {
+          url = urlRaw
+        } else if (urlRaw.length > 0) {
+          const cleanPath = urlRaw.startsWith('/') ? urlRaw.slice(1) : urlRaw
+          if (cleanPath.includes('/')) {
+            url = `https://www.reclameaqui.com.br/${cleanPath}`
+          } else {
+            url = `https://www.reclameaqui.com.br/${companySlug}/${cleanPath}`
+          }
+        } else if (c['id']) {
+          url = `https://www.reclameaqui.com.br/${companySlug}/reclamacao_${c['id']}`
+        } else {
+          url = `https://www.reclameaqui.com.br/empresa/${companySlug}/`
+        }
+
+        if (!url.endsWith('/')) url += '/'
+
         // Rejeita reclamações cujo URL pertence a outra empresa
         if (url.includes('/empresa/') && !url.includes(`/empresa/${companySlug}/`)) return null
 
