@@ -30,16 +30,41 @@ DROP POLICY IF EXISTS "competitor_businesses_service_role" ON public.competitor_
 
 CREATE POLICY "competitor_businesses_tenant_all" ON public.competitor_businesses
   FOR ALL
+  TO authenticated
   USING (
-    tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-    OR business_id IN (
-      SELECT id FROM public.monitored_businesses WHERE tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    EXISTS (
+      SELECT 1 FROM public.user_roles
+      WHERE user_id = auth.uid() AND role = 'superadmin'
+    )
+    OR
+    tenant_id IN (
+      SELECT tenant_id FROM public.tenant_users
+      WHERE user_id = auth.uid()
+    )
+    OR
+    business_id IN (
+      SELECT id FROM public.monitored_businesses
+      WHERE tenant_id IN (
+        SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid()
+      )
     )
   )
   WITH CHECK (
-    tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-    OR business_id IN (
-      SELECT id FROM public.monitored_businesses WHERE tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    EXISTS (
+      SELECT 1 FROM public.user_roles
+      WHERE user_id = auth.uid() AND role = 'superadmin'
+    )
+    OR
+    tenant_id IN (
+      SELECT tenant_id FROM public.tenant_users
+      WHERE user_id = auth.uid()
+    )
+    OR
+    business_id IN (
+      SELECT id FROM public.monitored_businesses
+      WHERE tenant_id IN (
+        SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid()
+      )
     )
   );
 
