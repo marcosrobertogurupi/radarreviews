@@ -204,11 +204,21 @@ export default function Dashboard({ tenantId }: Props) {
       })
       .subscribe((status) => console.log('[Realtime] portal alerts:', status))
 
+    const competitorChannel = supabase
+      .channel('portal:dashboard:competitors')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'competitor_businesses' }, () => {
+        console.log('[Realtime] competitor_businesses atualizado')
+        load(true) // Silent
+      })
+      .subscribe((status) => console.log('[Realtime] portal competitors:', status))
+
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
+      supabase.removeChannel(competitorChannel)
     }
+
   }, [tenantId])
 
   if (loading) return (
