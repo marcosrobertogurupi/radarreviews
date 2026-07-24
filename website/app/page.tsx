@@ -9,46 +9,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 
-// ── Tipo de Plano ──────────────────────────────────────────────────
-interface Plan {
-  id: string
-  slug: string
-  name: string
-  description: string
-  price_monthly: number
-  max_channels: number
-  color: string
-  is_popular: boolean
-  benefits: string[]
-}
-
-// Valores de fallback caso a API esteja indisponível
-const FALLBACK_PLANS: Plan[] = [
-  {
-    id: '1', slug: 'basico', name: 'Básico',
-    description: 'Para pequenos negócios locais.', price_monthly: 289,
-    max_channels: 3, color: '#10b981', is_popular: false,
-    benefits: ['3 canais monitorados','500 reviews/mês','Google Maps & TripAdvisor','Alertas por e-mail','Relatórios semanais','Suporte por e-mail'],
-  },
-  {
-    id: '2', slug: 'completo', name: 'Completo',
-    description: 'Monitoramento total + IA.', price_monthly: 459,
-    max_channels: 8, color: '#6366f1', is_popular: true,
-    benefits: ['8 canais monitorados','Reviews ilimitados','Todos os canais disponíveis','IA Copilot incluso','Alertas via WhatsApp/SMS','Suporte prioritário'],
-  },
-  {
-    id: '3', slug: 'custom', name: 'Custom',
-    description: 'Flexibilidade para sua marca.', price_monthly: 389,
-    max_channels: 5, color: '#f59e0b', is_popular: false,
-    benefits: ['Canais sob demanda','Reviews ilimitados','IA Copilot incluso','Relatórios personalizados','Multi-unidades','Gerente de conta'],
-  },
-  {
-    id: '4', slug: 'enterprise', name: 'Enterprise',
-    description: 'Escala e performance máxima.', price_monthly: 1500,
-    max_channels: 999, color: '#ef4444', is_popular: false,
-    benefits: ['Canais ilimitados','SLA garantido','Integrações via API/Webhooks','Suporte 24/7 dedicado','Consultoria trimestral','Desconto por volume'],
-  },
-]
+import { fetchPublicPlans, Plan, FALLBACK_PLANS } from './lib/plans'
 
 // ── Seção de Preços — lê do banco dinamicamente ────────────────────
 function PricingSection() {
@@ -56,29 +17,9 @@ function PricingSection() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const CACHE_KEY = 'reputei_plans_cache'
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.reputei.com.br'
-
-    fetch(`${apiUrl}/api/plans`)
-      .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then((data: Plan[]) => {
-        const filtered = data.filter(p => p.slug !== 'trial')
-        // Salva os planos mais recentes no cache do navegador
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify(filtered)) } catch {}
-        setPlans(filtered)
-      })
-      .catch(() => {
-        // API indisponível — tenta usar o último plano salvo no navegador
-        try {
-          const cached = localStorage.getItem(CACHE_KEY)
-          if (cached) {
-            setPlans(JSON.parse(cached))
-            return
-          }
-        } catch {}
-        // Se não há cache, usa os valores padrão embutidos
-        setPlans(FALLBACK_PLANS)
-      })
+    fetchPublicPlans()
+      .then(data => setPlans(data))
+      .catch(() => setPlans(FALLBACK_PLANS))
       .finally(() => setLoading(false))
   }, [])
 
@@ -151,7 +92,7 @@ function PricingSection() {
                   </div>
 
                   <ul className="space-y-3 mb-8 flex-1">
-                    {plan.benefits.map((item, i) => (
+                    {(plan.benefits ?? []).map((item, i) => (
                       <li key={i} className={`flex items-center gap-2 text-xs ${isPopular ? 'text-white' : 'text-gray-300'}`}>
                         <Check size={14} className={`flex-shrink-0 ${isPopular ? 'text-indigo-400' : 'text-indigo-500'}`} />
                         <span>{item}</span>

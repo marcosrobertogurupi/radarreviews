@@ -8,82 +8,11 @@ import {
   Users, Award, BarChart3, Lock, Clock, RefreshCw, Sparkles,
 } from 'lucide-react'
 
+import { fetchPublicPlans, buildPlanOptions, Plan as DBPlan, CalculatedPlanOption, FALLBACK_PLANS as FALLBACK_DB_PLANS } from '../lib/plans'
+
 // ── Types ────────────────────────────────────────────────────────
 
 type TipoKey  = 'agencia' | 'consultor' | 'representante'
-
-export interface DBPlan {
-  id: string
-  slug: string
-  name: string
-  description?: string
-  price_monthly: number
-  max_channels: number
-  color?: string
-  is_popular?: boolean
-  is_active?: boolean
-  is_public?: boolean
-}
-
-export interface CalculatedPlanOption {
-  key: string
-  planSlug: string
-  planName: string
-  periodKey: 'trimestral' | 'semestral' | 'anual'
-  periodLabel: string
-  months: number
-  discount: number
-  total: number
-  monthly: number
-  displayName: string
-}
-
-// ── Data ─────────────────────────────────────────────────────────
-
-const PERIOD_OPTIONS = [
-  { key: 'trimestral', label: 'Trimestral', months: 3, discount: 5 },
-  { key: 'semestral',  label: 'Semestral',  months: 6, discount: 10 },
-  { key: 'anual',      label: 'Anual',      discount: 20, months: 12 },
-] as const
-
-const FALLBACK_DB_PLANS: DBPlan[] = [
-  { id: '1', slug: 'basico', name: 'Básico', price_monthly: 289, max_channels: 3 },
-  { id: '2', slug: 'completo', name: 'Completo', price_monthly: 459, max_channels: 8 },
-  { id: '3', slug: 'custom', name: 'Custom', price_monthly: 389, max_channels: 5 },
-  { id: '4', slug: 'enterprise', name: 'Enterprise', price_monthly: 1500, max_channels: 999 },
-]
-
-function buildPlanOptions(rawPlans: DBPlan[]): CalculatedPlanOption[] {
-  const options: CalculatedPlanOption[] = []
-  const validPlans = (rawPlans || []).filter(p => p.slug !== 'trial' && Number(p.price_monthly) > 0)
-
-  for (const plan of validPlans) {
-    const basePrice = Number(plan.price_monthly) || 0
-    for (const period of PERIOD_OPTIONS) {
-      const mult = 1 - period.discount / 100
-      const monthly = +(basePrice * mult).toFixed(2)
-      const total = +(monthly * period.months).toFixed(2)
-      const key = `${plan.slug}_${period.key}`
-      const totalFmt = Math.round(total).toLocaleString('pt-BR')
-      const displayName = `${plan.name} — ${period.label} — R$ ${totalFmt}`
-
-      options.push({
-        key,
-        planSlug: plan.slug,
-        planName: plan.name,
-        periodKey: period.key as 'trimestral' | 'semestral' | 'anual',
-        periodLabel: period.label,
-        months: period.months,
-        discount: period.discount,
-        total,
-        monthly,
-        displayName,
-      })
-    }
-  }
-
-  return options.length > 0 ? options : buildPlanOptions(FALLBACK_DB_PLANS)
-}
 
 const COMMISSIONS: Record<TipoKey, { entrada: number; recorrente: number }> = {
   agencia:       { entrada: 20, recorrente: 10 },
@@ -360,15 +289,9 @@ export default function ParceiroPage() {
   })
 
   useEffect(() => {
-    const CACHE_KEY = 'reputei_plans_cache'
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.reputei.com.br'
-
-    fetch(`${apiUrl}/api/plans`)
-      .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then((data: DBPlan[]) => {
-        const filtered = data.filter(p => p.slug !== 'trial')
+    fetchPublicPlans()
+      .then((filtered: DBPlan[]) => {
         if (filtered.length > 0) {
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify(filtered)) } catch {}
           setPlans(filtered)
           const opts = buildPlanOptions(filtered)
           setPlanOptions(opts)
@@ -379,17 +302,8 @@ export default function ParceiroPage() {
         }
       })
       .catch(() => {
-        try {
-          const cached = localStorage.getItem(CACHE_KEY)
-          if (cached) {
-            const parsed = JSON.parse(cached)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setPlans(parsed)
-              setPlanOptions(buildPlanOptions(parsed))
-              return
-            }
-          }
-        } catch {}
+        const opts = buildPlanOptions(FALLBACK_DB_PLANS)
+        setPlanOptions(opts)
       })
   }, [])
 
