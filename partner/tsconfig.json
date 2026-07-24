@@ -12,7 +12,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@admin/*": ["../admin/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../admin/src"]
 }

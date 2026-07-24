@@ -2671,7 +2671,18 @@ const server = http.createServer(async (req, res) => {
 
   if (url.startsWith('/api/admin/prospects')) {
     const auth = await getAuthUser(req.headers.authorization)
-    if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+    let isPartner = false
+    if (auth && !['admin', 'operador'].includes(auth.perfil)) {
+      if (auth.userId) {
+        const { data: partnerData } = await supabaseAdmin
+          .from('partners')
+          .select('id, status')
+          .eq('user_id', auth.userId)
+        const partner = Array.isArray(partnerData) ? partnerData[0] : (partnerData as any)
+        if (partner && partner.status === 'active') isPartner = true
+      }
+    }
+    if (!auth || (!['admin', 'operador'].includes(auth.perfil) && !isPartner)) {
       res.writeHead(403); res.end(JSON.stringify({ error: 'Não autorizado' })); return
     }
     handleProspectAdmin(req, res, auth).catch(err => {

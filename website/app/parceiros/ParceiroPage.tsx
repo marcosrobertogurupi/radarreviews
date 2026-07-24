@@ -11,17 +11,78 @@ import {
 // ── Types ────────────────────────────────────────────────────────
 
 type TipoKey  = 'agencia' | 'consultor' | 'representante'
-type PlanKey  = 'basic_tri' | 'basic_sem' | 'basic_ano' | 'complete_tri' | 'complete_sem' | 'complete_ano'
+
+export interface DBPlan {
+  id: string
+  slug: string
+  name: string
+  description?: string
+  price_monthly: number
+  max_channels: number
+  color?: string
+  is_popular?: boolean
+  is_active?: boolean
+  is_public?: boolean
+}
+
+export interface CalculatedPlanOption {
+  key: string
+  planSlug: string
+  planName: string
+  periodKey: 'trimestral' | 'semestral' | 'anual'
+  periodLabel: string
+  months: number
+  discount: number
+  total: number
+  monthly: number
+  displayName: string
+}
 
 // ── Data ─────────────────────────────────────────────────────────
 
-const PLANS: Record<PlanKey, { nome: string; total: number; monthly: number }> = {
-  basic_tri:    { nome: 'Basic — Trimestral',    total: 357,   monthly: 119    },
-  basic_sem:    { nome: 'Basic — Semestral',     total: 642,   monthly: 107    },
-  basic_ano:    { nome: 'Basic — Anual',         total: 1142,  monthly: 95.17  },
-  complete_tri: { nome: 'Complete — Trimestral', total: 717,   monthly: 239    },
-  complete_sem: { nome: 'Complete — Semestral',  total: 1290,  monthly: 215    },
-  complete_ano: { nome: 'Complete — Anual',      total: 2292,  monthly: 191    },
+const PERIOD_OPTIONS = [
+  { key: 'trimestral', label: 'Trimestral', months: 3, discount: 5 },
+  { key: 'semestral',  label: 'Semestral',  months: 6, discount: 10 },
+  { key: 'anual',      label: 'Anual',      discount: 20, months: 12 },
+] as const
+
+const FALLBACK_DB_PLANS: DBPlan[] = [
+  { id: '1', slug: 'basico', name: 'Básico', price_monthly: 289, max_channels: 3 },
+  { id: '2', slug: 'completo', name: 'Completo', price_monthly: 459, max_channels: 8 },
+  { id: '3', slug: 'custom', name: 'Custom', price_monthly: 389, max_channels: 5 },
+  { id: '4', slug: 'enterprise', name: 'Enterprise', price_monthly: 1500, max_channels: 999 },
+]
+
+function buildPlanOptions(rawPlans: DBPlan[]): CalculatedPlanOption[] {
+  const options: CalculatedPlanOption[] = []
+  const validPlans = (rawPlans || []).filter(p => p.slug !== 'trial' && Number(p.price_monthly) > 0)
+
+  for (const plan of validPlans) {
+    const basePrice = Number(plan.price_monthly) || 0
+    for (const period of PERIOD_OPTIONS) {
+      const mult = 1 - period.discount / 100
+      const monthly = +(basePrice * mult).toFixed(2)
+      const total = +(monthly * period.months).toFixed(2)
+      const key = `${plan.slug}_${period.key}`
+      const totalFmt = Math.round(total).toLocaleString('pt-BR')
+      const displayName = `${plan.name} — ${period.label} — R$ ${totalFmt}`
+
+      options.push({
+        key,
+        planSlug: plan.slug,
+        planName: plan.name,
+        periodKey: period.key as 'trimestral' | 'semestral' | 'anual',
+        periodLabel: period.label,
+        months: period.months,
+        discount: period.discount,
+        total,
+        monthly,
+        displayName,
+      })
+    }
+  }
+
+  return options.length > 0 ? options : buildPlanOptions(FALLBACK_DB_PLANS)
 }
 
 const COMMISSIONS: Record<TipoKey, { entrada: number; recorrente: number }> = {
@@ -210,9 +271,12 @@ function fmt(n: number) {
   })
 }
 
-function calculate(tipo: TipoKey, planKey: PlanKey, cpm: number) {
-  const plan = PLANS[planKey]
+function calculate(tipo: TipoKey, plan: CalculatedPlanOption, cpm: number) {
   const comm = COMMISSIONS[tipo]
+
+  if (!plan) {
+    return { mes1: 0, recorrenteMensal: 0, totalAno: 0 }
+  }
 
   if (tipo === 'representante') {
     const mes = Math.round(comm.entrada / 100 * plan.total * cpm)
@@ -280,12 +344,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 import Navbar from '../../components/Navbar'
 
 export default function ParceiroPage() {
-  const [tipo,    setTipo]    = useState<TipoKey>('agencia')
-  const [planKey, setPlanKey] = useState<PlanKey>('complete_tri')
-  const [clientes, setClientes] = useState(5)
-  const [openRule, setOpenRule] = useState<number | null>(null)
-  const [openFaq,  setOpenFaq]  = useState<number | null>(null)
-  const [formSent, setFormSent] = useState(false)
+  const [tipo,        setTipo]        = useState<TipoKey>('agencia')
+  const [plans,       setPlans]       = useState<DBPlan[]>(FALLBACK_DB_PLANS)
+  const [planOptions, setPlanOptions] = useState<CalculatedPlanOption[]>(() => buildPlanOptions(FALLBACK_DB_PLANS))
+  const [planKey,     setPlanKey]     = useState<string>('completo_trimestral')
+  const [clientes,    setClientes]    = useState(5)
+  const [openRule,    setOpenRule]    = useState<number | null>(null)
+  const [openFaq,     setOpenFaq]     = useState<number | null>(null)
+  const [formSent,    setFormSent]    = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [formError,   setFormError]   = useState('')
   const [form, setForm] = useState({
@@ -293,7 +359,42 @@ export default function ParceiroPage() {
     carteira: '', cidade: '', como_conheceu: '', mensagem: '', termos: false,
   })
 
-  const result = calculate(tipo, planKey, clientes)
+  useEffect(() => {
+    const CACHE_KEY = 'reputei_plans_cache'
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.reputei.com.br'
+
+    fetch(`${apiUrl}/api/plans`)
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then((data: DBPlan[]) => {
+        const filtered = data.filter(p => p.slug !== 'trial')
+        if (filtered.length > 0) {
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(filtered)) } catch {}
+          setPlans(filtered)
+          const opts = buildPlanOptions(filtered)
+          setPlanOptions(opts)
+          if (!opts.some(o => o.key === planKey)) {
+            const fallbackKey = opts.find(o => o.key.includes('completo'))?.key || opts[0]?.key
+            if (fallbackKey) setPlanKey(fallbackKey)
+          }
+        }
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem(CACHE_KEY)
+          if (cached) {
+            const parsed = JSON.parse(cached)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setPlans(parsed)
+              setPlanOptions(buildPlanOptions(parsed))
+              return
+            }
+          }
+        } catch {}
+      })
+  }, [])
+
+  const selectedPlanOption = planOptions.find(o => o.key === planKey) || planOptions[0]
+  const result = calculate(tipo, selectedPlanOption, clientes)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -532,12 +633,12 @@ export default function ParceiroPage() {
                 <div>
                   <div className={labelCls}>Plano que pretende vender</div>
                   <select
-                    value={planKey}
-                    onChange={e => setPlanKey(e.target.value as PlanKey)}
+                    value={selectedPlanOption ? selectedPlanOption.key : planKey}
+                    onChange={e => setPlanKey(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
                   >
-                    {(Object.entries(PLANS) as [PlanKey, { nome: string; total: number }][]).map(([k, v]) => (
-                      <option key={k} value={k}>{v.nome} — {fmt(v.total)}</option>
+                    {planOptions.map(opt => (
+                      <option key={opt.key} value={opt.key}>{opt.displayName}</option>
                     ))}
                   </select>
                 </div>

@@ -65,8 +65,8 @@ export const systemNotifications = {
       connector_id: connector.id
     })
 
-    // 1. Marcar notificações anteriores como "Resolvido"
-    await supabase
+    // 1. Marcar notificações anteriores como "Resolvido" e capturar se havia alguma pendente
+    const { data: resolvedNotifs } = await supabase
       .from('system_notifications')
       .update({ 
         status: 'resolvido', 
@@ -74,8 +74,9 @@ export const systemNotifications = {
       })
       .eq('connector_id', connector.id)
       .eq('status', 'pendente')
+      .select('id')
 
-    // 2. Criar evento de sucesso
+    // 2. Criar evento de sucesso no banco (para histórico do sininho do Admin)
     await supabase.from('system_notifications').insert({
       tenant_id: connector.tenant_id,
       business_id: connector.business_id,
@@ -87,8 +88,23 @@ export const systemNotifications = {
       resolved_at: new Date().toISOString()
     })
 
-    // 3. Disparar para N8N (opcional, mas bom para histórico)
-    await this.fireExternalAlert(connector, 'RESOLVIDO', 'Canal recuperado e operando normalmente.', false)
+    // 3. Disparar WhatsApp/N8N APENAS se o usuário foi notificado previamente da falha
+    // (ex: alert_6h_sent, alert_24h_sent, etc., ou se havia notificação de erro pendente no banco)
+    const hadTierAlert = !!(
+      connector.alert_6h_sent ||
+      connector.alert_24h_sent ||
+      connector.alert_48h_sent ||
+      connector.alert_72h_sent
+    )
+    const hadPendingDbAlert = Array.isArray(resolvedNotifs) && resolvedNotifs.length > 0
+
+    if (hadTierAlert || hadPendingDbAlert) {
+      await this.fireExternalAlert(connector, 'RESOLVIDO', 'Canal recuperado e operando normalmente.', false)
+    } else {
+      logger.info(`[system-notifications] Auto-recuperação do canal ${connector.channel} salva no banco, mas WhatsApp/N8N pulado (nenhum alerta prévio enviado).`, {
+        connector_id: connector.id
+      })
+    }
   },
 
   /**

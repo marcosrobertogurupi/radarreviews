@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, Users, UserPlus, DollarSign,
-  User, ChevronRight, LogOut, RefreshCw
+  User, ChevronRight, LogOut, RefreshCw, Target
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -12,12 +12,15 @@ import Clients from './pages/Clients'
 import ClientNew from './pages/ClientNew'
 import Commissions from './pages/Commissions'
 import Profile from './pages/Profile'
+import Prospects from './pages/Prospects'
 import { ToastProvider } from './components/Toast'
+import { API_URL } from './lib/utils'
 
-type Page = 'dashboard' | 'clients' | 'clients_new' | 'commissions' | 'profile'
+type Page = 'dashboard' | 'prospects' | 'clients' | 'clients_new' | 'commissions' | 'profile'
 
 const NAV = [
   { id: 'dashboard' as Page, label: 'Visão Geral',  icon: LayoutDashboard },
+  { id: 'prospects' as Page, label: 'Prospecção',   icon: Target },
   { id: 'clients'   as Page, label: 'Meus Clientes', icon: Users },
   { id: 'clients_new' as Page, label: 'Novo Cliente', icon: UserPlus },
   { id: 'commissions' as Page, label: 'Comissões',    icon: DollarSign },
@@ -100,6 +103,7 @@ export default function App() {
 
   const pages: Record<Page, ReactElement> = {
     dashboard: <Dashboard session={session} partner={partner} onNavigate={(p) => setPage(p)} />,
+    prospects: <Prospects />,
     clients:   <Clients session={session} />,
     clients_new: <ClientNew session={session} onCreated={() => setPage('clients')} />,
     commissions: <Commissions session={session} />,

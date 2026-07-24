@@ -17,8 +17,20 @@ export async function handleProspectAdmin(
   const url = req.url || ''
   const method = req.method
 
-  // Apenas admin ou operador
-  if (!['admin', 'operador'].includes(auth.perfil)) {
+  // Permitir admin, operador ou parceiro ativo
+  let isPartner = false
+  if (!['admin', 'operador'].includes(auth?.perfil)) {
+    if (auth?.userId) {
+      const { data: partnerData } = await supabaseAdmin
+        .from('partners')
+        .select('id, status')
+        .eq('user_id', auth.userId)
+      const partner = Array.isArray(partnerData) ? partnerData[0] : (partnerData as any)
+      if (partner && partner.status === 'active') isPartner = true
+    }
+  }
+
+  if (!['admin', 'operador'].includes(auth?.perfil) && !isPartner) {
     return json(res, 403, { error: 'Acesso negado' })
   }
 
