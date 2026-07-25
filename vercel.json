@@ -3,42 +3,42 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/assets/(.*)",
+      "source": "/assets/:path*",
       "has": [
         { "type": "host", "value": "admin.reputei.com.br" }
       ],
-      "destination": "/admin/assets/$1"
+      "destination": "/admin/assets/:path*"
     },
     {
-      "source": "/(.*\\.(png|jpe?g|gif|ico|svg|json|webmanifest|txt))",
+      "source": "/:file*.:ext(png|jpg|jpeg|gif|ico|svg|json|webmanifest|txt)",
       "has": [
         { "type": "host", "value": "admin.reputei.com.br" }
       ],
-      "destination": "/admin/$1"
+      "destination": "/admin/:file*.:ext"
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "has": [
         { "type": "host", "value": "admin.reputei.com.br" }
       ],
       "destination": "/admin/index.html"
     },
     {
-      "source": "/assets/(.*)",
+      "source": "/assets/:path*",
       "has": [
         { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
       ],
-      "destination": "/portal/assets/$1"
+      "destination": "/portal/assets/:path*"
     },
     {
-      "source": "/(.*\\.(png|jpe?g|gif|ico|svg|json|webmanifest|txt))",
+      "source": "/:file*.:ext(png|jpg|jpeg|gif|ico|svg|json|webmanifest|txt)",
       "has": [
         { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
       ],
-      "destination": "/portal/$1"
+      "destination": "/portal/:file*.:ext"
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "has": [
         { "type": "host", "value": "(?<subdomain>app|portal)\\.reputei\\.com\\.br" }
       ],

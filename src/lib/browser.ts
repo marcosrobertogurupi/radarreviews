@@ -47,3 +47,24 @@ export async function closeBrowserSafely(browser: Browser | null | undefined, ti
     }
   }
 }
+
+/**
+ * Tenta matar processos Chromium/chrome-headless-shell órfãos no container.
+ * Executado na inicialização do scheduler ou periodicamente para evitar acúmulo de zumbis.
+ */
+export async function cleanupOrphanChromiumProcesses(): Promise<void> {
+  if (process.platform === 'win32') return
+
+  const { exec } = await import('node:child_process')
+  return new Promise((resolve) => {
+    // pkill -f chrome-headless-shell / chromium
+    exec('pkill -9 -f chrome-headless-shell || pkill -9 -f chromium || true', (err) => {
+      if (err) {
+        logger.debug('[browser] Nenhum processo órfão de Chromium encontrado para limpeza', { error: err.message })
+      } else {
+        logger.info('[browser] Limpeza de processos Chromium órfãos executada com sucesso')
+      }
+      resolve()
+    })
+  })
+}

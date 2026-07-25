@@ -433,7 +433,8 @@ async function runApifyCollector(
 ): Promise<JobResult> {
   logger.info(`[${CHANNEL}] Tentando coleta via Apify (Fallback/Secundário)`, { connector_id: connector.id, slug, actorId })
   const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
-  const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx, actorId)
+  const options = { since: connector.last_sync_at ?? undefined }
+  const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx, actorId, options)
   
   if (apifyComplaints.length > 0) {
     const normalized = apifyComplaints.map(c => normalize(c, connector))

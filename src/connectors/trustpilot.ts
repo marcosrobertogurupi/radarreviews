@@ -95,7 +95,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
         const limit = config.max_items || 20
         const options = {
           filterByDatePeriod: config.filter_date || 'any date',
-          sortBy: 'recency' as const
+          sortBy: 'recency' as const,
+          since: connector.last_sync_at ?? undefined
         }
 
         const apifyItems = await fetchTrustpilotReviews(externalId, limit, ctx, options)

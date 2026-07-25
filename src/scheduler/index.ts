@@ -184,6 +184,8 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
   }
 }
 
+import { cleanupOrphanChromiumProcesses } from '../lib/browser.js'
+
 // -----------------------------------------------------------------------------
 // Loop principal
 // -----------------------------------------------------------------------------
@@ -194,6 +196,11 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
  */
 export async function startScheduler(): Promise<void> {
   logger.info('[scheduler] Iniciando — verificando conectores a cada 60s')
+
+  // Limpar processos Chromium órfãos/zumbis de execuções anteriores
+  await cleanupOrphanChromiumProcesses().catch(err => {
+    logger.error('[scheduler] Erro na limpeza inicial de processos órfãos', { error: err })
+  })
 
   // Watchdog: resetar imediatamente conectores travados em 'running' (ex: crash anterior)
   await resetStuckRunningConnectors(5).catch(err => {

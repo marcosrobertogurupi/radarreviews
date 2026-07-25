@@ -21,6 +21,72 @@ export interface ApifyInstagramComment {
   url: string
 }
 
+export interface ActorSafetyLimit {
+  maxItems: number
+  costPerItem: number // USD por item extraído
+}
+
+/**
+ * Normaliza o ID de um actor da Apify para sempre usar o separador `~` em vez de `/`.
+ * A API V2 da Apify exige o til para resolver atores da comunidade.
+ * Exemplo: "viralanalyzer/reclameaqui-scraper" -> "viralanalyzer~reclameaqui-scraper"
+ */
+export function normalizeActorId(actorId: string): string {
+  if (!actorId || typeof actorId !== 'string') return actorId
+  const trimmed = actorId.trim()
+  if (trimmed.includes('/')) {
+    return trimmed.replace('/', '~')
+  }
+  return trimmed
+}
+
+/**
+ * Tabela centralizada de limites de segurança e custos estimados por canal/actor.
+ */
+export const ACTOR_SAFETY_LIMITS: Record<string, ActorSafetyLimit> = {
+  reclame_aqui:       { maxItems: 10, costPerItem: 0.05 },    // $50.00 / 1.000 itens ($0,05/item)
+  trustpilot:         { maxItems: 15, costPerItem: 0.0015 },  // $1.50 / 1.000 itens ($0,0015/item)
+  instagram_comments: { maxItems: 50, costPerItem: 0.0026 },  // $2.60 / 1.000 itens
+  facebook_reviews:   { maxItems: 20, costPerItem: 0.005 },
+  instagram_mentions: { maxItems: 20, costPerItem: 0.005 },
+  instagram_hashtags: { maxItems: 20, costPerItem: 0.005 },
+}
+
+/**
+ * Guard-Rail de Custo: calcula e restringe o limite de itens solicitados
+ * para evitar estourar orçamentos e cotas de API.
+ */
+export function calculateAndClampLimit(
+  channel: string,
+  requestedLimit: number
+): { safeLimit: number; estimatedCostUsd: number } {
+  const envMaxCost = process.env['APIFY_MAX_COST_PER_RUN']
+  const maxCostPerRunUsd = envMaxCost && !isNaN(Number(envMaxCost)) ? Number(envMaxCost) : 0.50
+
+  const config = ACTOR_SAFETY_LIMITS[channel] ?? { maxItems: 20, costPerItem: 0.01 }
+  
+  let safeLimit = Math.min(Math.max(1, requestedLimit), config.maxItems)
+  let estimatedCostUsd = safeLimit * config.costPerItem
+
+  if (estimatedCostUsd > maxCostPerRunUsd) {
+    const budgetLimit = Math.max(1, Math.floor((maxCostPerRunUsd + 1e-7) / config.costPerItem))
+    safeLimit = Math.min(safeLimit, budgetLimit)
+    estimatedCostUsd = safeLimit * config.costPerItem
+    console.warn(
+      `[Apify Guard-Rail] Limite reduzido por teto orçamentário (${channel}): ` +
+      `solicitado=${requestedLimit}, ajustado=${safeLimit}, custo estimado=USD $${estimatedCostUsd.toFixed(4)} ` +
+      `(teto=USD $${maxCostPerRunUsd.toFixed(2)})`
+    )
+  } else {
+    console.log(
+      `[Apify Guard-Rail] Canal '${channel}': limite solicitado=${requestedLimit}, safeLimit=${safeLimit}, ` +
+      `custo estimado=USD $${estimatedCostUsd.toFixed(4)}`
+    )
+  }
+
+  return { safeLimit, estimatedCostUsd }
+}
+
 /**
  * Aborta uma execução na Apify para parar cobrança
  */
@@ -42,13 +108,15 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('instagram_comments', limit)
+
   console.log(`[Apify] Passo 1: Buscando posts recentes de @${username}...`)
 
   try {
-    // 1. Pegar os últimos posts usando a URL direta do perfil
     const profileUrl = `https://www.instagram.com/${username.replace('@', '')}/`
+    const actor1 = normalizeActorId('apify/instagram-scraper')
     const postsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      `https://api.apify.com/v2/acts/${actor1}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
         directUrls: [profileUrl],
         resultsType: 'posts',
@@ -68,19 +136,18 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 
     console.log(`[Apify] Passo 2: Buscando comentários em ${postUrls.length} posts usando robô especializado...`)
 
-    // 2. Pegar comentários desses posts usando o robô ESPECIALIZADO em comentários
+    const actor2 = normalizeActorId('apify/instagram-comment-scraper')
     const commentsResponse = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-comment-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      `https://api.apify.com/v2/acts/${actor2}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
         directUrls: postUrls,
-        resultsLimit: limit
+        resultsLimit: safeLimit
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
     const items = (commentsResponse.data as any[]).filter(item => !item.error && !item.requestErrorMessages)
     
-    // Log de consumo
     if (ctx?.tenant_id) {
       await logApiUsage({
         tenant_id: ctx.tenant_id,
@@ -88,7 +155,7 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
         service_name: 'apify',
         operation_type: 'instagram-comments',
         units_consumed: items.length,
-        estimated_cost_brl: 0.15 
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
 
@@ -117,29 +184,21 @@ export async function fetchInstagramComments(username: string, limit = 50, ctx?:
 
 /**
  * Coleta reclamações do Reclame Aqui via Apify
- *
- * Actor padrão: viralanalyzer/reclameaqui-scraper
- * Docs: https://apify.com/viralanalyzer/reclameaqui-scraper
- *
- * Input esperado pelo actor:
- *   companies: string[]   — slugs das empresas (ex: ["nubank", "itau"])
- *   maxComplaints: number  — máximo por empresa (default 20, max 100)
- *   includeCompanyStats: boolean — inclui score, response rate, etc.
- *   statusFilter?: string  — "all" | "Respondida" | "Não respondida" | etc.
- *
- * Output do actor (por item):
- *   complaint_id, company_slug, title, description, status, category,
- *   created_at, updated_at, author, city, state, rating, is_resolved,
- *   company_response, response_time_hours, views, url, company_score, etc.
  */
-export async function fetchReclameAquiComplaints(companySlug: string, limit = 20, ctx?: ApifyContext, actorId?: string): Promise<any[]> {
+export async function fetchReclameAquiComplaints(
+  companySlug: string,
+  limit = 20,
+  ctx?: ApifyContext,
+  actorId?: string,
+  options?: { since?: string | Date }
+): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
-  // Actor correto da comunidade Apify — o anterior 'apify~reclame-aqui-scraper' não existe (404)
-  // A API do Apify requer o separador '~' em vez de '/' para resolver o ator.
   const rawActor = actorId || 'viralanalyzer~reclameaqui-scraper'
-  const actor = rawActor.replace('/', '~')
+  const actor = normalizeActorId(rawActor)
+
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', limit)
 
   try {
     const raTimeoutSecs = 300 // 5 minutos para o Reclame Aqui superar Cloudflare
@@ -149,8 +208,10 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
       `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${raTimeoutSecs}&memory=${raMemoryMb}`,
       {
         companies: [companySlug],
-        maxComplaints: Math.min(limit, 100), // API limita em 100
-        includeCompanyStats: false, // Não precisamos de stats — só reclamações
+        limit: safeLimit,
+        maxResults: safeLimit,
+        maxComplaints: safeLimit,
+        includeCompanyStats: false,
         statusFilter: 'all',
       },
       { timeout: (raTimeoutSecs + 30) * 1000 }
@@ -158,7 +219,6 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
 
     const items = response.data as any[]
     
-    // Verificar se a Apify retornou um objeto de diagnóstico (ex: soft-deadline ou erro de proxy)
     const diagnostic = items.find(item => item && item.setup_status === 'DIAGNOSTIC_GUIDE')
     if (diagnostic) {
       throw new Error(`Apify retornou erro de diagnostico: ${diagnostic.message || 'soft-deadline ou erro de proxy do Reclame Aqui'}`)
@@ -171,12 +231,11 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
         service_name: 'apify',
         operation_type: 'reclame-aqui',
         units_consumed: items.length,
-        estimated_cost_brl: 0.25 
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
 
-    // Mapear output do actor viralanalyzer para o formato que o conector espera
-    return items.map(item => ({
+    const mapped = items.map(item => ({
       id: item.complaint_id || item.id || item.complaintId,
       title: item.title,
       description: item.description || item.text || item.company_response,
@@ -187,6 +246,20 @@ export async function fetchReclameAquiComplaints(companySlug: string, limit = 20
       isResolved: item.is_resolved ?? (item.status === 'Resolvida'),
       rating: item.rating,
     }))
+
+    // Incremental filtering: se options.since for fornecido, descartar itens mais antigos
+    if (options?.since) {
+      const sinceTime = new Date(options.since).getTime()
+      if (!isNaN(sinceTime)) {
+        return mapped.filter(item => {
+          if (!item.date) return true
+          const itemTime = new Date(item.date).getTime()
+          return isNaN(itemTime) || itemTime >= sinceTime
+        })
+      }
+    }
+
+    return mapped
   } catch (err: any) {
     if (err.response?.data) {
       console.error(`[Apify] Detalhes do erro ReclameAqui:`, JSON.stringify(err.response.data))
@@ -202,15 +275,18 @@ export async function fetchTrustpilotReviews(
   domain: string, 
   limit = 20, 
   ctx?: ApifyContext,
-  options: { filterByDatePeriod?: string; sortBy?: 'recency' | 'relevancy' } = {}
+  options: { filterByDatePeriod?: string; sortBy?: 'recency' | 'relevancy'; since?: string | Date } = {}
 ): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado nas variáveis de ambiente')
   const sanitizedDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
 
-  const actorId = 'pear_fight~trustpilot-scraper'
-  const timeoutSecs = 180 // Máximo 3 minutos para Trustpilot
-  
+  const rawActorId = 'pear_fight~trustpilot-scraper'
+  const actorId = normalizeActorId(rawActorId)
+  const timeoutSecs = 180
+
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('trustpilot', limit)
+
   console.log(`[Apify] Chamando scraper para ${domain}...`)
 
   let runId = ''
@@ -222,7 +298,9 @@ export async function fetchTrustpilotReviews(
         companyUrls: [
           `https://www.trustpilot.com/review/${sanitizedDomain}`
         ],
-        maxReviews: limit
+        maxReviews: safeLimit,
+        limit: safeLimit,
+        maxResults: safeLimit
       }
     )
 
@@ -230,10 +308,9 @@ export async function fetchTrustpilotReviews(
     const datasetId = runResponse.data.data.defaultDatasetId
     console.log(`[Apify] Robô iniciado (RunID: ${runId}). Aguardando conclusão...`)
 
-    // Polling rigoroso (máximo 4 minutos no total para dar margem ao timeout da Apify)
     let finished = false
     let attempts = 0
-    const maxAttempts = 48 // 48 * 5s = 240s (4 min)
+    const maxAttempts = 48 // 240s
     
     while (!finished && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 5000))
@@ -249,7 +326,6 @@ export async function fetchTrustpilotReviews(
     }
 
     if (!finished) {
-      // Tenta abortar o robô que ficou travado para economizar créditos
       await abortRun(runId)
       throw new Error('O robô demorou muito para responder e foi abortado por segurança.')
     }
@@ -265,11 +341,11 @@ export async function fetchTrustpilotReviews(
         service_name: 'apify',
         operation_type: 'trustpilot',
         units_consumed: items.length,
-        estimated_cost_brl: 0.10
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
 
-    return items
+    const mapped = items
       .filter(item => item && item.type === 'review')
       .map(item => {
         let dateStr = item.date || item.reviewDate || item.createdAt || item.publishedDate || new Date().toISOString()
@@ -296,9 +372,21 @@ export async function fetchTrustpilotReviews(
           links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${sanitizedDomain}` }]
         }
       })
+
+    // Incremental filtering by options.since
+    if (options?.since) {
+      const sinceTime = new Date(options.since).getTime()
+      if (!isNaN(sinceTime)) {
+        return mapped.filter(item => {
+          const itemTime = new Date(item.createdAt).getTime()
+          return isNaN(itemTime) || itemTime >= sinceTime
+        })
+      }
+    }
+
+    return mapped
   } catch (error: any) {
     if (runId && !error.message?.includes('abortado')) {
-      // Em caso de qualquer erro inesperado, tenta abortar para garantir
       await abortRun(runId).catch(() => {})
     }
     if (error.response?.data) {
@@ -314,10 +402,14 @@ export async function fetchTrustpilotReviews(
 export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
+
+  const actor = normalizeActorId('apify/facebook-reviews-scraper')
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('facebook_reviews', limit)
+
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~facebook-reviews-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
-      { startUrls: [{ url: pageUrl }], maxResults: limit },
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      { startUrls: [{ url: pageUrl }], maxResults: safeLimit, limit: safeLimit },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
@@ -328,7 +420,7 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: Ap
         service_name: 'apify',
         operation_type: 'facebook-reviews',
         units_consumed: items.length,
-        estimated_cost_brl: 0.10
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
     return items.map(item => ({
@@ -353,11 +445,15 @@ export async function fetchFacebookReviews(pageUrl: string, limit = 20, ctx?: Ap
 export async function fetchInstagramMentions(username: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
+
   const cleanUsername = username.replace('@', '')
+  const actor = normalizeActorId('apify/instagram-mention-scraper')
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('instagram_mentions', limit)
+
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-mention-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
-      { usernames: [cleanUsername], limit },
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      { usernames: [cleanUsername], limit: safeLimit },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
@@ -368,7 +464,7 @@ export async function fetchInstagramMentions(username: string, limit = 20, ctx?:
         service_name: 'apify',
         operation_type: 'instagram-mentions',
         units_consumed: items.length,
-        estimated_cost_brl: 0.10
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
     return items.map(item => ({
@@ -389,11 +485,15 @@ export async function fetchInstagramMentions(username: string, limit = 20, ctx?:
 export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: ApifyContext): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
+
   const tag = hashtag.replace('#', '')
+  const actor = normalizeActorId('apify/instagram-hashtag-scraper')
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('instagram_hashtags', limit)
+
   try {
     const response = await axios.post(
-      `https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
-      { hashtags: [tag], resultsLimit: limit },
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      { hashtags: [tag], resultsLimit: safeLimit, limit: safeLimit },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
     const items = response.data as any[]
@@ -404,7 +504,7 @@ export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: 
         service_name: 'apify',
         operation_type: 'instagram-hashtags',
         units_consumed: items.length,
-        estimated_cost_brl: 0.10
+        estimated_cost_brl: estimatedCostUsd * 5.5
       })
     }
     return items.map(item => ({
