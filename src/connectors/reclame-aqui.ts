@@ -25,8 +25,10 @@ import 'dotenv/config'
 import { createHash } from 'node:crypto'
 import { chromium } from 'playwright-core'
 import { z } from 'zod'
+import * as cheerio from 'cheerio'
 import { ingestReviews } from '../lib/ingest.js'
 import { fetchReclameAquiComplaints } from '../lib/apify.js'
+import { getFirecrawlApiKey, scrapePageViaFirecrawl } from '../lib/firecrawl.js'
 import { logger } from '../lib/logger.js'
 import { closeBrowserSafely } from '../lib/browser.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
@@ -431,7 +433,7 @@ async function runApifyCollector(
   connector: ChannelConnector,
   slug: string
 ): Promise<JobResult> {
-  logger.info(`[${CHANNEL}] Tentando coleta via Apify (Fallback/Secundário)`, { connector_id: connector.id, slug, actorId })
+  logger.info(`[${CHANNEL}] Tentando coleta via Apify (Fallback 2 / Terciário)`, { connector_id: connector.id, slug, actorId })
   const ctx = { tenant_id: connector.tenant_id, connector_id: connector.id }
   const options = { since: connector.last_sync_at ?? undefined }
   const apifyComplaints = await fetchReclameAquiComplaints(slug, 20, ctx, actorId, options)
@@ -451,6 +453,84 @@ async function runApifyCollector(
     reviews_fetched: 0,
     reviews_new: 0,
     reviews_updated: 0
+  }
+}
+
+export async function runFirecrawlCollector(
+  connector: ChannelConnector,
+  slug: string,
+  sanitizedSlug: string
+): Promise<JobResult> {
+  logger.info(`[${CHANNEL}] Tentando coleta via Firecrawl (Fallback 1 / Secundário)`, {
+    connector_id: connector.id,
+    slug,
+  })
+
+  const targetUrl = `${BASE_URL}/empresa/${sanitizedSlug}/lista-reclamacoes/?pagina=1`
+  
+  let firecrawlResult
+  try {
+    firecrawlResult = await scrapePageViaFirecrawl(targetUrl, {
+      waitFor: 3000,
+      timeout: 30000,
+    })
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    logger.warn(`[${CHANNEL}] Chamada ao Firecrawl lançou exceção: ${errMsg}`, { connector_id: connector.id })
+    return {
+      reviews_fetched: 0,
+      reviews_new: 0,
+      reviews_updated: 0,
+      error: `Firecrawl: ${errMsg}`,
+      error_type: 'transient',
+    }
+  }
+
+  if (!firecrawlResult.html || firecrawlResult.html.length === 0) {
+    logger.warn(`[${CHANNEL}] Firecrawl retornou HTML vazio`, { connector_id: connector.id })
+    return {
+      reviews_fetched: 0,
+      reviews_new: 0,
+      reviews_updated: 0,
+      error: 'Firecrawl: HTML vazio retornado',
+      error_type: 'transient',
+    }
+  }
+
+  // 1. Tentar extrair via __NEXT_DATA__ presente no HTML
+  let complaints: ReclameAquiComplaint[] = []
+  const nextDataMatch = firecrawlResult.html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i)
+  if (nextDataMatch && nextDataMatch[1]) {
+    complaints = parseNextDataJson(nextDataMatch[1], sanitizedSlug)
+    if (complaints.length > 0) {
+      logger.info(`[${CHANNEL}] Firecrawl: extraiu ${complaints.length} reclamações via __NEXT_DATA__`)
+    }
+  }
+
+  // 2. Se __NEXT_DATA__ falhar ou vier vazio, tenta extração DOM via Cheerio
+  if (complaints.length === 0) {
+    complaints = parseDomFromHtmlString(firecrawlResult.html, sanitizedSlug)
+    if (complaints.length > 0) {
+      logger.info(`[${CHANNEL}] Firecrawl: extraiu ${complaints.length} reclamações via DOM HTML`)
+    }
+  }
+
+  if (complaints.length === 0) {
+    logger.warn(`[${CHANNEL}] Firecrawl: nenhuma reclamação encontrada na página HTML para ${sanitizedSlug}`)
+    return {
+      reviews_fetched: 0,
+      reviews_new: 0,
+      reviews_updated: 0,
+    }
+  }
+
+  const normalized = complaints.map(c => normalize(c, connector))
+  const ingest = await ingestReviews(normalized, CHANNEL, connector.id, connector.business_id)
+
+  return {
+    reviews_fetched: complaints.length,
+    reviews_new: ingest.reviews_new,
+    reviews_updated: ingest.reviews_updated,
   }
 }
 
@@ -475,8 +555,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const MAX_SCRAPE_MS = 8 * 60_000
 
   // Quantas vezes consecutivas este conector já falhou?
-  // Se error_count > 0, significa que o Playwright falhou no ciclo anterior —
-  // erros EAGAIN/ENOMEM são persistentes quando o container está sob pressão.
   const previousErrorCount = (connector.error_count as number | null) ?? 0
 
   // 1. Tentar Playwright (Principal)
@@ -502,7 +580,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return playwrightResult
   }
 
-  // Unificar a mensagem de erro (pode vir do return ou do throw)
+  // Unificar a mensagem de erro
   const pwMsg = playwrightError ?? playwrightResult?.error ?? 'Erro desconhecido no Playwright'
   const isResourceExhaustion = pwMsg.includes('EAGAIN') || pwMsg.includes('ENOMEM')
   const isTransientPw = isResourceExhaustion ||
@@ -511,8 +589,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
   // Se é o primeiro erro transiente (EAGAIN/ENOMEM) e NÃO há falhas anteriores,
   // retornar como transiente para dar ao Playwright uma chance no próximo ciclo.
-  // Mas se o conector JÁ tem error_count > 0, significa que o EAGAIN é recorrente
-  // e o Playwright provavelmente não vai funcionar — cair no fallback Apify.
   if (isTransientPw && previousErrorCount === 0) {
     logger.warn(
       `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez) — será retentado no próximo ciclo`,
@@ -523,15 +599,36 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return result
   }
 
-  // 2. Fallback: Apify (para erros persistentes ou não-transientes)
+  // 2. Fallback 1: Firecrawl (Secundário - se FIRECRAWL_API_KEY estiver configurada)
+  const firecrawlApiKey = getFirecrawlApiKey()
+  if (firecrawlApiKey) {
+    logger.warn(
+      `[${CHANNEL}] Playwright falhou (${pwMsg}). Ativando fallback Firecrawl...`,
+      { connector_id: connector.id, previousErrorCount }
+    )
+    try {
+      const firecrawlRes = await runFirecrawlCollector(connector, slug, sanitizedSlug)
+      if (!firecrawlRes.error) {
+        return firecrawlRes
+      }
+      logger.warn(`[${CHANNEL}] Fallback Firecrawl não retornou dados/teve erro: ${firecrawlRes.error}`)
+    } catch (fcErr: unknown) {
+      const fcMsg = fcErr instanceof Error ? fcErr.message : String(fcErr)
+      logger.warn(`[${CHANNEL}] Exceção ao executar fallback Firecrawl: ${fcMsg}`)
+    }
+  } else {
+    logger.info(`[${CHANNEL}] FIRECRAWL_API_KEY não configurada. Pulando fallback Firecrawl.`)
+  }
+
+  // 3. Fallback 2: Apify (Terciário / Último recurso - se APIFY_TOKEN estiver configurado)
   if (isTransientPw) {
     logger.warn(
-      `[${CHANNEL}] Playwright falhou com EAGAIN/ENOMEM pela ${previousErrorCount + 1}ª vez consecutiva — ativando fallback Apify`,
+      `[${CHANNEL}] Playwright e Firecrawl indisponíveis. Ativando fallback Apify`,
       { error: pwMsg, connector_id: connector.id, previousErrorCount }
     )
   } else {
     logger.warn(
-      `[${CHANNEL}] Playwright falhou com erro não-transiente. Tentando Apify como fallback...`,
+      `[${CHANNEL}] Playwright falhou com erro não-transiente. Tentando Apify como fallback final...`,
       { error: pwMsg }
     )
   }
@@ -539,7 +636,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
   const token = process.env['APIFY_TOKEN']
   if (!token) {
-    logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback`)
+    logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback Apify`)
     result.error = pwMsg
     result.error_type = isTransientPw ? 'transient' : 'fatal'
     return result
@@ -549,7 +646,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return await runApifyCollector(actorId, connector, slug)
   } catch (apifyErr: any) {
     logger.error(
-      `[${CHANNEL}] Apify também falhou`,
+      `[${CHANNEL}] Todos os scrapers (Playwright, Firecrawl e Apify) falharam`,
       { error: apifyErr.message }
     )
     result.error = `Playwright: ${pwMsg}. Apify: ${apifyErr.message}`
@@ -571,17 +668,24 @@ async function extractFromNextData(page: import('playwright-core').Page, company
     })
 
     if (!nextDataJson) return []
+    return parseNextDataJson(nextDataJson, companySlug)
+  } catch {
+    return []
+  }
+}
 
+/**
+ * Extrai e parseia reclamações a partir do JSON de __NEXT_DATA__.
+ */
+export function parseNextDataJson(nextDataJson: string, companySlug: string): ReclameAquiComplaint[] {
+  try {
     const nextData = JSON.parse(nextDataJson)
     const pageProps = nextData?.props?.pageProps
 
-    // Log diagnóstico: mostrar as chaves de pageProps para depuração
     if (pageProps && typeof pageProps === 'object') {
       logger.info(`[reclame_aqui] __NEXT_DATA__ pageProps keys: ${Object.keys(pageProps).join(', ')}`)
     }
 
-    // Tentar todos os caminhos conhecidos para reclamações no __NEXT_DATA__
-    // O Reclame Aqui usa estruturas diferentes por tipo de página e versão
     const dehydrated = pageProps?.dehydratedState?.queries
     const dehydratedComplaints = Array.isArray(dehydrated)
       ? dehydrated.flatMap((q: Record<string, unknown>) => {
@@ -628,7 +732,6 @@ async function extractFromNextData(page: import('playwright-core').Page, company
 
         if (!url.endsWith('/')) url += '/'
 
-        // Rejeita reclamações cujo URL pertence a outra empresa
         if (url.includes('/empresa/') && !url.includes(`/empresa/${companySlug}/`)) return null
 
         const dateVal = String(
@@ -655,6 +758,80 @@ async function extractFromNextData(page: import('playwright-core').Page, company
         return parsed.success ? parsed.data : null
       })
       .filter((c): c is ReclameAquiComplaint => c !== null && c.title.length > 0)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Extrai reclamações a partir de uma string HTML utilizando Cheerio.
+ */
+export function parseDomFromHtmlString(html: string, companySlug: string): ReclameAquiComplaint[] {
+  try {
+    const $ = cheerio.load(html)
+    const complaints: ReclameAquiComplaint[] = []
+    const links = $('a[href*="/reclamacao/"]').toArray()
+
+    for (const link of links) {
+      const $link = $(link)
+      const href = $link.attr('href') || ''
+      if (!href) continue
+
+      const inCompanyContext =
+        href.includes(`/empresa/${companySlug}/`) ||
+        $link.closest('[class*="complain-list"], [class*="ComplainList"], main, [role="main"]').length > 0
+      const inSidebar =
+        $link.closest('aside, [class*="sidebar"], [class*="Sidebar"], [class*="related"], [class*="Related"], [class*="suggest"], [class*="Suggest"]').length > 0
+
+      if (!inCompanyContext || inSidebar) continue
+
+      const $container =
+        $link.closest('li, article, div[class*="item"], div[class*="Item"]').length > 0
+          ? $link.closest('li, article, div[class*="item"], div[class*="Item"]')
+          : $link
+
+      const titleText =
+        $container.find('h4, h3, [class*="title"], [class*="Title"]').first().text().trim() || $link.text().trim()
+      const statusText = $container.find('[class*="status"], [class*="Status"], [class*="badge"]').first().text().trim()
+
+      let dateStr = ''
+      const $dateEl = $container.find('time, [class*="date"], [class*="Date"]').first()
+      if ($dateEl.length > 0) {
+        dateStr = $dateEl.attr('datetime') || $dateEl.text().trim()
+      } else {
+        $container.find('span, p, div, small, time').each((_, el) => {
+          const txt = $(el).text().trim()
+          if (/(\d{2}\/\d{2}\/\d{2,4})|(há\s+\d+)|(há\s+pouco)/i.test(txt) && txt.length < 60) {
+            dateStr = $(el).attr('datetime') || txt
+            return false
+          }
+        })
+      }
+
+      const fullUrl = href.startsWith('http')
+        ? href
+        : `https://www.reclameaqui.com.br${href.startsWith('/') ? '' : '/'}${href}`
+
+      const urlParts = href.split('/').filter(Boolean)
+      const lastPart = urlParts[urlParts.length - 1] || ''
+      const idMatch = lastPart.match(/-([A-Z0-9]+)$/i)
+      const id = idMatch ? idMatch[1] : lastPart
+
+      if (titleText.length > 0) {
+        const parsed = ReclameAquiComplaintSchema.safeParse({
+          id,
+          title: titleText,
+          date: dateStr,
+          status: statusText,
+          url: fullUrl,
+        })
+        if (parsed.success) {
+          complaints.push(parsed.data)
+        }
+      }
+    }
+
+    return complaints
   } catch {
     return []
   }
