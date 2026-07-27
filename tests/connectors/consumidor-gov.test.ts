@@ -13,11 +13,16 @@ import { Readable } from 'stream'
 vi.mock('dotenv/config', () => ({}))
 
 // Mock do Supabase
-const mockSupabaseMethods = {
+const mockSupabaseMethods: any = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
-  in: vi.fn().mockResolvedValue({ data: [], error: null }),
-  or: vi.fn().mockResolvedValue({ data: [], error: null }),
+  neq: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
+  or: vi.fn().mockReturnThis(),
+  gte: vi.fn().mockReturnThis(),
+  lte: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
   single: vi.fn().mockImplementation(function(this: any) {
     // Retorna CNPJ fictício para o teste
     return Promise.resolve({ 
@@ -26,6 +31,9 @@ const mockSupabaseMethods = {
     })
   }),
   upsert: vi.fn().mockReturnThis(),
+  update: vi.fn().mockReturnThis(),
+  insert: vi.fn().mockReturnThis(),
+  then: (onfulfilled: any) => Promise.resolve({ data: [], error: null }).then(onfulfilled),
 }
 
 vi.mock('../../src/lib/supabase.js', () => ({

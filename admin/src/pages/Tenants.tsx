@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound, Bot } from 'lucide-react'
+import { Building2, Save, X, Plus, Trash2, Power, Edit, KeyRound, Bot, Search, Calendar, AlertOctagon, Clock, Filter } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -72,6 +72,50 @@ export default function Tenants() {
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string; message: string; confirmLabel?: string; dangerous?: boolean; onConfirm: () => void
   } | null>(null)
+
+  // Estados de Filtro
+  const [searchName, setSearchName] = useState('')
+  const [contractDate, setContractDate] = useState('')
+  const [onlySuspended, setOnlySuspended] = useState(false)
+  const [onlyTrial, setOnlyTrial] = useState(false)
+
+  const hasActiveFilters = Boolean(searchName.trim() || contractDate || onlySuspended || onlyTrial)
+
+  function clearFilters() {
+    setSearchName('')
+    setContractDate('')
+    setOnlySuspended(false)
+    setOnlyTrial(false)
+  }
+
+  const filteredTenants = tenants.filter(t => {
+    // 1. Pesquisa por Nome (ou Slug/CNPJ)
+    if (searchName.trim()) {
+      const q = searchName.trim().toLowerCase()
+      const matchName = t.name.toLowerCase().includes(q)
+      const matchSlug = t.slug?.toLowerCase().includes(q)
+      const matchCnpj = t.cnpj?.toLowerCase().includes(q)
+      if (!matchName && !matchSlug && !matchCnpj) return false
+    }
+
+    // 2. Data de Contrato (created_at YYYY-MM-DD)
+    if (contractDate) {
+      const createdDateStr = t.created_at ? t.created_at.slice(0, 10) : ''
+      if (createdDateStr !== contractDate) return false
+    }
+
+    const subStatus = t.plan_status || t.subscription_status || 'active'
+    const isSuspended = subStatus === 'suspended' || t.plan_status === 'suspended' || t.subscription_status === 'suspended'
+    const isTrial = subStatus === 'trial' || t.plan === 'trial' || t.plan_status === 'trial' || t.subscription_status === 'trial'
+
+    // 3. Filtrar somente contratos suspensos
+    if (onlySuspended && !isSuspended) return false
+
+    // 4. Somente assinantes em trial
+    if (onlyTrial && !isTrial) return false
+
+    return true
+  })
 
   useEffect(() => {
     loadAll()
@@ -421,6 +465,143 @@ export default function Tenants() {
         </div>
       </div>
 
+      {/* Toolbar de Filtros */}
+      {!loading && tenants.length > 0 && (
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 12,
+          alignItems: 'center',
+          marginBottom: 20,
+          background: 'rgba(255, 255, 255, 0.02)',
+          padding: '14px 18px',
+          borderRadius: 'var(--radius)',
+          border: '1px solid var(--border)'
+        }}>
+          {/* 1. Pesquisa por Nome */}
+          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 220 }}>
+            <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              className="filter-search"
+              style={{ width: '100%', paddingLeft: 36, maxWidth: 'none' }}
+              placeholder="Pesquisar por nome do assinante..."
+              value={searchName}
+              onChange={e => setSearchName(e.target.value)}
+            />
+            {searchName && (
+              <button
+                onClick={() => setSearchName('')}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                title="Limpar busca"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* 2. Data do Contrato */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <Calendar size={15} color="#60a5fa" /> Data de Contrato:
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="date"
+                className="filter-select"
+                style={{ colorScheme: 'dark', paddingRight: contractDate ? 28 : 12 }}
+                value={contractDate}
+                onChange={e => setContractDate(e.target.value)}
+              />
+              {contractDate && (
+                <button
+                  onClick={() => setContractDate('')}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                  title="Limpar data"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 3. Chip Toggle: Somente Suspensos */}
+          <button
+            type="button"
+            onClick={() => setOnlySuspended(!onlySuspended)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: onlySuspended ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid var(--border)',
+              background: onlySuspended ? 'rgba(239, 68, 68, 0.18)' : 'var(--bg-card)',
+              color: onlySuspended ? '#ef4444' : 'var(--text-secondary)'
+            }}
+          >
+            <AlertOctagon size={15} color={onlySuspended ? '#ef4444' : 'var(--text-muted)'} />
+            Somente Suspensos
+          </button>
+
+          {/* 4. Chip Toggle: Somente Trial */}
+          <button
+            type="button"
+            onClick={() => setOnlyTrial(!onlyTrial)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: onlyTrial ? '1px solid rgba(96, 165, 250, 0.5)' : '1px solid var(--border)',
+              background: onlyTrial ? 'rgba(96, 165, 250, 0.18)' : 'var(--bg-card)',
+              color: onlyTrial ? '#60a5fa' : 'var(--text-secondary)'
+            }}
+          >
+            <Clock size={15} color={onlyTrial ? '#60a5fa' : 'var(--text-muted)'} />
+            Somente Trial
+          </button>
+
+          {/* Limpar Filtros */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="btn btn-ghost"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                fontSize: 12,
+                color: '#f87171',
+                border: '1px dashed rgba(248, 113, 113, 0.3)',
+                marginLeft: 'auto'
+              }}
+            >
+              <X size={14} /> Limpar Filtros
+            </button>
+          )}
+
+          {/* Subtítulo com contagem de assinantes */}
+          <div style={{ width: '100%', fontSize: 12, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
+            <span>
+              Exibindo <strong>{filteredTenants.length}</strong> de <strong>{tenants.length}</strong> assinante{tenants.length === 1 ? '' : 's'}
+              {hasActiveFilters && ' (filtrado)'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="skeleton" style={{ width: '100%', height: 200 }} />
       ) : tenants.length === 0 ? (
@@ -428,9 +609,17 @@ export default function Tenants() {
           <div className="empty-state-icon">🏢</div>
           <div className="empty-state-text">Nenhum assinante cadastrado</div>
         </div>
+      ) : filteredTenants.length === 0 ? (
+        <div className="card empty-state">
+          <div className="empty-state-icon">🔍</div>
+          <div className="empty-state-text">Nenhum assinante encontrado com os filtros aplicados</div>
+          <button className="btn btn-ghost" onClick={clearFilters} style={{ marginTop: 8 }}>
+            Limpar filtros
+          </button>
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {tenants.map(t => {
+          {filteredTenants.map(t => {
             const isActive = t.is_active ?? true
             const subStatus = t.plan_status || t.subscription_status || 'active'
 
@@ -547,6 +736,12 @@ export default function Tenants() {
                     {(t.plan_status === 'trial' || t.subscription_status === 'trial') && t.trial_ends_at && (
                       <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
                         Expira: {new Date(t.trial_ends_at).toLocaleDateString()}
+                      </span>
+                    )}
+
+                    {t.created_at && (
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }} title="Data de início do contrato">
+                        Contrato: {new Date(t.created_at).toLocaleDateString('pt-BR')}
                       </span>
                     )}
                   </div>

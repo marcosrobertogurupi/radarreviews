@@ -52,13 +52,12 @@ export async function checkAlerts(
   businessId: string,
   channel: SourceChannel
 ): Promise<void> {
-  // Buscar regras de alerta ativas para esta empresa
+  // Buscar regras de alerta ativas para esta empresa ou globais do tenant
   const { data: rules, error } = await supabase
     .from('alert_rules')
     .select('*')
     .eq('is_active', true)
-    .eq('business_id', businessId)
-    // canal null = regra se aplica a todos os canais
+    .or(`business_id.eq.${businessId},business_id.is.null`)
     .or(`channel.eq.${channel},channel.is.null`)
 
   if (error) {
@@ -66,10 +65,33 @@ export async function checkAlerts(
       business_id: businessId,
       error: error.message,
     })
-    return
   }
 
-  if (!rules || rules.length === 0) return
+  let activeRules = (rules as AlertRule[]) ?? []
+
+  // Se não existirem regras para a empresa/tenant, garantir regra padrão de Critical Review
+  if (activeRules.length === 0 && reviews.length > 0) {
+    const tenantId = reviews[0]?.tenant_id
+    if (tenantId) {
+      const { data: newRule } = await supabase
+        .from('alert_rules')
+        .insert({
+          tenant_id: tenantId,
+          business_id: businessId,
+          name: 'Sentimento Crítico (IA)',
+          condition_type: 'critical_review',
+          threshold: 80,
+          notify_email: true,
+          is_active: true
+        })
+        .select()
+        .single()
+
+      if (newRule) {
+        activeRules = [newRule as AlertRule]
+      }
+    }
+  }
 
   // ── Cálculo de volume_spike e negative_surge ──
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
@@ -113,7 +135,7 @@ export async function checkAlerts(
   }> = []
 
   for (const review of reviews) {
-    for (const rule of rules as AlertRule[]) {
+    for (const rule of activeRules) {
       if (triggeredReviews.has(review.external_id)) continue
       if (triggeredRules.has(rule.id)) continue
 
@@ -140,7 +162,7 @@ export async function checkAlerts(
       const avgDailyNegative = negativeSum / daysCount
 
       if (shouldTrigger(review, rule, recentCount, recentNegativeCount, avgDailyTotal, avgDailyNegative)) {
-        const urgency = calculateUrgency(review, rule);
+        const urgency = calculateUrgency(review, rule)
         events.push({
           rule_id: rule.id,
           business_id: businessId,
@@ -166,14 +188,82 @@ export async function checkAlerts(
         })
       }
     }
+
+    // ── REDE DE SEGURANÇA ABSOLUTA PARA REVIEWS CRÍTICOS ──
+    // Se o review for crítico (sentiment critical, score >= 80, Reclame Aqui ou risco jurídico)
+    // e NENHUMA regra customizada disparou, força a criação de um alerta para o assinante!
+    const isCriticalOrSevere = review.sentiment === 'critical' ||
+      (review.dissatisfaction_score ?? 0) >= 80 ||
+      review.channel === 'reclame_aqui' ||
+      review.channel === 'consumidor_gov'
+
+    if (isCriticalOrSevere && !triggeredReviews.has(review.external_id)) {
+      const fallbackRule = activeRules[0]
+      const tenantId = review.tenant_id
+      let ruleId = fallbackRule?.id
+
+      if (!ruleId && tenantId) {
+        // Obter ou criar uma regra padrão no banco
+        const { data: sysRule } = await supabase
+          .from('alert_rules')
+          .insert({
+            tenant_id: tenantId,
+            business_id: businessId,
+            name: 'Alerta Crítico Automático (Reputei Safety Net)',
+            condition_type: 'critical_review',
+            threshold: 80,
+            notify_email: true,
+            is_active: true
+          })
+          .select()
+          .single()
+
+        if (sysRule) ruleId = sysRule.id
+      }
+
+      if (ruleId) {
+        const dummyRule: AlertRule = fallbackRule ?? {
+          id: ruleId,
+          tenant_id: tenantId || '',
+          business_id: businessId,
+          name: 'Alerta Crítico Automático (Reputei Safety Net)',
+          channel: null,
+          condition_type: 'critical_review',
+          threshold: 80,
+          keywords: null,
+          notify_email: true,
+          notify_webhook: null,
+          is_active: true
+        }
+
+        events.push({
+          rule_id: ruleId,
+          business_id: businessId,
+          channel,
+          detail: {
+            ...buildAlertDetail(review, dummyRule),
+            urgency_level: 'urgente',
+            is_legal_risk: containsRiskKeywords(review, dummyRule) || review.channel === 'reclame_aqui' || review.channel === 'consumidor_gov'
+          }
+        })
+        triggeredReviews.add(review.external_id)
+
+        logger.info('[alerts] Rede de segurança acionada: Alerta Crítico Forçado', {
+          review_external_id: review.external_id,
+          sentiment: review.sentiment,
+          score: review.dissatisfaction_score,
+          channel
+        })
+      }
+    }
   }
 
   if (events.length === 0) return
 
-  // Inserir alert_events em lote e capturar os registros inseridos (para ter os IDs)
+  // Inserir alert_events em lote com notified: false (mantém pendente no portal para o assinante responder)
   const { data: insertedEvents, error: insertError } = await supabase
     .from('alert_events')
-    .insert(events)
+    .insert(events.map(e => ({ ...e, notified: false })))
     .select()
 
   if (insertError) {
@@ -183,70 +273,108 @@ export async function checkAlerts(
 
   if (!insertedEvents || insertedEvents.length === 0) return
 
-  // Disparar webhooks para regras que têm notify_webhook configurado
-  const rulesById = new Map((rules as AlertRule[]).map(r => [r.id, r]))
+  const rulesById = new Map((activeRules).map(r => [r.id, r]))
 
-  // Buscar dados do Tenant para incluir no webhook (contato do assinante)
+  // Obter o e-mail do assinante para notificação
   const tenantId = reviews[0]?.tenant_id
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('admin_whatsapp, admin_email')
-    .eq('id', tenantId)
-    .single()
+  const subscriberEmail = tenantId ? await getSubscriberEmail(tenantId) : null
 
   for (const event of insertedEvents) {
     const rule = rulesById.get(event.rule_id)
-    // Se a regra diz para notificar, usamos o webhook da regra ou o padrão de assinantes
     const webhookUrl = rule?.notify_webhook || process.env['N8N_SUBSCRIBER_ALERTS_WEBHOOK']
     
-    // Corrigido: Dispara se tiver webhookUrl E (notify_email OU notify_webhook_bool)
-    // Usamos notify_email como flag geral de "quer receber alertas externos"
-    if (webhookUrl && rule?.notify_email) {
-      // Verificar Horário de Silêncio
+    // Disparar Webhook se configurado
+    if (webhookUrl && (rule?.notify_email ?? true)) {
       if (isQuietTime(rule) && (event.detail.urgency_level as string) !== 'urgente') {
         logger.info('[alerts] Alerta silenciado por Horário de Silêncio', {
-          rule_id: rule.id,
+          rule_id: rule?.id,
           urgency: event.detail.urgency_level,
         })
         continue
       }
 
       const extraData = {
-        subscriber_whatsapp: tenant?.admin_whatsapp || '',
-        subscriber_email: tenant?.admin_email || '',
+        subscriber_whatsapp: '',
+        subscriber_email: subscriberEmail || '',
       }
 
       try {
-        await fireWebhook(webhookUrl, event, rule, extraData)
+        await fireWebhook(webhookUrl, event, rule ?? {
+          id: event.rule_id,
+          tenant_id: tenantId ?? '',
+          business_id: businessId,
+          name: 'Alerta Crítico Automático',
+          channel: null,
+          condition_type: 'critical_review',
+          threshold: 80,
+          keywords: null,
+          notify_email: true,
+          notify_webhook: null,
+          is_active: true
+        }, extraData)
         
-        // Registrar que foi notificado com sucesso
+        // Atualiza apenas os metadados de envio no detail, NUNCA alterando notified para true
         await supabase
           .from('alert_events')
-          .update({ notified: true })
+          .update({
+            detail: {
+              ...(event.detail as Record<string, unknown>),
+              webhook_sent: true,
+              webhook_sent_at: new Date().toISOString()
+            }
+          })
           .eq('id', event.id)
-          
-        logger.info('[alerts] Evento marcado como notificado', { event_id: event.id })
 
-        // Enviar e-mail de alerta de review se o inquilino tiver e-mail
-        if (rule.notify_email && tenant?.admin_email) {
-          const reviewExtId = (event.detail as any)?.review_external_id || (event.detail as any)?.external_id
-          const matchedReview = reviews.find(r => r.external_id === reviewExtId)
-          if (matchedReview) {
-            await emailService.sendReviewAlertEmail(tenant.admin_email, matchedReview, rule.name).catch(err => {
-              logger.error('[alerts] Erro ao enviar e-mail de alerta', { rule_id: rule.id, err })
-            })
-          }
-        }
+        logger.info('[alerts] Webhook enviado com sucesso (alerta mantido PENDENTE no portal)', { event_id: event.id })
       } catch (err) {
         logger.warn('[alerts] Falha ao disparar webhook', {
-          rule_id: rule.id,
+          rule_id: rule?.id,
           webhook_url: webhookUrl,
           error: err instanceof Error ? err.message : String(err),
         })
       }
     }
+
+    // Enviar e-mail de alerta para o administrador do assinante
+    if (subscriberEmail) {
+      const reviewExtId = (event.detail as any)?.review_external_id || (event.detail as any)?.external_id
+      const matchedReview = reviews.find(r => r.external_id === reviewExtId)
+      if (matchedReview) {
+        await emailService.sendReviewAlertEmail(subscriberEmail, matchedReview, rule?.name || 'Avaliação Crítica Detectada').then(() => {
+          logger.info('[alerts] E-mail de alerta enviado para o assinante', { recipient: subscriberEmail, review_id: matchedReview.external_id })
+        }).catch(err => {
+          logger.error('[alerts] Erro ao enviar e-mail de alerta', { rule_id: rule?.id, err })
+        })
+      }
+    }
   }
 }
+
+/**
+ * Busca o e-mail do administrador do assinante para notificações.
+ */
+async function getSubscriberEmail(tenantId: string): Promise<string | null> {
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('admin_email')
+    .eq('id', tenantId)
+    .single()
+
+  if (tenant?.admin_email) {
+    return tenant.admin_email
+  }
+
+  // Fallback: buscar na tabela tenant_users um usuário com perfil admin ou owner
+  const { data: user } = await supabase
+    .from('tenant_users')
+    .select('email')
+    .eq('tenant_id', tenantId)
+    .limit(1)
+    .single()
+
+  return user?.email ?? null
+}
+
 
 /**
  * Verifica se a hora atual está dentro do período de silêncio da regra.

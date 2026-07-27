@@ -67,9 +67,32 @@ type TrustpilotReview = z.infer<typeof TrustpilotReviewSchema>
 // Função principal exportada
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Função de Sanitização
+// -----------------------------------------------------------------------------
+
+/**
+ * Sanitiza o ID ou URL de entrada do Trustpilot para extrair o domínio limpo da empresa.
+ * Exemplo: "https://www.trustpilot.com/review/nubank.com.br" -> "nubank.com.br"
+ * Exemplo: "www.trustpilot.com/review/nubank.com.br?languages=all" -> "nubank.com.br"
+ * Exemplo: "nubank.com.br" -> "nubank.com.br"
+ */
+export function sanitizeTrustpilotDomain(input: string): string {
+  let cleaned = (input || '').trim()
+  if (cleaned.includes('/review/')) {
+    cleaned = cleaned.split('/review/')[1]?.split('?')[0]?.split('#')[0] || cleaned
+  }
+  const firstSegment = cleaned.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]
+  return (firstSegment || '').trim()
+}
+
+// -----------------------------------------------------------------------------
+// Função principal exportada
+// -----------------------------------------------------------------------------
+
 /**
  * Executa a coleta de reviews do Trustpilot para um conector.
- * O business_unit_id fica em connector.external_id.
+ * O business_unit_id / domínio fica em connector.external_id.
  */
 export async function run(connector: ChannelConnector): Promise<JobResult> {
   const result: JobResult = {
@@ -79,10 +102,16 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   try {
-    let externalId = connector.external_id || ''
-    // Sanitização para o Trustpilot (remover www. e https:// para garantir compatibilidade)
-    externalId = externalId.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]!
-    
+    const externalId = sanitizeTrustpilotDomain(connector.external_id || '')
+    if (!externalId) {
+      return {
+        reviews_fetched: 0,
+        reviews_new: 0,
+        reviews_updated: 0,
+        error: `Conector ${connector.id} não tem external_id configurado (domínio do Trustpilot obrigatório).`
+      }
+    }
+
     // --- ESTRATÉGIA PRINCIPAL: APIFY (Mais estável e não exige API Key oficial) ---
     const apifyToken = process.env['APIFY_TOKEN']
     if (apifyToken) {
@@ -117,29 +146,30 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
             reviews_fetched: 0,
             reviews_new: 0,
             reviews_updated: 0,
-            error: `Empresa não encontrada no Trustpilot. Verifique se o ID "${externalId}" está correto na configuração.`
+            error: `Empresa não encontrada no Trustpilot. Verifique se o ID ou domínio "${externalId}" está correto na configuração.`
           }
         }
       } catch (apifyError: any) {
-        logger.warn(`[${CHANNEL}] Falha na Apify: ${apifyError?.message}`)
-        // Se a falha for especificamente falta de token (o que não deve ocorrer aqui devido ao if), ou erro de quota
-        if (apifyError?.message?.includes('APIFY_TOKEN')) {
-          // continua para o fallback
-        } else {
+        const detail = apifyError?.message || String(apifyError)
+        logger.warn(`[${CHANNEL}] Falha na Apify: ${detail}`)
+        
+        const hasTrustpilotApiKey = !!process.env['TRUSTPILOT_API_KEY']
+        if (!hasTrustpilotApiKey) {
           return {
             reviews_fetched: 0,
             reviews_new: 0,
             reviews_updated: 0,
-            error: `Não foi possível conectar ao robô de coleta. Verifique o ID ou tente novamente mais tarde.`
+            error: `Não foi possível conectar ao robô de coleta. Erro da Apify: ${detail}`
           }
         }
+        logger.info(`[${CHANNEL}] Alternando para fallback da API Oficial após falha no Apify.`)
       }
     }
 
     // --- ESTRATÉGIA SECUNDÁRIA (FALLBACK): API OFICIAL ---
     const trustpilotKey = process.env['TRUSTPILOT_API_KEY']
     if (!trustpilotKey) {
-      throw new Error('Configuração incompleta: APIFY_TOKEN não encontrado nas variáveis de ambiente do servidor.')
+      throw new Error('Configuração incompleta: APIFY_TOKEN não funcionou e TRUSTPILOT_API_KEY não foi encontrada nas variáveis de ambiente.')
     }
 
     logger.info(`[${CHANNEL}] Iniciando busca via API Oficial (Fallback)`, {
@@ -211,7 +241,8 @@ async function fetchAllPages(connector: ChannelConnector): Promise<TrustpilotRev
     throw new Error('TRUSTPILOT_API_KEY não definida no .env.')
   }
 
-  if (!connector.external_id) {
+  const externalId = sanitizeTrustpilotDomain(connector.external_id || '')
+  if (!externalId) {
     throw new Error(
       `Conector ${connector.id} não tem external_id configurado (business_unit_id obrigatório).`
     )
@@ -222,11 +253,11 @@ async function fetchAllPages(connector: ChannelConnector): Promise<TrustpilotRev
 
   logger.info(`[${CHANNEL}] Buscando reviews`, {
     connector_id: connector.id,
-    business_unit_id: connector.external_id,
+    business_unit_id: externalId,
   })
 
   while (page <= MAX_PAGES) {
-    const url = `${BASE_URL}/business-units/${connector.external_id}/reviews`
+    const url = `${BASE_URL}/business-units/${externalId}/reviews`
 
     const response = await fetchWithRetry(() =>
       axios.get(url, {

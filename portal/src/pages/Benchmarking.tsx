@@ -354,7 +354,7 @@ export default function Benchmarking({ tenantId }: Props) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.1)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.2)' }}>
                         <Star size={14} fill="#f59e0b" color="#f59e0b" />
                         <span style={{ fontWeight: 800, color: '#f59e0b', fontSize: 13 }}>
-                          {hasStats && stats.rating > 0 ? stats.rating.toFixed(1) : '—'}
+                          {hasStats && stats?.rating ? stats.rating.toFixed(1) : '—'}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>/ 5.0</span>
                       </div>
@@ -362,7 +362,7 @@ export default function Benchmarking({ tenantId }: Props) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(99,102,241,0.1)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(99,102,241,0.2)' }}>
                         <Users size={14} color="var(--accent)" />
                         <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>
-                          {hasStats ? stats.review_count : '0'}
+                          {hasStats && stats ? stats.review_count : '0'}
                         </span>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>reviews</span>
                       </div>

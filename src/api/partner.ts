@@ -274,8 +274,10 @@ export async function handlePartnerRoutes(req: http.IncomingMessage, res: http.S
 
       // 6. Criar regras de alerta padrão
       await supabaseAdmin.from('alert_rules').insert([
+        { tenant_id: tenant.id, business_id: biz.id, name: 'Avaliação Crítica (IA)', condition_type: 'critical_review', threshold: 80, notify_email: true },
+        { tenant_id: tenant.id, business_id: biz.id, name: 'Reclamação Formal (Reclame Aqui)', condition_type: 'reclame_aqui_new', notify_email: true },
         { tenant_id: tenant.id, business_id: biz.id, name: 'Rating Baixo (Automático)', condition_type: 'rating_drop', threshold: 2, notify_email: true },
-        { tenant_id: tenant.id, business_id: biz.id, name: 'Sentimento Crítico (IA)', condition_type: 'negative_surge', notify_email: true },
+        { tenant_id: tenant.id, business_id: biz.id, name: 'Surto de Negativos (IA)', condition_type: 'negative_surge', threshold: 2, notify_email: true },
       ]);
 
       // 7. Criar conectores dos canais selecionados

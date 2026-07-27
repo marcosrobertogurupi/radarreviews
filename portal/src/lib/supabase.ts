@@ -104,3 +104,17 @@ export interface DailyStat {
   unanalyzed_count: number
   avg_rating?: number
 }
+
+export interface PrescriptiveInsightItem {
+  id: string
+  tenant_id: string
+  business_id?: string
+  title: string
+  description: string
+  action_plan: string
+  confidence_score: number
+  status: 'pending' | 'implemented' | 'ignored'
+  created_at: string
+  monitored_businesses?: { name: string }
+}
+

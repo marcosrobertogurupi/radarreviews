@@ -9,7 +9,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts'
-import { MessageSquare, TrendingDown, Star, AlertTriangle, FileText, Award } from 'lucide-react'
+import { MessageSquare, TrendingDown, Star, AlertTriangle, FileText, Award, Sparkles, Lightbulb, CheckCircle } from 'lucide-react'
 
 interface KPI {
   total: number       // últimos 30 dias
@@ -35,6 +35,18 @@ interface ReputationScore {
   reputation_score_history?: Array<{ score: number; snapshot_date: string }>
 }
 
+interface NormalizedInsight {
+  id: string
+  source: 'prescriptive_insights' | 'alert_events'
+  title: string
+  business_name?: string
+  urgency?: 'high' | 'medium' | 'low'
+  confidence?: number
+  description?: string
+  action_plan?: string
+  created_at: string
+}
+
 interface Props { tenantId: string }
 
 export default function Dashboard({ tenantId }: Props) {
@@ -45,6 +57,7 @@ export default function Dashboard({ tenantId }: Props) {
   const [alerts, setAlerts]     = useState<AlertEvent[]>([])
   const [competitors, setCompetitors] = useState<any[]>([])
   const [repScore, setRepScore] = useState<ReputationScore | null>(null)
+  const [prescriptiveInsights, setPrescriptiveInsights] = useState<NormalizedInsight[]>([])
   const [loading, setLoading]     = useState(true)
 
   async function load(silent = false) {
@@ -74,7 +87,7 @@ export default function Dashboard({ tenantId }: Props) {
             .catch(() => [])
         : Promise.resolve([])
 
-      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores] = await Promise.all([
+      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores, presTableRes, presAlertRes] = await Promise.all([
         supabase.from('review_stats_daily').select('positive_count, neutral_count, negative_count, critical_count, unanalyzed_count, avg_rating, avg_dissatisfaction_score, total_reviews, date')
           .eq('tenant_id', tenantId).gte('date', since30.split('T')[0]),
         supabase.from('review_stats_daily').select('total_reviews')
@@ -91,6 +104,11 @@ export default function Dashboard({ tenantId }: Props) {
           ? supabase.from('competitor_businesses').select('*').in('business_id', bizIds).order('name', { ascending: true })
           : Promise.resolve({ data: [], error: null }),
         repScorePromise,
+        supabase.from('prescriptive_insights').select('*, monitored_businesses(name)')
+          .eq('tenant_id', tenantId).eq('status', 'pending').order('created_at', { ascending: false }).limit(5),
+        bizIds.length
+          ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').in('business_id', bizIds).eq('notified', false).order('triggered_at', { ascending: false }).limit(10)
+          : Promise.resolve({ data: [], error: null }),
       ] as const)
 
       const stats = statsRes.data ?? []
@@ -187,10 +205,63 @@ export default function Dashboard({ tenantId }: Props) {
       setCompetitors(compRes.data ?? [])
       setRepScore((repScores as ReputationScore[])[0] ?? null)
 
+      // Processar insights prescritivos unificados (da tabela + alert_events)
+      const tableNorm: NormalizedInsight[] = ((presTableRes.data ?? []) as any[]).map(p => ({
+        id: p.id,
+        source: 'prescriptive_insights',
+        title: p.title || (p.monitored_businesses?.name ? `Insight Prescritivo — ${p.monitored_businesses.name}` : 'Insight Prescritivo'),
+        business_name: p.monitored_businesses?.name,
+        confidence: p.confidence_score,
+        description: p.description,
+        action_plan: p.action_plan,
+        created_at: p.created_at,
+      }))
+
+      const alertNorm: NormalizedInsight[] = ((presAlertRes.data ?? []) as any[])
+        .filter(a => a.alert_rules?.condition_type === 'prescriptive_insight' || a.detail?.type === 'prescriptive_insight')
+        .map(a => {
+          const rawDetail = a.detail || {}
+          const textInsight = rawDetail.insight || rawDetail.sentiment_summary || rawDetail.review_body_preview || ''
+          const titleText = a.alert_rules?.name || (a.monitored_businesses?.name ? `Insight Prescritivo — ${a.monitored_businesses.name}` : 'Insight Prescritivo')
+          return {
+            id: a.id,
+            source: 'alert_events',
+            title: titleText,
+            business_name: a.monitored_businesses?.name,
+            urgency: rawDetail.urgency,
+            confidence: rawDetail.confidence ? Math.round(rawDetail.confidence * 100) : undefined,
+            description: rawDetail.metric_context,
+            action_plan: textInsight,
+            created_at: a.triggered_at,
+          }
+        })
+
+      const mergedMap = new Map<string, NormalizedInsight>()
+      for (const item of [...tableNorm, ...alertNorm]) {
+        const key = `${item.title}-${item.action_plan}`
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, item)
+        }
+      }
+      setPrescriptiveInsights(Array.from(mergedMap.values()).slice(0, 5))
+
     } catch (err) {
       console.error('Erro ao carregar dashboard do portal:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function resolveInsight(insight: NormalizedInsight) {
+    try {
+      if (insight.source === 'prescriptive_insights') {
+        await supabase.from('prescriptive_insights').update({ status: 'implemented' }).eq('id', insight.id)
+      } else {
+        await supabase.from('alert_events').update({ notified: true }).eq('id', insight.id)
+      }
+      setPrescriptiveInsights(prev => prev.filter(item => item.id !== insight.id))
+    } catch (err) {
+      console.error('Erro ao resolver insight prescritivo:', err)
     }
   }
 
@@ -224,11 +295,20 @@ export default function Dashboard({ tenantId }: Props) {
       })
       .subscribe((status) => console.log('[Realtime] portal competitors:', status))
 
+    const presChannel = supabase
+      .channel('portal:dashboard:prescriptive')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prescriptive_insights' }, () => {
+        console.log('[Realtime] prescriptive_insights atualizado')
+        load(true) // Silent
+      })
+      .subscribe((status) => console.log('[Realtime] portal prescriptive:', status))
+
     return () => {
       window.removeEventListener('refresh_data', handler)
       supabase.removeChannel(reviewChannel)
       supabase.removeChannel(alertChannel)
       supabase.removeChannel(competitorChannel)
+      supabase.removeChannel(presChannel)
     }
 
   }, [tenantId])
@@ -395,6 +475,106 @@ export default function Dashboard({ tenantId }: Props) {
           </div>
         </div>
       )}
+
+      {/* Insights Prescritivos (IA) */}
+      <div className="card" style={{
+        padding: 20,
+        marginBottom: 24,
+        background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(168,85,247,0.05) 100%)',
+        border: '1px solid rgba(99,102,241,0.25)',
+        borderRadius: 16
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: 'rgba(99,102,241,0.2)', padding: 8, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={20} color="#a855f7" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif' }}>
+                Insights Prescritivos (IA)
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                Recomendações e diagnósticos acionáveis gerados com base no histórico das suas unidades
+              </p>
+            </div>
+          </div>
+          {prescriptiveInsights.length > 0 && (
+            <span style={{ fontSize: 11, background: 'rgba(168,85,247,0.15)', color: '#d8b4fe', padding: '4px 10px', borderRadius: 99, fontWeight: 600, border: '1px solid rgba(168,85,247,0.3)' }}>
+              {prescriptiveInsights.length} {prescriptiveInsights.length === 1 ? 'recomendação ativa' : 'recomendações ativas'}
+            </span>
+          )}
+        </div>
+
+        {prescriptiveInsights.length === 0 ? (
+          <div style={{ padding: '24px 16px', textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 12, border: '1px dashed rgba(255,255,255,0.1)' }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🧠</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              Sem novos insights prescritivos pendentes
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto' }}>
+              Nossa IA analisa periodicamente o volume de reviews, notas e temas recorrentes das suas unidades para emitir planos de ação preventivos e diagnósticos operacionais.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {prescriptiveInsights.map(ins => (
+              <div key={ins.id} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {ins.title}
+                    </span>
+                    {ins.business_name && (
+                      <span style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6, color: 'var(--text-muted)' }}>
+                        🏢 {ins.business_name}
+                      </span>
+                    )}
+                    {ins.urgency && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, textTransform: 'uppercase',
+                        background: ins.urgency === 'high' ? 'rgba(239,68,68,0.2)' : ins.urgency === 'medium' ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)',
+                        color: ins.urgency === 'high' ? '#fca5a5' : ins.urgency === 'medium' ? '#fde047' : '#6ee7b7',
+                        border: ins.urgency === 'high' ? '1px solid rgba(239,68,68,0.3)' : ins.urgency === 'medium' ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(16,185,129,0.3)',
+                      }}>
+                        {ins.urgency === 'high' ? '🔴 Urgência Alta' : ins.urgency === 'medium' ? '🟡 Urgência Média' : '🟢 Urgência Baixa'}
+                      </span>
+                    )}
+                    {ins.confidence != null && !ins.urgency && (
+                      <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.15)', color: '#c7d2fe', padding: '2px 8px', borderRadius: 99, fontWeight: 600 }}>
+                        IA {ins.confidence}% relevância
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(ins.created_at)}</span>
+                </div>
+
+                {ins.description && (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8 }}>
+                    <strong style={{ color: 'var(--text-muted)' }}>Diagnóstico: </strong> {ins.description}
+                  </div>
+                )}
+
+                {ins.action_plan && (
+                  <div style={{ fontSize: 13, color: '#f1f5f9', background: 'rgba(99,102,241,0.1)', borderLeft: '3px solid #6366f1', padding: '10px 14px', borderRadius: '0 8px 8px 0', marginBottom: 12, lineHeight: 1.5 }}>
+                    <strong style={{ color: '#a5b4fc', display: 'block', marginBottom: 2, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>💡 Plano de Ação Recomendado:</strong>
+                    {ins.action_plan}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 6, color: '#10b981' }}
+                    onClick={() => resolveInsight(ins)}
+                  >
+                    <CheckCircle size={14} /> Marcar como Concluído
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="grid-2">
         {/* Tendência */}

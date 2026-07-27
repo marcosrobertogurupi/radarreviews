@@ -29,6 +29,7 @@ import { notifyAdminChannels } from '../lib/notify.js'
 import { decrypt, encrypt } from '../lib/crypto.js'
 import { processMonthlyReport } from '../services/reports/pdf-generator.js'
 import { handleWidgetRequest } from './widget.js'
+import { handleGetPortalWidget, handleRotatePortalWidgetToken, handleUpdatePortalWidgetConfig } from './portalWidget.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -345,6 +346,21 @@ export async function handleOnboarding(
       {
         tenant_id: tenant.id,
         business_id: bizId,
+        name: 'Avaliação Crítica (IA)',
+        condition_type: 'critical_review',
+        threshold: 80,
+        notify_email: true
+      },
+      {
+        tenant_id: tenant.id,
+        business_id: bizId,
+        name: 'Reclamação Formal (Reclame Aqui)',
+        condition_type: 'reclame_aqui_new',
+        notify_email: true
+      },
+      {
+        tenant_id: tenant.id,
+        business_id: bizId,
         name: 'Rating Baixo (Automático)',
         condition_type: 'rating_drop',
         threshold: 2,
@@ -353,8 +369,9 @@ export async function handleOnboarding(
       {
         tenant_id: tenant.id,
         business_id: bizId,
-        name: 'Sentimento Crítico (IA)',
+        name: 'Surto de Negativos (IA)',
         condition_type: 'negative_surge',
+        threshold: 2,
         notify_email: true
       }
     ])
@@ -2727,6 +2744,53 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(404); res.end('Not found')
       }
     })()
+    return
+  }
+
+  if (url === '/widget.js') {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url))
+    const filePath = path.join(__dirname, 'static', 'widget.js')
+    ;(async () => {
+      try {
+        const content = await fs.readFile(filePath)
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Access-Control-Allow-Origin': '*' })
+        res.end(content)
+      } catch {
+        res.writeHead(404); res.end('Widget script não encontrado')
+      }
+    })()
+    return
+  }
+
+  if (url.startsWith('/api/widget/')) {
+    handleWidgetRequest(req, res).catch(err => {
+      console.error('[widget-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/portal/widget' && req.method === 'GET') {
+    handleGetPortalWidget(req, res).catch(err => {
+      console.error('[portal-widget-get] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/portal/widget/rotate' && req.method === 'POST') {
+    handleRotatePortalWidgetToken(req, res).catch(err => {
+      console.error('[portal-widget-rotate] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/api/portal/widget/config' && req.method === 'PUT') {
+    handleUpdatePortalWidgetConfig(req, res).catch(err => {
+      console.error('[portal-widget-config] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
     return
   }
 

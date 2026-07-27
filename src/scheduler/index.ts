@@ -46,6 +46,7 @@ import { runCommissionsJob } from '../lib/commissions-job.js'
 import { runReputationScoreJob } from '../services/reputationScore.js'
 import { runPrescriptiveAnalysisJob } from '../services/prescriptiveAnalysis.js'
 import { runBenchmarkSnapshotJob } from '../lib/benchmark-snapshot-job.js'
+import { runSubscriberMonitorJob } from '../services/subscriber-monitor.js'
 
 class SimpleSemaphore {
   private activeJobs = new Set<string>()
@@ -216,6 +217,9 @@ export async function startScheduler(): Promise<void> {
   await checkCriticalAlerts().catch(err => {
     logger.error('[scheduler] Erro ao verificar alertas críticos na inicialização', { error: err })
   })
+  await runSubscriberMonitorJob().catch(err => {
+    logger.error('[scheduler] Erro no Agente de Monitoramento de Assinantes na inicialização', { error: err })
+  })
   await checkSystemHealth().catch(err => {
     logger.error('[scheduler] Erro ao verificar saúde do sistema na inicialização', { error: err })
   })
@@ -272,6 +276,9 @@ export async function startScheduler(): Promise<void> {
   setInterval(async () => {
     await checkCriticalAlerts().catch(err => {
       logger.error('[scheduler] Erro no ciclo de alertas críticos', { error: err })
+    })
+    await runSubscriberMonitorJob().catch(err => {
+      logger.error('[scheduler] Erro no ciclo do Agente de Monitoramento de Assinantes', { error: err })
     })
     await checkSystemHealth().catch(err => {
       logger.error('[scheduler] Erro no ciclo de saúde do sistema', { error: err })

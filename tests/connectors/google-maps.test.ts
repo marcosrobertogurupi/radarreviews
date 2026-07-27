@@ -14,15 +14,20 @@ vi.mock('dotenv/config', () => ({}))
 
 // Mock do cliente Supabase
 // Mock do Supabase com rpc na raiz e encadeamento de select/in
-const mockSupabaseMethods = {
+const mockSupabaseMethods: any = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
-  in: vi.fn().mockResolvedValue({ data: [], error: null }),
-  or: vi.fn().mockResolvedValue({ data: [], error: null }), // Para suportar alerts.ts
+  in: vi.fn().mockReturnThis(),
+  or: vi.fn().mockReturnThis(),
+  gte: vi.fn().mockReturnThis(),
+  lte: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
   single: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
   upsert: vi.fn().mockReturnThis(),
   update: vi.fn().mockReturnThis(),
-  insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+  insert: vi.fn().mockReturnThis(),
+  then: (onfulfilled: any) => Promise.resolve({ data: [], error: null }).then(onfulfilled),
 }
 
 vi.mock('../../src/lib/supabase.js', () => ({

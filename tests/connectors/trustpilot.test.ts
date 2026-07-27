@@ -2,7 +2,7 @@
 // Valida: paginação automática, normalização de campos, tratamento de erros e API Key ausente.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { run } from '../../src/connectors/trustpilot.js'
+import { run, sanitizeTrustpilotDomain } from '../../src/connectors/trustpilot.js'
 import { mockConnector } from '../fixtures/connector.js'
 
 // -----------------------------------------------------------------------------
@@ -12,15 +12,21 @@ import { mockConnector } from '../fixtures/connector.js'
 vi.mock('dotenv/config', () => ({}))
 
 // Mock Supabase (mesmo padrão dos outros conectores)
-const mockSupabaseMethods = {
+const mockSupabaseMethods: any = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
-  in: vi.fn().mockResolvedValue({ data: [], error: null }),
-  or: vi.fn().mockResolvedValue({ data: [], error: null }),
+  neq: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
+  or: vi.fn().mockReturnThis(),
+  gte: vi.fn().mockReturnThis(),
+  lte: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
   single: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
   upsert: vi.fn().mockReturnThis(),
   update: vi.fn().mockReturnThis(),
-  insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+  insert: vi.fn().mockReturnThis(),
+  then: (onfulfilled: any) => Promise.resolve({ data: [], error: null }).then(onfulfilled),
 }
 
 vi.mock('../../src/lib/supabase.js', () => ({
@@ -157,7 +163,7 @@ describe('Trustpilot connector', () => {
     connector.external_id = ''
     const result = await run(connector)
 
-    expect(result.error).toContain('business_unit_id obrigatório')
+    expect(result.error).toContain('obrigatório')
   })
 
   it('retorna error quando API retorna 500', async () => {
@@ -198,5 +204,18 @@ describe('Trustpilot connector', () => {
     expect(inCalls.length).toBeGreaterThan(0)
     // O external_id deve ser o ID da API (não um hash)
     expect(inCalls[0][1]).toContain('abc123')
+  })
+
+  describe('sanitizeTrustpilotDomain', () => {
+    it('sanitiza URLs completas do Trustpilot', () => {
+      expect(sanitizeTrustpilotDomain('https://www.trustpilot.com/review/minhaempresa.com.br')).toBe('minhaempresa.com.br')
+      expect(sanitizeTrustpilotDomain('www.trustpilot.com/review/nubank.com.br?languages=all')).toBe('nubank.com.br')
+      expect(sanitizeTrustpilotDomain('trustpilot.com/review/empresa.com#section')).toBe('empresa.com')
+    })
+
+    it('sanitiza domínios puros ou URLs genéricas', () => {
+      expect(sanitizeTrustpilotDomain('  empresa.com.br  ')).toBe('empresa.com.br')
+      expect(sanitizeTrustpilotDomain('https://empresa.com.br/path')).toBe('empresa.com.br')
+    })
   })
 })

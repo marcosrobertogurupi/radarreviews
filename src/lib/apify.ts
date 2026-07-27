@@ -279,7 +279,12 @@ export async function fetchTrustpilotReviews(
 ): Promise<any[]> {
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado nas variáveis de ambiente')
-  const sanitizedDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+
+  const sanitizedDomain = (domain || '').trim().includes('/review/')
+    ? (domain || '').trim().split('/review/')[1]?.split('?')[0]?.split('#')[0] || domain
+    : domain
+  const firstPart = sanitizedDomain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0]
+  const cleanDomain = (firstPart || '').trim()
 
   const rawActorId = 'pear_fight~trustpilot-scraper'
   const actorId = normalizeActorId(rawActorId)
@@ -287,16 +292,16 @@ export async function fetchTrustpilotReviews(
 
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('trustpilot', limit)
 
-  console.log(`[Apify] Chamando scraper para ${domain}...`)
+  console.log(`[Apify] Chamando scraper para ${cleanDomain}...`)
 
   let runId = ''
   try {
-    console.log(`[Apify] Iniciando execução do robô para ${domain}...`)
+    console.log(`[Apify] Iniciando execução do robô para ${cleanDomain}...`)
     const runResponse = await axios.post(
       `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}&timeout=${timeoutSecs}&memory=1024`,
       { 
         companyUrls: [
-          `https://www.trustpilot.com/review/${sanitizedDomain}`
+          `https://www.trustpilot.com/review/${cleanDomain}`
         ],
         maxReviews: safeLimit,
         limit: safeLimit,
@@ -369,7 +374,7 @@ export async function fetchTrustpilotReviews(
             id: item.reviewerId || item.userId || item.consumerId || 'anon', 
             displayName: item.author || item.reviewer || item.userName || item.authorName || 'Cliente Trustpilot' 
           },
-          links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${sanitizedDomain}` }]
+          links: [{ rel: 'self', href: item.reviewUrl || item.url || `https://www.trustpilot.com/review/${cleanDomain}` }]
         }
       })
 

@@ -204,7 +204,7 @@ export default function App() {
       .then(({ data }) => { if (data?.name) setBusinessName(data.name) })
 
     supabase.from('tenants')
-      .select('plan, subscription_status, trial_ends_at')
+      .select('plan, plan_status, subscription_status, trial_ends_at')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => { if (data) setTenantTrial(data) })
@@ -413,7 +413,7 @@ export default function App() {
     widget:    <Widget tenantId={tenantId} />,
     generate:  <GenerateReviews tenantId={tenantId} />,
     reports:   <Reports tenantId={tenantId} />,
-    pricing:   <Pricing tenantTrial={tenantTrial} session={session} />,
+    pricing:   <Pricing tenantTrial={tenantTrial} session={session} tenantId={tenantId} />,
     settings:  <Settings />,
     support:   <Support tenantId={tenantId} />,
     partner_dashboard: <PartnerDashboard />,

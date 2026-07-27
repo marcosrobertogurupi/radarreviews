@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info, Loader2, ExternalLink, Copy } from 'lucide-react'
+import { Check, X, Zap, Star, Puzzle, Building2, ChevronRight, Info, Loader2, ExternalLink, Copy, Lock, Radio } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { API_URL } from '../lib/utils'
 
 
-// ── Tipos ────────────────────────────────────────────────────────
+// ── Tipos e Constantes ────────────────────────────────────────────
 
 type Period = 'trimestral' | 'semestral' | 'anual'
 
@@ -15,6 +16,24 @@ const PERIOD_OPTIONS: { value: Period; label: string; discount: number; months: 
 ]
 
 const PIX_EXTRA = 5   // % de desconto adicional ao pagar com PIX
+
+const CHANNEL_MAP: Record<string, { label: string; icon: string }> = {
+  google_maps:    { label: 'Google Maps',    icon: '📍' },
+  tripadvisor:    { label: 'TripAdvisor',    icon: '🦉' },
+  facebook:       { label: 'Facebook',       icon: '📘' },
+  instagram:      { label: 'Instagram',      icon: '📸' },
+  reclame_aqui:   { label: 'Reclame Aqui',   icon: '🔴' },
+  consumidor_gov: { label: 'Consumidor.gov', icon: '🏛️' },
+  trustpilot:     { label: 'Trustpilot',     icon: '⭐' },
+  reddit:         { label: 'Reddit',         icon: '🤖' },
+}
+
+const PLAN_TIERS: Record<string, number> = {
+  'basico': 1,
+  'completo': 2,
+  'custom': 3,
+  'enterprise': 4,
+}
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -41,7 +60,15 @@ function fmt(n: number) {
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan: string; plan_status?: string; subscription_status?: string; trial_ends_at: string | null } | null; session?: Session | null }) {
+export default function Pricing({ 
+  tenantTrial, 
+  session,
+  tenantId
+}: { 
+  tenantTrial?: { plan: string; plan_status?: string; subscription_status?: string; trial_ends_at: string | null } | null; 
+  session?: Session | null;
+  tenantId?: string;
+}) {
   const [period,   setPeriod]   = useState<Period>('anual')
   const [pix,      setPix]      = useState(false)
   const [customCh, setCustomCh] = useState(3)
@@ -51,6 +78,8 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
   const [checkoutData, setCheckoutData] = useState<{ invoiceUrl?: string; pixQrCode?: string; pixCopyPaste?: string; subscriptionId?: string; status?: string } | null>(null)
   const [checkoutError, setCheckoutError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [connectors, setConnectors] = useState<any[]>([])
+  const [loadingConnectors, setLoadingConnectors] = useState(false)
 
   useEffect(() => {
     async function loadPlans() {
@@ -67,7 +96,37 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
     loadPlans()
   }, [])
 
+  useEffect(() => {
+    if (!tenantId) return
+    async function fetchConnectors() {
+      setLoadingConnectors(true)
+      try {
+        const { data: biz } = await supabase
+          .from('monitored_businesses')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .limit(1)
+          .single()
 
+        if (biz?.id) {
+          const { data: conns } = await supabase
+            .from('channel_connectors')
+            .select('id, channel, status, external_id, created_at, last_sync_at')
+            .eq('business_id', biz.id)
+
+          if (conns) {
+            setConnectors(conns)
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao carregar conectores:', err)
+      } finally {
+        setLoadingConnectors(false)
+      }
+    }
+
+    fetchConnectors()
+  }, [tenantId])
 
   const activePeriod  = PERIOD_OPTIONS.find(p => p.value === period)!
   const totalDiscount = activePeriod.discount + (pix ? PIX_EXTRA : 0)
@@ -84,8 +143,76 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
   const custom   = calcPrice(customBase, period, pix)
 
   const inTrial = tenantTrial?.plan_status === 'trial' || tenantTrial?.subscription_status === 'trial'
-  const currentPlan = tenantTrial?.plan
+  const isContractedActive = (tenantTrial?.subscription_status === 'active' || tenantTrial?.plan_status === 'active') && !inTrial
+  const currentPlan = (tenantTrial?.plan || 'basico').toLowerCase()
+  const currentTier = PLAN_TIERS[currentPlan] || 1
 
+  const planMaxChannels: Record<string, string> = {
+    'basico': '3',
+    'completo': '8',
+    'custom': `${customCh}`,
+    'enterprise': 'Ilimitados',
+  }
+
+  function renderPlanCTA(planSlug: string, planTitle: string) {
+    const targetTier = PLAN_TIERS[planSlug] || 1
+    const isCurrent = currentPlan === planSlug
+    const isDowngrade = isContractedActive && targetTier < currentTier
+    const isUpgrade = isContractedActive && targetTier > currentTier
+
+    if (isCurrent) {
+      return (
+        <div style={{ marginTop: 'auto' }}>
+          <button className="btn plan-cta btn-secondary" disabled style={{ width: '100%', opacity: 0.85, cursor: 'default', justifyContent: 'center' }}>
+            Plano Atual
+          </button>
+          {isContractedActive && (
+            <p style={{ fontSize: 11, color: '#10b981', textAlign: 'center', marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+              <Check size={12} /> Contrato ativo
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    if (isDowngrade) {
+      return (
+        <div style={{ marginTop: 'auto' }}>
+          <button className="btn plan-cta btn-disabled-downgrade" disabled style={{ width: '100%', cursor: 'not-allowed', justifyContent: 'center' }}>
+            <Lock size={12} style={{ marginRight: 4 }} /> Downgrade indisponível
+          </button>
+          <p style={{ fontSize: 11, color: '#ef4444', textAlign: 'center', marginTop: 6, lineHeight: 1.3 }}>
+            Não é possível alterar para um plano menor no período contratado
+          </p>
+        </div>
+      )
+    }
+
+    if (isUpgrade) {
+      return (
+        <div style={{ marginTop: 'auto' }}>
+          <button className="btn plan-cta btn-primary" onClick={() => setModal(planTitle)} style={{ width: '100%', justifyContent: 'center' }}>
+            Fazer Upgrade <ChevronRight size={13} />
+          </button>
+        </div>
+      )
+    }
+
+    // Default / Trial
+    return (
+      <div style={{ marginTop: 'auto' }}>
+        <button 
+          className={`btn plan-cta ${inTrial && currentPlan === planSlug ? 'btn-primary' : (planSlug === 'completo' ? 'btn-primary' : 'btn-ghost')}`} 
+          onClick={() => setModal(planTitle)}
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
+          {inTrial 
+            ? (currentPlan === planSlug ? 'Plano atual — Assinar' : 'Assinar este plano') 
+            : (planSlug === 'enterprise' ? 'Falar com vendas' : 'Começar trial gratuito')} <ChevronRight size={13} />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -109,6 +236,56 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
         </div>
       )}
 
+      {/* ── Card de Conectores em Uso ─────────────────────────── */}
+      <div className="subscriber-connectors-card">
+        <div className="connectors-card-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="connectors-icon-badge">
+              <Radio size={18} color="#6366f1" />
+            </div>
+            <div>
+              <h3 className="connectors-card-title">Conectores em uso</h3>
+              <p className="connectors-card-subtitle">
+                Canais de reputação atualmente integrados à sua conta
+              </p>
+            </div>
+          </div>
+          <div className="connectors-count-badge">
+            <strong>{connectors.length}</strong> / {planMaxChannels[currentPlan] || '3'} canais utilizados
+          </div>
+        </div>
+
+        {loadingConnectors ? (
+          <div style={{ padding: '16px 0', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13 }}>
+            <Loader2 size={16} className="spin" /> Carregando conectores...
+          </div>
+        ) : connectors.length === 0 ? (
+          <div className="connectors-empty-state">
+            <span>Nenhum conector ativo no momento. Configure seus canais em <strong>Meu Perfil / Configurações</strong>.</span>
+          </div>
+        ) : (
+          <div className="connectors-grid">
+            {connectors.map(c => {
+              const info = CHANNEL_MAP[c.channel] || { label: c.channel, icon: '🔌' }
+              const statusMap: Record<string, { label: string; class: string }> = {
+                active: { label: 'Ativo', class: 'status-active' },
+                paused: { label: 'Pausado', class: 'status-paused' },
+                error: { label: 'Erro', class: 'status-error' },
+                pending_auth: { label: 'Pendente', class: 'status-pending' },
+              }
+              const st = statusMap[c.status] || { label: c.status, class: 'status-pending' }
+              return (
+                <div key={c.id} className="connector-pill-item">
+                  <span className="connector-pill-icon">{info.icon}</span>
+                  <span className="connector-pill-name">{info.label}</span>
+                  <span className={`connector-status-tag ${st.class}`}>{st.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* ── Banner PIX ─────────────────────────────────────────── */}
       <div className="pricing-pix-banner">
         <div className="pix-logo">PIX</div>
@@ -121,9 +298,10 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
             type="checkbox"
             checked={pix}
             onChange={e => setPix(e.target.checked)}
+            disabled={isContractedActive}
             style={{ display: 'none' }}
           />
-          <div className={`pix-slider ${pix ? 'on' : ''}`}>
+          <div className={`pix-slider ${pix ? 'on' : ''}`} style={{ opacity: isContractedActive ? 0.6 : 1 }}>
             <div className="pix-thumb" />
           </div>
           <span className={`pix-label ${pix ? 'on' : ''}`}>
@@ -132,13 +310,31 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
         </label>
       </div>
 
+      {/* ── Aviso de Período Bloqueado ─────────────────────────── */}
+      {isContractedActive && (
+        <div style={{
+          padding: '12px 16px', background: 'rgba(99,102,241,0.08)',
+          border: '1px solid rgba(99,102,241,0.25)', borderRadius: 10,
+          color: '#818cf8', fontSize: 13, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 10,
+          marginBottom: 16, justifyContent: 'center'
+        }}>
+          <Lock size={16} />
+          Seu plano está em um período contratado ativo. A edição de período de cobrança fica bloqueada durante a vigência.
+        </div>
+      )}
+
       {/* ── Seletor de período ─────────────────────────────────── */}
-      <div className="period-selector">
+      <div className="period-selector" style={{ opacity: isContractedActive ? 0.7 : 1 }}>
         {PERIOD_OPTIONS.map(opt => (
           <button
             key={opt.value}
             className={`period-btn ${period === opt.value ? 'active' : ''}`}
-            onClick={() => setPeriod(opt.value)}
+            onClick={() => {
+              if (!isContractedActive) setPeriod(opt.value)
+            }}
+            disabled={isContractedActive}
+            title={isContractedActive ? 'Edição de período bloqueada no período contratado' : undefined}
           >
             {opt.label}
             {opt.discount > 0 && (
@@ -193,14 +389,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
             <li className="feat-no"><X size={12} /><span>IA Copilot</span></li>
             <li className="feat-no"><X size={12} /><span>Alertas avançados</span></li>
           </ul>
-          <button 
-            className={`btn plan-cta ${inTrial && currentPlan === 'basico' ? 'btn-primary' : 'btn-ghost'}`} 
-            onClick={() => setModal('Básico')}
-          >
-            {inTrial 
-              ? (currentPlan === 'basico' ? 'Plano atual — Assinar' : 'Assinar este plano') 
-              : 'Começar trial gratuito'} <ChevronRight size={13} />
-          </button>
+          {renderPlanCTA('basico', 'Básico')}
         </div>
 
         {/* ── Completo (destaque) ── */}
@@ -234,14 +423,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
             <li className="feat-yes"><Check size={12} /><span>Suporte prioritário</span></li>
             <li className="feat-yes"><Check size={12} /><span>Acesso à API</span></li>
           </ul>
-          <button 
-            className={`btn plan-cta ${inTrial && currentPlan === 'completo' ? 'btn-primary' : (inTrial ? 'btn-ghost' : 'btn-primary')}`} 
-            onClick={() => setModal('Completo')}
-          >
-            {inTrial 
-              ? (currentPlan === 'completo' ? 'Plano atual — Assinar' : 'Assinar este plano') 
-              : 'Começar trial gratuito'} <ChevronRight size={13} />
-          </button>
+          {renderPlanCTA('completo', 'Completo')}
         </div>
 
         {/* ── Custom ── */}
@@ -266,6 +448,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
               min={3} max={8}
               value={customCh}
               onChange={e => setCustomCh(Number(e.target.value))}
+              disabled={isContractedActive && currentPlan === 'custom'}
               className="channel-range"
             />
             <div className="channel-range-labels">
@@ -296,14 +479,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
             <li className="feat-yes"><Check size={12} /><span>Multi-unidades</span></li>
             <li className="feat-yes"><Check size={12} /><span>Gerente de conta dedicado</span></li>
           </ul>
-          <button 
-            className={`btn plan-cta ${inTrial && currentPlan === 'custom' ? 'btn-primary' : 'btn-ghost'}`} 
-            onClick={() => setModal('Custom')}
-          >
-            {inTrial 
-              ? (currentPlan === 'custom' ? 'Plano atual — Assinar' : 'Assinar este plano') 
-              : 'Começar trial gratuito'} <ChevronRight size={13} />
-          </button>
+          {renderPlanCTA('custom', 'Custom')}
         </div>
 
         {/* ── Enterprise ── */}
@@ -329,9 +505,7 @@ export default function Pricing({ tenantTrial, session }: { tenantTrial?: { plan
             <li className="feat-yes"><Check size={12} /><span>Suporte 24/7</span></li>
             <li className="feat-yes"><Check size={12} /><span>Desconto por volume (10–40%)</span></li>
           </ul>
-          <button className="btn plan-cta btn-ghost" onClick={() => setModal('Enterprise')}>
-            Falar com vendas <ChevronRight size={13} />
-          </button>
+          {renderPlanCTA('enterprise', 'Enterprise')}
         </div>
       </div>
 
