@@ -30,7 +30,7 @@ import { ingestReviews } from '../lib/ingest.js'
 import { fetchReclameAquiComplaints } from '../lib/apify.js'
 import { getFirecrawlApiKey, scrapePageViaFirecrawl } from '../lib/firecrawl.js'
 import { logger } from '../lib/logger.js'
-import { closeBrowserSafely } from '../lib/browser.js'
+import { closeBrowserSafely, cleanupOrphanChromiumProcesses } from '../lib/browser.js'
 import type { ChannelConnector, JobResult } from '../types/connector.js'
 import type { NormalizedReview } from '../types/review.js'
 
@@ -423,6 +423,9 @@ async function runPlaywrightScraper(
     throw error
   } finally {
     await closeBrowserSafely(browser)
+    await cleanupOrphanChromiumProcesses().catch(err => {
+      logger.warn(`[${CHANNEL}] Limpeza de processos Chromium falhou no finally`, { error: err })
+    })
   }
 
   return result
@@ -587,11 +590,13 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     pwMsg.includes('ERR_ABORTED') || pwMsg.includes('net::ERR') ||
     pwMsg.includes('timeout') || pwMsg.includes('Timeout')
 
-  // Se é o primeiro erro transiente (EAGAIN/ENOMEM) e NÃO há falhas anteriores,
+  const firecrawlApiKey = getFirecrawlApiKey()
+
+  // Se é o primeiro erro transiente (EAGAIN/ENOMEM), SEM chave Firecrawl e sem falhas anteriores,
   // retornar como transiente para dar ao Playwright uma chance no próximo ciclo.
-  if (isTransientPw && previousErrorCount === 0) {
+  if (isTransientPw && previousErrorCount === 0 && !firecrawlApiKey) {
     logger.warn(
-      `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez) — será retentado no próximo ciclo`,
+      `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez, sem Firecrawl) — será retentado no próximo ciclo`,
       { error: pwMsg, connector_id: connector.id }
     )
     result.error = pwMsg
@@ -600,7 +605,6 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   // 2. Fallback 1: Firecrawl (Secundário - se FIRECRAWL_API_KEY estiver configurada)
-  const firecrawlApiKey = getFirecrawlApiKey()
   if (firecrawlApiKey) {
     logger.warn(
       `[${CHANNEL}] Playwright falhou (${pwMsg}). Ativando fallback Firecrawl...`,

@@ -19,6 +19,7 @@ export interface RecordUsageParams {
 
 // Preços por 1 Milhão de tokens (USD)
 const PRICING: Record<string, { promptPerM: number; completionPerM: number }> = {
+  'gemini-2.0-flash': { promptPerM: 0.075, completionPerM: 0.30 },
   'gemini-2.5-flash': { promptPerM: 0.075, completionPerM: 0.30 },
   'gemini-1.5-flash': { promptPerM: 0.075, completionPerM: 0.30 },
   'claude-3-5-haiku-20241022': { promptPerM: 0.80, completionPerM: 4.00 },
