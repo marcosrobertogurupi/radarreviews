@@ -35,23 +35,25 @@ export default function Widget({ tenantId }: Props) {
         })
         if (res.ok) {
           const data = await res.json()
-          setWidgetToken(data.widget_token || '')
-          setBusinessName(data.business_name || 'Sua Empresa')
-          if (data.widget_config) {
-            setTheme(data.widget_config.theme || 'light')
-            setLimit(data.widget_config.limit || 5)
-            setShowScore(data.widget_config.show_score !== false)
-            setShowChannel(data.widget_config.show_channel !== false)
+          if (data.widget_token) {
+            setWidgetToken(data.widget_token)
+            setBusinessName(data.business_name || 'Sua Empresa')
+            if (data.widget_config) {
+              setTheme(data.widget_config.theme || 'light')
+              setLimit(data.widget_config.limit || 5)
+              setShowScore(data.widget_config.show_score !== false)
+              setShowChannel(data.widget_config.show_channel !== false)
+            }
+            if (data.sample_reviews?.length) {
+              setSampleReviews(data.sample_reviews)
+            }
+            setLoading(false)
+            return
           }
-          if (data.sample_reviews?.length) {
-            setSampleReviews(data.sample_reviews)
-          }
-          setLoading(false)
-          return
         }
       }
     } catch (e) {
-      console.warn('[Widget] Erro ao carregar via API:', e)
+      console.warn('[Widget] Erro ao carregar via API, tentando fallback direct:', e)
     }
 
     try {
@@ -63,13 +65,22 @@ export default function Widget({ tenantId }: Props) {
 
       if (t) {
         setBusinessName(t.name || 'Sua Empresa')
-        setWidgetToken(t.widget_token || '')
         if (t.widget_config) {
           setTheme(t.widget_config.theme || 'light')
           setLimit(t.widget_config.limit || 5)
           setShowScore(t.widget_config.show_score !== false)
           setShowChannel(t.widget_config.show_channel !== false)
         }
+
+        let token = t.widget_token
+        if (!token) {
+          token = crypto.randomUUID()
+          await supabase
+            .from('tenants')
+            .update({ widget_token: token })
+            .eq('id', tenantId)
+        }
+        setWidgetToken(token)
       }
     } catch (err) {
       console.error('[Widget] Erro no fallback:', err)
@@ -92,14 +103,32 @@ export default function Widget({ tenantId }: Props) {
         })
         if (res.ok) {
           const data = await res.json()
-          setWidgetToken(data.widget_token)
-          alert('Novo token de segurança gerado com sucesso!')
-          setRotating(false)
-          return
+          if (data.widget_token) {
+            setWidgetToken(data.widget_token)
+            alert('Novo token de segurança gerado com sucesso!')
+            setRotating(false)
+            return
+          }
         }
       }
     } catch (e: any) {
-      alert(e.message || 'Erro ao gerar novo token')
+      console.warn('[Widget] Erro ao rotacionar via API, tentando fallback direct:', e)
+    }
+
+    try {
+      const newToken = crypto.randomUUID()
+      const { error } = await supabase
+        .from('tenants')
+        .update({ widget_token: newToken })
+        .eq('id', tenantId)
+
+      if (error) throw error
+
+      setWidgetToken(newToken)
+      alert('Novo token de segurança gerado com sucesso!')
+    } catch (err: any) {
+      console.error('[Widget] Erro ao atualizar token:', err)
+      alert(err.message || 'Erro ao gerar novo token')
     } finally {
       setRotating(false)
     }
@@ -107,6 +136,12 @@ export default function Widget({ tenantId }: Props) {
 
   async function handleSaveConfig() {
     setSaving(true)
+    const newConfig = {
+      theme,
+      limit: Number(limit),
+      show_score: showScore,
+      show_channel: showChannel
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
@@ -116,12 +151,7 @@ export default function Widget({ tenantId }: Props) {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({
-            theme,
-            limit: Number(limit),
-            show_score: showScore,
-            show_channel: showChannel
-          })
+          body: JSON.stringify(newConfig)
         })
         if (res.ok) {
           alert('Configurações do widget salvas com sucesso!')
@@ -130,7 +160,21 @@ export default function Widget({ tenantId }: Props) {
         }
       }
     } catch (e: any) {
-      alert(e.message || 'Erro ao salvar configurações')
+      console.warn('[Widget] Erro ao salvar config via API, tentando fallback direct:', e)
+    }
+
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({ widget_config: newConfig })
+        .eq('id', tenantId)
+
+      if (error) throw error
+
+      alert('Configurações do widget salvas com sucesso!')
+    } catch (err: any) {
+      console.error('[Widget] Erro ao salvar configurações:', err)
+      alert(err.message || 'Erro ao salvar configurações')
     } finally {
       setSaving(false)
     }

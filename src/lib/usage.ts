@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js'
+import { logResourceUsage, ResourceProvider, MetricType } from './telemetry.js'
 
 export interface UsageLog {
   tenant_id: string
@@ -27,8 +28,27 @@ export async function logApiUsage(log: UsageLog) {
 
     if (error) throw error
 
+    // Mapear para telemetria FinOps unificada
+    const providerMap: Record<string, ResourceProvider> = {
+      apify: 'apify',
+      firecrawl: 'firecrawl',
+      gemini: 'gemini',
+      railway: 'railway',
+      vercel: 'vercel'
+    }
+    const provider: ResourceProvider = providerMap[log.service_name.toLowerCase()] ?? 'apify'
+    const metricType: MetricType = provider === 'gemini' ? 'tokens' : 'executions'
+
+    logResourceUsage({
+      tenant_id: log.tenant_id,
+      connector_id: log.connector_id,
+      provider,
+      metric_type: metricType,
+      metric_quantity: log.units_consumed,
+      metadata: { service_name: log.service_name, operation_type: log.operation_type }
+    }).catch(() => {})
+
     // Monitoramento imediato (simplificado)
-    // Em produção, isso seria um job de fundo para não travar a API
     checkUsageAlerts(log.tenant_id).catch(err => console.error('[Usage] Erro ao verificar alertas:', err))
 
   } catch (err) {

@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { logger } from '../../lib/logger.js'
+import { logResourceUsage } from '../../lib/telemetry.js'
 
 export interface QuotaCheckResult {
   allowed: boolean
@@ -112,6 +113,15 @@ export async function recordAIUsage(params: RecordUsageParams): Promise<void> {
       .from('tenants')
       .update({ ai_quota_used: currentUsed + totalTokens })
       .eq('id', tenantId)
+
+    // Registrar no sistema unificado de FinOps / Telemetria de Recursos
+    logResourceUsage({
+      tenant_id: tenantId,
+      provider: 'gemini',
+      metric_type: 'tokens',
+      metric_quantity: totalTokens,
+      metadata: { request_type: requestType, model_used: modelUsed, prompt_tokens: promptTokens, completion_tokens: completionTokens }
+    }).catch(() => {})
 
     logger.info('[ai-usage] Consumo de IA registrado', {
       tenantId,

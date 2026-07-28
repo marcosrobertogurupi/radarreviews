@@ -122,6 +122,9 @@ async function runPlaywrightScraper(
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-blink-features=AutomationControlled',
+          '--single-process',
+          '--no-zygote',
+          '--js-flags="--max-old-space-size=256"',
         ],
       })
     } catch (launchErr) {
@@ -276,117 +279,143 @@ async function runPlaywrightScraper(
     if (fetchBody) {
       const mainCompanyUrl = `${BASE_URL}/empresa/${sanitizedSlug}/`
       const toFetch = allComplaints.filter(c => c.url && c.url.startsWith('http') && c.url !== mainCompanyUrl)
-      const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 30
+      const MAX_BODY_FETCH = (connector.config['max_body_fetch'] as number) ?? 10
       const limitedToFetch = toFetch.slice(0, MAX_BODY_FETCH)
 
       if (limitedToFetch.length > 0) {
-        logger.info(`[${CHANNEL}] Buscando corpo detalhado de ${limitedToFetch.length} reclamações para evitar texto cortado`)
-        for (const complaint of limitedToFetch) {
-          if (Date.now() - scrapeStartedAt > MAX_SCRAPE_MS) {
-            logger.warn(`[${CHANNEL}] Deadline interno (8min) atingido na busca de corpo — seguindo para ingestão`, {
-              connector_id: connector.id,
-            })
-            break
-          }
+        logger.info(`[${CHANNEL}] Buscando corpo detalhado de ${limitedToFetch.length} reclamações com aba enxuta (100% Chromium)`)
+        
+        let detailContext = null
+        let detailPage: import('playwright-core').Page | null = null
 
-          let detailContext = null
-          try {
-            detailContext = await browser.newContext({
-              userAgent: USER_AGENT,
-              locale: 'pt-BR',
-              timezoneId: 'America/Sao_Paulo',
-              viewport: { width: 1366, height: 768 },
-              extraHTTPHeaders: {
-                'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-              },
-            })
+        try {
+          detailContext = await browser.newContext({
+            userAgent: USER_AGENT,
+            locale: 'pt-BR',
+            timezoneId: 'America/Sao_Paulo',
+            viewport: { width: 1366, height: 768 },
+            extraHTTPHeaders: {
+              'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+              'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+              'sec-ch-ua-mobile': '?0',
+              'sec-ch-ua-platform': '"Windows"',
+            },
+          })
 
-            await detailContext.addInitScript(() => {
-              Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
-            })
+          await detailContext.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+          })
 
-            const detailPage = await detailContext.newPage()
-            detailPage.setDefaultTimeout(timeoutMs)
+          detailPage = await detailContext.newPage()
+          detailPage.setDefaultTimeout(timeoutMs)
 
-            await detailPage.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-            await detailPage.waitForTimeout(2500)
+          // Intercepta e aborta recursos visuais/supérfluos para economizar RAM e acelerar carregamento
+          await detailPage.route('**/*', (route) => {
+            const type = route.request().resourceType()
+            if (['image', 'stylesheet', 'font', 'media', 'other'].includes(type)) {
+              return route.abort()
+            }
+            return route.continue()
+          })
 
-            let title = await detailPage.title()
-            if (title.toLowerCase().includes('moment') || title.toLowerCase().includes('verificação')) {
-              await detailPage.waitForTimeout(4000)
-              title = await detailPage.title()
+          for (const complaint of limitedToFetch) {
+            if (Date.now() - scrapeStartedAt > MAX_SCRAPE_MS) {
+              logger.warn(`[${CHANNEL}] Deadline interno (8min) atingido na busca de corpo — seguindo para ingestão`, {
+                connector_id: connector.id,
+              })
+              break
             }
 
-            const pageData = await detailPage.evaluate(() => {
-              const nextEl = document.getElementById('__NEXT_DATA__')
-              let nextBody: string | null = null
-              let nextDate: string | null = null
-              if (nextEl) {
-                try {
-                  const data = JSON.parse(nextEl.textContent ?? '')
-                  const pp = data?.props?.pageProps
-                  const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData ?? pp?.initialState?.complaint
-                  if (c && (c.description || c.text)) {
-                    nextBody = String(c.description ?? c.text ?? '')
-                    nextDate = String(c.created ?? c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.created ?? c.legacyComplaint?.createdDate ?? '')
+            try {
+              if (!detailPage || detailPage.isClosed()) {
+                detailPage = await detailContext.newPage()
+                detailPage.setDefaultTimeout(timeoutMs)
+                await detailPage.route('**/*', (route) => {
+                  const type = route.request().resourceType()
+                  if (['image', 'stylesheet', 'font', 'media', 'other'].includes(type)) {
+                    return route.abort()
                   }
-                } catch { }
+                  return route.continue()
+                })
               }
 
-              const selectors = [
-                '[data-testid="complaint-description"]',
-                '[class*="description"]',
-                '[class*="Description"]',
-                '[class*="complaint-description"]',
-                'p[class*="text"]',
-                '.complain-body'
-              ]
+              await detailPage.goto(complaint.url!, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+              await detailPage.waitForTimeout(1500)
 
-              let bodyText: string | null = null
-              for (const sel of selectors) {
-                const el = document.querySelector(sel)
-                if (el && (el.textContent?.trim().length ?? 0) > 50) {
-                  bodyText = el.textContent!.trim()
-                  break
+              let title = await detailPage.title()
+              if (title.toLowerCase().includes('moment') || title.toLowerCase().includes('verificação')) {
+                await detailPage.waitForTimeout(3000)
+                title = await detailPage.title()
+              }
+
+              const pageData = await detailPage.evaluate(() => {
+                const nextEl = document.getElementById('__NEXT_DATA__')
+                let nextBody: string | null = null
+                let nextDate: string | null = null
+                if (nextEl) {
+                  try {
+                    const data = JSON.parse(nextEl.textContent ?? '')
+                    const pp = data?.props?.pageProps
+                    const c = pp?.complaint ?? pp?.initialData?.complaint ?? pp?.initialData?.complaintData ?? pp?.initialState?.complaint
+                    if (c && (c.description || c.text)) {
+                      nextBody = String(c.description ?? c.text ?? '')
+                      nextDate = String(c.created ?? c.createdDate ?? c.date ?? c.data ?? c.createdAt ?? c.legacyComplaint?.created ?? c.legacyComplaint?.createdDate ?? '')
+                    }
+                  } catch { }
                 }
-              }
 
-              let timeVal = document.querySelector('time[datetime]')?.getAttribute('datetime') ?? null
-              if (!timeVal) {
-                const allEls = Array.from(document.querySelectorAll('span, p, div, time, small'))
-                for (const el of allEls) {
-                  const txt = el.textContent?.trim() ?? ''
-                  if (/(\d{2}\/\d{2}\/\d{2,4})|(há\s+\d+)/i.test(txt) && txt.length < 60) {
-                    timeVal = el.getAttribute('datetime') ?? txt
+                const selectors = [
+                  '[data-testid="complaint-description"]',
+                  '[class*="description"]',
+                  '[class*="Description"]',
+                  '[class*="complaint-description"]',
+                  'p[class*="text"]',
+                  '.complain-body'
+                ]
+
+                let bodyText: string | null = null
+                for (const sel of selectors) {
+                  const el = document.querySelector(sel)
+                  if (el && (el.textContent?.trim().length ?? 0) > 50) {
+                    bodyText = el.textContent!.trim()
                     break
                   }
                 }
-              }
 
-              return {
-                body: bodyText ?? nextBody,
-                date: timeVal ?? nextDate,
-              }
-            })
+                let timeVal = document.querySelector('time[datetime]')?.getAttribute('datetime') ?? null
+                if (!timeVal) {
+                  const allEls = Array.from(document.querySelectorAll('span, p, div, time, small'))
+                  for (const el of allEls) {
+                    const txt = el.textContent?.trim() ?? ''
+                    if (/(\d{2}\/\d{2}\/\d{2,4})|(há\s+\d+)/i.test(txt) && txt.length < 60) {
+                      timeVal = el.getAttribute('datetime') ?? txt
+                      break
+                    }
+                  }
+                }
 
-            if (pageData.body && pageData.body.length > (complaint.description?.length ?? 0)) {
-              complaint.description = pageData.body
+                return {
+                  body: bodyText ?? nextBody,
+                  date: timeVal ?? nextDate,
+                }
+              })
+
+              if (pageData.body && pageData.body.length > (complaint.description?.length ?? 0)) {
+                complaint.description = pageData.body
+              }
+              if (pageData.date && !complaint.date) {
+                complaint.date = pageData.date
+              }
+            } catch (err) {
+              logger.warn(`[${CHANNEL}] Erro ao buscar detalhe da reclamação: ${complaint.url}`, { error: err })
             }
-            if (pageData.date && !complaint.date) {
-              complaint.date = pageData.date
-            }
-          } catch (err) {
-            logger.warn(`[${CHANNEL}] Erro ao buscar detalhe da reclamação: ${complaint.url}`, { error: err })
-          } finally {
-            if (detailContext) {
-              await detailContext.close().catch(() => {})
-            }
+
+            await new Promise(r => setTimeout(r, 500))
           }
-
-          await new Promise(r => setTimeout(r, 1000))
+        } finally {
+          if (detailContext) {
+            await detailContext.close().catch(() => {})
+          }
         }
       }
     }

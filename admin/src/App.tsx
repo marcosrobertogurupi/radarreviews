@@ -20,15 +20,17 @@ import Prospects from './pages/Prospects'
 import Commercial from './pages/Commercial'
 import Partners from './pages/Partners'
 import PartnerCommissions from './pages/PartnerCommissions'
+import ResourceCostControl from './pages/ResourceCostControl'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'audit' | 'support' | 'prospects' | 'commercial' | 'partners' | 'partner_commissions'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'costs' | 'audit' | 'support' | 'prospects' | 'commercial' | 'partners' | 'partner_commissions'
 
 
 export interface TenantOption { id: string; name: string }
 
 const NAV = [
   { id: 'dashboard' as Page,   label: 'Dashboard',   icon: LayoutDashboard },
+  { id: 'costs' as Page,       label: 'Custos & Recursos', icon: CreditCard },
   { id: 'commercial' as Page,  label: 'Comercial',   icon: Briefcase },
   { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
   { id: 'partners' as Page,    label: 'Parceiros',   icon: Building2 },
@@ -277,6 +279,7 @@ export default function App() {
 
   const pages: Record<Page, ReactElement> = {
     dashboard:  <Dashboard  {...filterProps} />,
+    costs:      <ResourceCostControl />,
     commercial: <Commercial />,
     prospects:  <Prospects />,
     reviews:    <Reviews    {...filterProps} />,
