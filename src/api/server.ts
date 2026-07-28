@@ -765,22 +765,36 @@ async function handleAdminAIUsageReport(req: http.IncomingMessage, res: http.Ser
   }
 
   try {
+    let tenantsData: any[] = []
     const { data: tenants, error: tErr } = await supabaseAdmin
       .from('tenants')
       .select('id, name, slug, plan, ai_quota_limit, ai_quota_used, ai_blocked, is_active, created_at')
       .order('name', { ascending: true })
 
-    if (tErr) throw tErr
+    if (tErr) {
+      console.warn('[admin-ai-usage] Colunas de cota ausentes em tenants, carregando colunas básicas:', tErr.message)
+      const { data: fbTenants, error: fbErr } = await supabaseAdmin
+        .from('tenants')
+        .select('id, name, slug, plan, is_active, created_at')
+        .order('name', { ascending: true })
+      if (fbErr) throw fbErr
+      tenantsData = fbTenants ?? []
+    } else {
+      tenantsData = tenants ?? []
+    }
 
+    let logs: any[] = []
     const { data: usageLogs, error: uErr } = await supabaseAdmin
       .from('tenant_ai_usage_logs')
       .select('tenant_id, request_type, model_used, prompt_tokens, completion_tokens, estimated_cost_usd, created_at')
 
-    if (uErr) throw uErr
-
-    const logs = usageLogs ?? []
+    if (uErr) {
+      console.warn('[admin-ai-usage] Tabela tenant_ai_usage_logs indisponível ou não migrada:', uErr.message)
+    } else {
+      logs = usageLogs ?? []
+    }
     
-    const report = (tenants ?? []).map(t => {
+    const report = tenantsData.map(t => {
       const tLogs = logs.filter(l => l.tenant_id === t.id)
       const totalRequests = tLogs.length
       const totalPromptTokens = tLogs.reduce((acc, curr) => acc + (curr.prompt_tokens || 0), 0)
@@ -2770,7 +2784,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  if (url === '/api/portal/widget' && req.method === 'GET') {
+  if (url === '/api/portal/widget' && (req.method === 'GET' || req.method === 'OPTIONS')) {
     handleGetPortalWidget(req, res).catch(err => {
       console.error('[portal-widget-get] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
@@ -2778,7 +2792,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  if (url === '/api/portal/widget/rotate' && req.method === 'POST') {
+  if (url === '/api/portal/widget/rotate' && (req.method === 'POST' || req.method === 'OPTIONS')) {
     handleRotatePortalWidgetToken(req, res).catch(err => {
       console.error('[portal-widget-rotate] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
@@ -2786,7 +2800,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  if (url === '/api/portal/widget/config' && req.method === 'PUT') {
+  if (url === '/api/portal/widget/config' && (req.method === 'PUT' || req.method === 'OPTIONS')) {
     handleUpdatePortalWidgetConfig(req, res).catch(err => {
       console.error('[portal-widget-config] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }

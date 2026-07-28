@@ -1,7 +1,7 @@
 # PRD — Radar de Reviews (Reputei)
 **Documento de Requisitos do Produto**  
 *SaaS Multi-tenant para Monitoramento e Gestão de Reputação Online*  
-**Última Atualização:** 2026-06-26  
+**Última Atualização:** 2026-07-28  
 
 ---
 
@@ -10,7 +10,7 @@
 O **Radar de Reviews (Reputei)** é um SaaS multi-tenant de monitoramento de reputação online. O sistema coleta avaliações (reviews), menções e reclamações de múltiplos canais (plataformas digitais e governamentais), normaliza estes dados em um banco de dados unificado, realiza análise de sentimentos inteligente e enriquecimento de dados via Inteligência Artificial (Google Gemini) e fornece painéis analíticos consolidados e ferramentas de resposta para as empresas assinantes.
 
 ### 1.1 Proposta de Valor
-Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de seus clientes, automatizarem o processo de suporte técnico com IA de ponta (Agentic RAG) e agirem rapidamente diante de crises reputacionais (alertas de sentimentos e surtos de críticas).
+Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de seus clientes, automatizarem o processo de suporte técnico com IA de ponta (Agentic RAG) e agirem rapidamente diante de crises reputacionais (alertas de sentimentos, surtos de críticas e notificações via WhatsApp/E-mail).
 
 ### 1.2 Identidade Visual
 
@@ -31,7 +31,7 @@ Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de s
 - **Assinante (Tenant):** Empresas cadastradas no sistema que monitoram suas marcas. Possuem acesso ao portal do assinante para ver dashboards, cadastrar conectores, responder reviews, receber e configurar alertas, e interagir com o suporte.
 - **Usuário do Assinante:** Funcionários autorizados com diferentes permissões (`owner`, `admin`, `viewer`).
 - **Administrador / Operador do Reputei:** Equipe interna do SaaS que gerencia os tenants, monitora a integridade operacional dos conectores (jobs), revisa a base de conhecimento auto-aprendiz e resolve tickets de suporte complexos de nível L2/L3.
-- **Parceiro (Revendedor):** Agências, consultores ou revendedores que distribuem o SaaS. Possuem portal próprio para gerenciar clientes indicados, acompanhar comissões e cadastrar novos tenants.
+- **Parceiro (Revendedor):** Agências, consultores ou revendedores que distribuem o SaaS. Possuem portal próprio para gerenciar clientes indicados, acompanhar comissões (setup + recorrência) e cadastrar novos tenants.
 - **Autor do Review (Externo):** O cliente final que publica um comentário no Google Maps, Reclame Aqui, TripAdvisor, etc.
 - **IA do Sistema (Gemini):** Atua em duas frentes:
   1. Classificação, triagem e análise de sentimentos dos reviews ingeridos.
@@ -45,223 +45,163 @@ Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de s
 - **Banco de Dados:** Supabase (PostgreSQL 15+)
 - **Extensões de Banco:** `uuid-ossp`, `pg_cron`, `pgsodium` (Supabase Vault), `vector` (pgvector para embeddings)
 - **Cliente Supabase:** `@supabase/supabase-js` v2
-- **IA Primária:** Google Gemini 2.5 Flash (`@google/generative-ai`) para análise de sentimentos e interações do copilot
+- **IA Primária:** Google Gemini 2.5 Flash (`@google/generative-ai`) para análise de sentimentos, copilot e triagem
 - **IA de Embedding:** Gemini `text-embedding-004` (vetor de 768 dimensões)
 - **Testes:** `vitest`
 - **Validação de Schemas:** `zod` para entrada e saída de APIs
 - **Frontend Admin:** React + Vite + Recharts (acesso via service_role restrito internamente)
 - **Frontend Portal:** React + Vite + Vanilla CSS (acesso via anon key + RLS)
+- **Frontend Parceiro:** React + Vite + Vanilla CSS (portal dedicado a revendedores)
 - **Infraestrutura:** Vercel (frontends), Railway (backend API + scheduler)
 - **Email Transacional:** Brevo (via n8n webhook — `emailService.ts` + `n8n-email-workflow.json`)
+- **Disparos WhatsApp:** API Uazapi (`src/services/whatsapp/uazapi.ts`) para convites de review e alertas críticos em tempo real
+- **Gateway de Pagamento:** Asaas (`src/api/asaas-webhook.ts` + `src/lib/asaas.ts`) para checkout e cobrança recorrente
 
 ---
 
 ## 4. Requisitos Funcionais por Módulo
 
 ### 4.1 Ingestão e Conectores
-O sistema deve sincronizar periodicamente dados de 8 canais diferentes:
+O sistema sincroniza periodicamente dados de 8 canais diferentes:
 
-1. **Google Maps (`google_maps`):** Coleta via Google Places API (New), com limite de 5 reviews mais recentes por requisição.
+1. **Google Maps (`google_maps`):** Coleta via Google Places API (New) / Google Business Profile API.
 2. **TripAdvisor (`tripadvisor`):** Coleta via Content API v2, com suporte a paginação baseada em `offset` para histórico completo.
-3. **Consumidor.gov (`consumidor_gov`):** Ingestão via dados abertos (arquivos CSV mensais do portal dados.gov.br). O sistema faz o download automático, parseia via `csv-parse`, filtra pelo CNPJ das empresas monitoradas e gera ID externo único via hash SHA-256 da composição de CNPJ, Data de Abertura e Descrição.
-4. **Trustpilot (`trustpilot`):** Coleta via Consumer API v1 (leitura pública sem auth) utilizando a API Key do portal de desenvolvedores da Trustpilot.
-5. **Reddit (`reddit`):** Busca menções públicas com base em palavras-chave. Suporta o modo público (MVP sem credenciais via endpoints JSON públicos) e modo autenticado (OAuth2 Client Credentials pós-aprovação do Reddit).
-6. **Facebook (`facebook`):** Busca avaliações públicas na página autorizada via Meta Graph API utilizando tokens de acesso de página armazenados no Vault.
-7. **Instagram (`instagram`):** Busca comentários em mídias sociais usando Instagram Graph API, aplicando filtro de palavras-chave configuradas para capturar feedbacks e sugestões.
-8. **Reclame Aqui (`reclame_aqui`):** Coleta de reclamações públicas da página da empresa, utilizando API de parceiro ou raspagem via Playwright.
+3. **Consumidor.gov (`consumidor_gov`):** Ingestão via dados abertos (CSV mensais dados.gov.br) com hash SHA-256 para ID externo único.
+4. **Trustpilot (`trustpilot`):** Coleta via Consumer API v1 (leitura pública sem auth).
+5. **Reddit (`reddit`):** Busca menções públicas por palavras-chave (JSON público e OAuth2 Client Credentials).
+6. **Facebook (`facebook`):** Busca avaliações públicas via Meta Graph API com tokens armazenados no Vault.
+7. **Instagram (`instagram`):** Busca comentários via Instagram Graph API com filtro de palavras-chave.
+8. **Reclame Aqui (`reclame_aqui`):** Coleta de reclamações públicas via API de parceiro ou raspagem com Playwright.
 
 #### Regras de Ingestão:
-- **Deduplicação Obrigatória:** Inserções na tabela `reviews` devem usar cláusula `ON CONFLICT` com a constraint composta `(channel, external_id)`.
-- **Preservação de Dados:** O payload bruto (JSON) retornado por qualquer API de canal deve ser integralmente armazenado na coluna `raw_data` da tabela `reviews`.
-- **Log de Execução:** Toda execução de job de sincronização deve registrar na tabela `sync_jobs` (data de início, fim, quantidade de reviews lidos, novos e atualizados, e logs de erro).
-- **Atualização do Status do Conector:** Ao final de cada execução de job, as colunas `last_sync_at`, `next_sync_at` (com base no intervalo de polling do canal) e `status` (active / error) devem ser atualizadas na tabela `channel_connectors`.
+- **Deduplicação Obrigatória:** Inserções na tabela `reviews` utilizam `ON CONFLICT` com a constraint composta `(external_id, channel, tenant_id)` (Migration `appsec_hardening_2026_06_01`).
+- **Lock Distribuído na Fila:** Procedimento armazenado `claim_review_jobs` com `FOR UPDATE SKIP LOCKED` evita condições de corrida entre workers.
+- **Preservação de Dados:** Payload bruto (JSON) mantido integralmente em `raw_data`.
+- **Log de Execução:** Histórico completo registrado em `sync_jobs`.
+- **Atualização de Status:** `last_sync_at`, `next_sync_at` e `status` atualizados em `channel_connectors`.
 
 ### 4.2 Integração Google Business Profile (OAuth 2.0)
 O portal do assinante permite conectar a conta Google Business Profile via OAuth 2.0 Authorization Code flow:
 
-- **Fluxo:**
-  1. `GET /api/auth/google/connect` — retorna URL de autorização Google (backend gera, frontend redireciona usando `window.top.location.href` para sair do iframe)
-  2. `GET /api/auth/google/callback` — endpoint público; troca `code` por tokens; salva na coluna `tenants.google_oauth_tokens` (JSON criptografado); redireciona para o portal com `?google_connected=1`
-  3. `GET /api/auth/google/status` — retorna status de conexão e validade do token
-  4. `DELETE /api/auth/google/disconnect` — revoga a conexão
-
-- **Tokens:** Armazenados em `tenants.google_oauth_tokens` (texto JSON) e `tenants.google_oauth_connected_at`. Renovação automática de `access_token` via `refresh_token` quando o token expira nos próximos 5 minutos (função `getGoogleTokens(tenantId)` exportada para uso nos conectores).
-- **Scopes:** `business.manage` + `userinfo.email`
-- **Nota de iframe:** O portal é servido dentro de um iframe (`reputei.com.br/portalcliente`). O redirect OAuth usa `window.top.location.href` para sair do iframe antes de acessar o Google (requisito de segurança do Google OAuth).
+- **Fluxo de Endpoints:**
+  1. `GET /api/auth/google/connect` — gera URL de autorização Google. O frontend executa a saída do iframe via `window.top.location.href`.
+  2. `GET /api/auth/google/callback` — recebe o `code` de autorização, troca por `access_token` e `refresh_token`, salva de forma segura na coluna `tenants.google_oauth_tokens` e redireciona com `?google_connected=1`.
+  3. `GET /api/auth/google/status` — retorna o status da conexão e a data de autorização.
+  4. `DELETE /api/auth/google/disconnect` — revoga o token e remove a conexão.
+- **Tokens:** Armazenados em `tenants.google_oauth_tokens` (texto JSON criptografado) e `tenants.google_oauth_connected_at`. Renovação automática de `access_token` via `refresh_token` na iminência de expiração.
+- **Scopes:** `business.manage` + `userinfo.email`.
 
 ### 4.3 Análise de Sentimento (IA)
-Logo após a ingestão de uma avaliação ou comentário, o pipeline aciona o serviço de análise de sentimentos:
-- **Modelo:** Google Gemini 2.5 Flash como motor principal.
-- **Fallback Heurístico:** Heurística baseada em léxico de termos negativos/positivos para garantir funcionamento se a API Gemini estiver indisponível.
+- **Modelo:** Google Gemini 2.5 Flash como motor principal (com fallback heurístico léxico).
+- **Rate Limiting:** Controlado via `gemini-rate-limiter.ts` para conformidade com a cota da API.
 - **Dados Gerados:**
-  - `sentiment`: `positive` | `neutral` | `negative` | `critical` | `unanalyzed`
-    - `critical`: review com sinais extremos de insatisfação (ameaças, PROCON, denúncia pública, risco de viralização). Tratado separadamente do `negative` nos dashboards e alertas.
-  - `sentiment_score`: valor contínuo entre -1.0 (extremamente negativo) e 1.0 (extremamente positivo).
-  - `dissatisfaction_score`: pontuação de insatisfação de 0 a 100. Reviews `negative` ficam tipicamente entre 56–80; `critical` entre 81–100.
-  - `sentiment_topics`: temas detectados no review (ex: "atendimento", "preço", "lentidão").
+  - `sentiment`: `positive` | `neutral` | `negative` | `critical` | `unanalyzed`.
+  - `sentiment_score`: valor contínuo entre -1.0 e 1.0.
+  - `dissatisfaction_score`: pontuação de insatisfação de 0 a 100.
+  - `sentiment_topics`: temas detectados no review (ex: "atendimento", "preço").
   - `sentiment_summary`: resumo conciso gerado pela IA.
 
 ### 4.4 Reputation Score (0–1000)
-O sistema calcula um **Reputation Score** composto para cada empresa monitorada (`monitored_businesses`), com escala de 0 a 1000:
-
-| Componente | Peso | Fonte |
-|---|---|---|
-| Rating médio | 30% | `avg(rating)` dos reviews nos últimos 90 dias |
-| Sentimento positivo | 20% | % reviews com `sentiment = 'positive'` |
-| Volume de reviews | 10% | log-normalizado: `ln(count+1)/ln(201)` |
-| Taxa de resposta | 10% | % reviews com `has_response = true` |
-| Reclame Aqui | 10% | % reclamações com `is_resolved = true` no canal `reclame_aqui` |
-| Consumidor.gov | 10% | % reclamações com `is_resolved = true` no canal `consumidor_gov` |
-| Tendência 90 dias | 10% | variação do `avg_rating`: últimos 30d vs. 60–90d |
-
-- **Persistência:** Resultado salvo na tabela `reputation_scores` com todos os componentes individuais e data de cálculo.
-- **Job:** Calculado pelo scheduler para todos os tenants ativos.
-- **UI (Portal):** Exibido no Dashboard do assinante como indicador principal com classificação qualitativa (Excelente / Bom / Regular / Crítico).
+Calculado para cada empresa (`monitored_businesses`) com base nos últimos 90 dias:
+- Composto por: Rating médio (30%), Sentimento positivo (20%), Volume de reviews (10%), Taxa de resposta (10%), Resoluções Reclame Aqui (10%), Resoluções Consumidor.gov (10%) e Tendência 90 dias (10%).
+- Resultados persistidos na tabela `reputation_scores`.
 
 ### 4.5 Análise Prescritiva com IA
-O sistema gera insights acionáveis por unidade de negócio usando Gemini Flash:
+- **Engine:** `prescriptiveAI.ts` e `prescriptiveAnalysis.ts`.
+- **Entrada:** Agregados de `sentiment_topics` e `review_stats_daily` dos últimos 30 dias.
+- **Saída:** Recomendações estratégicas salvas na tabela `prescriptive_insights` com categoria, urgência, contexto métrico e grau de confiança.
 
-- **Entrada:** Resumos de `sentiment_topics` e `review_stats_daily` dos últimos 30 dias, agrupados por empresa (`monitored_businesses`).
-- **Saída:** Até 5 insights por tenant por execução, cada um com:
-  - `category`: `atendimento` | `preco` | `produto` | `entrega` | `limpeza` | `geral`
-  - `urgency`: `high` | `medium` | `low`
-  - `insight`: texto acionável gerado pela IA
-  - `metric_context`: dado que embasou o insight (ex: "queda de 0.8 na nota média")
-  - `confidence`: 0.0–1.0 (insights com confiança < 0.6 são descartados)
-- **Entrega:** Insights salvos na tabela `prescriptive_insights` e entregues ao assinante via sistema de alertas como evento do tipo `prescriptive_insight`.
-
-### 4.6 Alertas
-Os assinantes podem cadastrar regras customizadas para receber notificações de eventos críticos:
-- **Regras baseadas em:** Queda na média de notas (`rating_drop`), surto de volume de reviews (`volume_spike`), surto de reviews negativos (`negative_surge`) ou presença de palavras-chave (`keyword`).
-- **Canais de Disparo:** E-mail (via Brevo através do n8n) e Webhooks customizados do tenant.
+### 4.6 Alertas e Disparos Multi-canal
+- **Gatilhos:** Queda de rating (`rating_drop`), surto de volume (`volume_spike`), surto de negatividade (`negative_surge`), palavra-chave (`keyword`) e falha de conectores.
+- **Canais de Disparo:**
+  - **E-mail:** Transacional via Brevo/n8n (`emailService.ts`).
+  - **WhatsApp:** Notificações em tempo real via Uazapi (`uazapi.ts`).
+  - **Webhooks:** Payloads JSON POST customizados por tenant.
 
 ### 4.7 Relatórios Mensais em PDF
-O scheduler gera relatórios mensais de reputação por tenant:
-- **Conteúdo:** Resumo do período, evolução do Reputation Score, distribuição de sentimento, reviews mais relevantes, ranking de tópicos recorrentes.
-- **Entrega:** Gerado automaticamente no início do mês seguinte e enviado por e-mail ao assinante (`monthly-reports-job.ts`).
+- Scheduler gera relatórios executivos de reputação mensalmente via `monthly-reports-job.ts` e endpoint `POST /api/reports/generate`.
 
-### 4.8 Benchmarking Local (Portal do Assinante)
-O assinante pode comparar sua reputação com concorrentes locais monitorados:
-- **Dados:** Comparativo de nota média, volume de reviews e presença por canal.
-- **Snapshots:** Dados de concorrentes armazenados em `benchmark_snapshots` via job periódico (`benchmark-snapshot-job.ts`).
-- **UI:** Página `Benchmarking` no portal do assinante com gráficos comparativos.
+### 4.8 Benchmarking Local
+- Comparativo com concorrentes locais monitorados. Dados salvos na tabela `benchmark_snapshots` via `benchmark-snapshot-job.ts`.
 
-### 4.9 Widget de Geração de Reviews
-O portal oferece um widget configurável que o assinante pode incorporar no seu site ou enviar por link para coletar avaliações:
-- **Fluxo:** Cliente acessa o link/widget, avalia a experiência e é direcionado para publicar em plataformas externas (Google, TripAdvisor, etc.) somente se a nota for positiva.
-- **Filtro de Sentimento:** Reviews negativos são capturados internamente (sem publicação externa) e encaminhados para o time do assinante.
-- **Funil:** Dados de conversão armazenados em `review_funnel` para análise de efetividade.
+### 4.9 Widget de Geração de Reviews e Funil de Conversão
+- **Token de Segurança:** Autenticação via `widget_token` com RLS restrito (`034_widget_columns_and_rls.sql`).
+- **Snippet:** `<script src=".../api/widget/:token/script.js">` para inserção em sites.
+- **Filtro de Sentimento:** Clientes satisfeitos são direcionados para Google/TripAdvisor/Trustpilot; insatisfeitos são capturados internamente.
+- **Funil de Conversão:** Eventos salvos em `review_funnel` (views, clicks, reviews gerados).
 
-### 4.10 Central de Suporte e Helpdesk (Multi-tenant)
-O Reputei possui um sistema de tickets de suporte interno, permitindo que assinantes abram chamados para tirar dúvidas ou relatar problemas com os conectores:
-- **Fluxo de Estados (Tickets):** `open` ➔ `ai_triaged` ➔ `in_progress` ➔ `waiting_tenant` ➔ `escalated` ➔ `resolved` ➔ `closed` (além de `reopened`).
-- **Prioridades:** `low` | `medium` | `high` | `critical`.
-- **SLA Dinâmico:** SLA calculado na criação com base na prioridade e plano do tenant (regras na tabela `ticket_sla_rules`).
-- **Trilha de Auditoria:** Cada modificação em tickets (mudança de status, prioridade, atribuição, alertas de SLA) deve gravar um registro imutável na tabela `ticket_audit_log`.
+### 4.10 Central de Suporte e Helpdesk Multi-tenant
+- Estados: `open` ➔ `ai_triaged` ➔ `in_progress` ➔ `waiting_tenant` ➔ `escalated` ➔ `resolved` ➔ `closed`.
+- SLA Dinâmico via tabela `ticket_sla_rules`.
+- Trilha de Auditoria imutável em `ticket_audit_log`.
 
 ### 4.11 Agentic RAG de Suporte (Atendimento Autônomo)
-O helpdesk conta com uma camada de atendimento automático inteligente baseada em Agentic RAG:
-1. **Perceber:** Classificação inicial do ticket aberto usando Gemini 2.5 Flash (triagem e sentimento).
-2. **Recuperar:** Busca semântica por similaridade de cosseno usando embeddings (pgvector) gerados pelo Gemini `text-embedding-004` contra a tabela `support_knowledge_docs`.
-3. **Raciocinar e Agir:** A IA avalia o nível de similaridade encontrado e se classifica em um dos 3 Tiers de confiança:
-   - **T1 - Alta Confiança (>= 0.85):** A IA envia a resposta automaticamente para o assinante e define o status do ticket como `ai_responding`.
-   - **T2 - Confiança Média (0.65 a 0.84):** A IA gera um rascunho de resposta (`ai_draft_response`), mas não o envia. O rascunho é mostrado em destaque para o operador humano no painel administrativo, que pode revisá-lo e enviá-lo com 1 clique.
-   - **T3 - Baixa Confiança (< 0.65):** O ticket é encaminhado diretamente para a fila de atendimento humano sem ação automática da IA.
-4. **Ciclo de Aprendizado (Auto-Aprendiz):** Ao fechar um ticket resolvido (seja resolvido por humano ou por IA assistida), o job `KnowledgeLearningService` extrai o par problema-solução da thread, gera um JSON estruturado com o Gemini e:
-   - Cria um novo artigo com status `draft` na base de conhecimento (`support_knowledge_docs`), gerando seu embedding vetorial.
-   - Ou enriquece um artigo já existente (se a similaridade com o problema for >= 0.80), adicionando variações de termos e atualizando contadores.
-   - Documentos com avaliação CSAT >= 4.0 do cliente ou com mais de 3 utilizações bem-sucedidas são publicados automaticamente como `active`.
+- Triagem inicial via Gemini Flash 2.5 + busca vetorial pgvector (`support_knowledge_docs`).
+- Tiers de Confiança: T1 (>=0.85 Resposta Auto), T2 (0.65-0.84 Rascunho IA para Humano), T3 (<0.65 Encaminhamento Humano).
+- Ciclo Auto-aprendiz via `KnowledgeLearningService` ao resolver chamados.
 
 ### 4.12 Módulo de Parceiros (Revendedores)
-O sistema permite que parceiros (agências, consultores e revendedores) atuem como canais de distribuição do SaaS:
-- **Estrutura de Parceiros:** Cadastro de parceiros (`partners`) definindo seu tipo (`agency` ou `vendedor`), tier (`bronze`, `silver`, `gold`) e chaves Pix.
-- **Indicações e Comissões:** Controle de indicações (`referrals`) vinculadas a tenants, aplicando taxas de comissão para a taxa de adesão (setup) e mensalidade recorrente (`commissions_log`). Cálculo automático via `commissions-job.ts`.
-- **Impersonation/SSO:** Permite que o parceiro acesse o portal do cliente (tenant) com um login rápido sem expor as senhas das contas.
-- **Portal do Parceiro (páginas do portal):**
-  - `PartnerDashboard` — visão geral de comissões e carteira de clientes
-  - `MyClients` — listagem e gestão de tenants indicados
-  - `MyCommissions` — histórico e status de pagamento de comissões
-  - `RegisterClient` — wizard de cadastro de novo tenant pelo parceiro (plano + canais com permissões restritas)
+- Cadastro de parceiros (`partners`) com taxas de comissão para setup e recorrência.
+- Extrato financeiro imutável registrado na tabela `commissions_log`.
+- Impersonation/SSO para acesso rápido aos tenants vinculados.
+- Portal exclusivo do parceiro (`partner/src/pages/`) com 19 telas operacionais.
 
-### 4.13 Sistema de Prospecção Outbound e Comercial
-O painel administrativo possui ferramentas para prospecção outbound de novas empresas baseado em seu perfil de reputação:
-- **Campanhas de Prospecção:** Criação de campanhas (`prospect_campaigns`) segmentadas temporalmente.
-- **Gestão de Leads:** Enriquecimento de leads (`prospect_leads`) com dados de reputação de canais de origem (ex: nota Google Maps, volume de reclamações no Reclame Aqui).
-- **Envio Automático e Fila de Follow-ups:** Fila de disparos (`prospect_followup_queue`) via E-mail ou WhatsApp estruturados por templates de campanha.
-- **Polimorfismo Comercial:** Tabela de notas comerciais por canal (`commercial_channel_scores`) para classificar a reputação de empresas (matriz/filiais) de forma genérica.
+### 4.13 Sistema de Prospecção Outbound e Commercial Scoring
+- Campanhas de prospecção (`prospect_campaigns`), enriquecimento de leads (`prospect_leads`), fila de follow-ups (`prospect_followup_queue`) e scoring comercial de empresas (`commercial_channel_scores`).
+
+### 4.14 Telemetria, Quotas e Saúde do Sistema
+- **System Health Watchdog:** `system-health-job.ts` avalia taxa de erro de conectores e envia alertas aos administradores do SaaS.
+- **Watchdog de Conectores Travados:** Regras de descontinuação de conectores travados em 'running' com alertas escalonados (6h, 24h, 48h, 72h).
+- **Resource Usage Telemetry:** Tabela `resource_usage_telemetry` para monitoramento de custos de infraestrutura.
+- **AI Quotas & Logs:** Tabela `tenant_ai_quotas_and_logs` para acompanhamento de uso e limites por tenant.
+
+### 4.15 Billing e Checkout via Asaas
+- Gerenciamento de assinaturas via gateway Asaas (`src/api/asaas-webhook.ts` + `src/lib/asaas.ts`).
+- Suporte a pagamentos por Pix, Cartão de Crédito e Boleto Bancário.
 
 ---
 
 ## 5. Requisitos Não Funcionais
 
 ### 5.1 Segurança e Isolamento (Multi-tenancy)
-- **Row Level Security (RLS):** Todas as tabelas principais devem ter RLS habilitado.
-- **Função Auxiliar RLS:** Filtro de registros feito via helper no banco `auth_tenant_id()`, garantindo que um tenant nunca tenha acesso aos dados de outro.
-- **Tokens e Secrets:** Tokens sensíveis de APIs externas (Facebook, Instagram, Google OAuth, etc.) **nunca** devem ser guardados no código ou em texto claro no banco. Devem usar o **Supabase Vault** (`vault_secret_id` na tabela `channel_connectors`). Tokens Google OAuth são armazenados na coluna `google_oauth_tokens` da tabela `tenants`. Secrets do sistema ficam no arquivo `.env`.
-- **Permissões do Client do Supabase:** O portal do assinante deve utilizar estritamente a chave anônima (`anon_key`). A chave `service_role_key` deve ser usada de forma restrita e segura apenas no backend/scheduler.
+- RLS em todas as tabelas principais com a função `auth_tenant_id()`.
+- Secrets OAuth e tokens externos armazenados no **Supabase Vault** (`vault_secret_id`). Tokens Google OAuth criptografados em `tenants.google_oauth_tokens`.
+- Chave anônima (`anon_key`) no frontend e `service_role` estritamente no backend.
 
 ### 5.2 Performance e Escalabilidade
-- **Índices de Banco:** Criar índices para chaves estrangeiras comumente filtradas (`tenant_id`, `business_id`) e na coluna de agendamento do scheduler (`next_sync_at` parcial para conectores ativos).
-- **Índice HNSW:** Para busca semântica veloz, os embeddings vetoriais devem utilizar índice HNSW (`idx_kb_embeddings_hnsw`) otimizado para operações de distância de cosseno.
-- **Stats Diárias Pré-computadas:** O dashboard de KPIs e gráficos de tendências do portal e admin deve ler dados pré-agregados da tabela `review_stats_daily`. Esta tabela é atualizada por um trigger automático (`trg_reviews_aggregate_stats`) disparado em cada INSERT na tabela `reviews` (função `aggregate_daily_stats`), além de jobs diários de reprocessamento.
+- Índices HNSW para pgvector (`idx_kb_embeddings_hnsw`).
+- Tabela pré-agregada `review_stats_daily` mantida via triggers e jobs diários.
+- Fila atômica com `claim_review_jobs` (`FOR UPDATE SKIP LOCKED`).
 
 ---
 
-## 6. Layouts e Interfaces (Requisitos de UI/UX)
-
-O sistema possui duas interfaces web independentes construídas com React, Vite e Vanilla CSS, com design premium, transições suaves, gráficos interativos e suporte a temas.
+## 6. Layouts e Interfaces
 
 ### 6.1 Painel do Administrador (Admin)
-- **Dashboard Operacional:** KPIs globais (total de reviews, taxa negativa, score de insatisfação, alertas ativos), Ranking de Insatisfação dos assinantes (Top 5 por score médio nos últimos 30 dias), nuvem de tópicos recorrentes, timeline de reputação, tendência de sentimento 7 dias, distribuição de sentimento, reviews recentes, alertas ativos e notificações de infraestrutura.
-- **Gerenciador de Conectores:** Listagem global de conectores instalados por tenant, status atual (active, error, pending_auth), histórico de execuções (sync_jobs) e opção de forçar sincronização manual.
-- **Fila de Suporte:** Listagem avançada de tickets com flags de SLA próximo do estouro, tickets escalados e rascunhos de IA pendentes de aprovação.
-- **Gerenciador de Base de Conhecimento (KB):** Painel para revisão manual de artigos em `draft` gerados pela IA, edição e simulação de perguntas/respostas para testar a acurácia do RAG.
-- **Visualizador de Auditoria (Audit):** Linha do tempo técnica para visualizar o histórico de eventos de suporte e auditoria do SaaS.
-- **Planos:** Gerenciamento de planos de assinatura (`Plans`) — criação, edição, limites e preços.
-- **Commercial:** Scoring comercial de empresas prospectadas por canal.
-- **Comissões de Parceiros:** Visão admin de comissões geradas por parceiro e status de pagamento.
+- Dashboard Operacional, Gerenciador de Conectores, Fila de Suporte, Base de Conhecimento (KB), Auditoria, Planos, Scoring Comercial, Campanhas de Prospecção e Gestão de Comissões.
 
 ### 6.2 Portal do Assinante
-- **Dashboard de Reputação:** Reputation Score em destaque (0–1000 com classificação qualitativa), gráficos de evolução de avaliações, média de notas (rating) por canal, distribuição do sentimento e timeline histórica.
-- **Lista de Reviews:** Visualização em grid das avaliações normalizadas. Para reviews classificados como `negative` ou `critical`, exibir o resumo de sentimento gerado pela IA e o botão "Sugerir Resposta" (chama o Gemini para redigir uma sugestão de resposta contextualizada de forma empática).
-- **Benchmarking Local:** Comparativo de reputação entre a empresa do assinante e concorrentes monitorados na mesma área.
-- **Gerar Reviews (Widget):** Ferramenta para capturar feedback de clientes com filtro de sentimento — clientes satisfeitos são direcionados para plataformas externas; insatisfeitos são retidos internamente.
-- **Alertas:** Gerenciamento de regras de alerta e histórico de eventos disparados.
-- **Relatórios:** Histórico e download de relatórios mensais PDF gerados automaticamente.
-- **Painel de Chamados (Suporte):** Abertura fácil de chamados com widget de deflexão (busca na KB e exibe artigos antes de permitir o envio do formulário). Histórico de chamados com chat interativo e campo para notas de satisfação (CSAT).
-- **Copilot IA:** Chatbot flutuante inteligente disponível no portal para sanar dúvidas imediatas dos clientes usando a KB e informações da conta. Branding "Reputei IA" (não expõe o modelo subjacente).
-- **Configurações (Meu Perfil):** Página redesenhada com:
-  - Avatar com iniciais do nome em gradiente
-  - Dados da Conta (nome, e-mail, empresa, CNPJ)
-  - Segurança (alteração de senha)
-  - Alertas Críticos (configuração de e-mail e threshold)
-  - Integrações — conexão/desconexão do **Google Business Profile** via OAuth 2.0 com indicador de status (conectado/desconectado e data de conexão)
-- **Portal do Parceiro:** Área exclusiva para usuários parceiros dentro do mesmo portal:
-  - Dashboard de comissões e carteira
-  - Listagem e gestão de clientes indicados
-  - Cadastro de novos clientes (wizard)
-  - Histórico de comissões
+- Dashboard de Reputação, Lista de Reviews (com IA "Sugerir Resposta"), Benchmarking, Widget Site (Customização e Script Token), Gerar Reviews (WhatsApp), Alertas, Relatórios PDF, Suporte/Helpdesk com RAG, Copilot IA, Checkout Asaas e Configurações (com Google OAuth e Meta OAuth).
+
+### 6.3 Portal do Parceiro
+- Portal dedicado para revendedores com 19 telas (Dashboard MRR, Clientes, Extrato de Comissões, Wizard de Registro, Suporte, Benchmarking, Reviews e Configurações).
 
 ---
 
 ## 7. Planos e Preços Praticados
 
-Os planos de assinatura do Reputei são cadastrados e controlados dinamicamente na tabela `plans` com os seguintes limites e valores:
-
 | Slug | Nome | Preço Mensal | Canais Permitidos | Descrição / Principais Benefícios |
 |---|---|---|---|---|
-| `trial` | Trial | R$ 0,00 | 3 | Período de avaliação gratuita de 7 dias. |
-| `basico` | Básico | R$ 289,00 | 3 | **Para pequenos negócios locais.** 500 reviews/mês, Google Maps & TripAdvisor, alertas por e-mail, relatórios semanais, suporte por e-mail. |
-| `completo` | Completo | R$ 459,00 | 8 | **Monitoramento total + IA.** Reviews ilimitados, todos os canais disponíveis, IA Copilot incluso, alertas via WhatsApp/SMS, suporte prioritário. (Plano Popular) |
-| `custom` | Custom | R$ 389,00 | 4 | **Flexibilidade para sua marca.** Canais sob demanda, reviews ilimitados, IA Copilot incluso, relatórios personalizados, multi-unidades, até 4 canais de sua escolha. |
-| `enterprise` | Enterprise | R$ 1.500,00 | 999 | **Escala e performance máxima.** Canais ilimitados, SLA garantido, integrações via API/Webhooks, suporte 24/7 dedicado, consultoria trimestral, desconto por volume. |
-
-Os benefícios específicos de cada plano são normalizados na tabela `plan_benefits` e associados via chaves estrangeiras.
+| `trial` | Trial | R$ 0,00 | 3 | Avaliação gratuita de 7 dias. |
+| `basico` | Básico | R$ 289,00 | 3 | Negócios locais. 500 reviews/mês, Google Maps & TripAdvisor, alertas e relatórios. |
+| `completo` | Completo | R$ 459,00 | 8 | Monitoramento total + IA. Reviews ilimitados, todos os canais, Copilot IA, WhatsApp. |
+| `custom` | Custom | R$ 389,00 | 4 | Flexibilidade para marcas. Atender até 4 canais escolhidos sob demanda. |
+| `enterprise` | Enterprise | R$ 1.500,00 | 999 | Escala máxima. Canais ilimitados, SLA garantido, Webhooks, suporte dedicado 24/7. |
 
 ---
 
-## 8. Roadmap e Funcionalidades Pendentes
+## 8. Roadmap e Funcionalidades Futuras
 
-1. **Onboarding Self-service:** Fluxo assistido e intuitivo para o novo assinante cadastrar a empresa e autenticar seus primeiros conectores sem suporte humano.
-2. **Notificações WhatsApp/SMS:** Complemento ao canal de e-mail já implementado para alertas críticos em tempo real.
-3. **API Pública / Webhooks para Tenants:** Permitir que tenants Enterprise recebam eventos em tempo real via webhooks configuráveis ou consumam dados via API REST autenticada.
+1. **Onboarding Self-service 100% Autônomo:** Fluxo guiado sem assistência humana para novos assinantes configurarem marca e primeiros conectores.
+2. **API Pública REST com API Keys:** Autenticação e webhooks públicos para tenants Enterprise consumirem dados diretamente.
+3. **Notificações por SMS:** Canal secundário para alertas críticos de infraestrutura.

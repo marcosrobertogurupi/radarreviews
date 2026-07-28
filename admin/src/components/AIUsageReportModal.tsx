@@ -55,7 +55,10 @@ export function AIUsageReportModal({ isOpen, onClose, onUpdateSuccess }: Props) 
       const res = await fetch(`${API_URL}/api/admin/tenants/ai-usage`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}))
+        throw new Error(errJson.error || `Erro de resposta HTTP ${res.status}`)
+      }
       const data = await res.json()
       setReport(data.report || [])
       setSummary(data.summary || null)
