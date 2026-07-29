@@ -46,6 +46,8 @@ export function normalizeActorId(actorId: string): string {
 export const ACTOR_SAFETY_LIMITS: Record<string, ActorSafetyLimit> = {
   reclame_aqui:       { maxItems: 10, costPerItem: 0.05 },    // $50.00 / 1.000 itens ($0,05/item)
   trustpilot:         { maxItems: 15, costPerItem: 0.0015 },  // $1.50 / 1.000 itens ($0,0015/item)
+  google_maps:        { maxItems: 50, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
+  tripadvisor:        { maxItems: 50, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
   instagram_comments: { maxItems: 50, costPerItem: 0.0026 },  // $2.60 / 1.000 itens
   facebook_reviews:   { maxItems: 20, costPerItem: 0.005 },
   instagram_mentions: { maxItems: 20, costPerItem: 0.005 },
@@ -523,3 +525,126 @@ export async function fetchInstagramHashtags(hashtag: string, limit = 20, ctx?: 
     return []
   }
 }
+
+/**
+ * Coleta reviews do Google Maps via Apify Actor com ordenação por mais recentes e corte por data
+ */
+export async function fetchGoogleMapsReviewsApify(
+  placeId: string,
+  limit = 50,
+  lastSyncAt?: string | null,
+  ctx?: ApifyContext,
+  jobType: 'backfill' | 'incremental' = 'incremental'
+): Promise<any[]> {
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
+
+  const actor = normalizeActorId('compass~google-maps-reviews-scraper')
+  
+  // Data de corte para sync incremental (YYYY-MM-DD)
+  const reviewsStartDate = lastSyncAt ? new Date(lastSyncAt).toISOString().split('T')[0] : undefined
+
+  // Importar dinamicamente para evitar ciclo
+  const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
+
+  if (ctx?.tenant_id) {
+    const quota = await checkTenantScrapeQuota(ctx.tenant_id, 'google_maps', limit, jobType)
+    if (!quota.allowed) {
+      throw new Error(`[Apify Bloqueio de Cota] ${quota.reason || 'Cota mensal de reviews atingida'}`)
+    }
+    limit = quota.safeLimit
+  }
+
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('google_maps', limit)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      {
+        startUrls: [{ url: `https://www.google.com/maps/place/?q=place_id:${placeId}` }],
+        maxReviews: safeLimit,
+        limit: safeLimit,
+        sort: 'newest', // ⚠️ Obrigatório: ordena por mais recentes no Google Maps
+        ...(reviewsStartDate ? { reviewsStartDate } : {})
+      },
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
+    )
+
+    const items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (ctx?.tenant_id) {
+      await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'google_maps', items.length, estimatedCostUsd)
+    }
+
+    return items
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro Google Maps:`, JSON.stringify(err.response.data))
+    }
+    throw err
+  }
+}
+
+/**
+ * Coleta reviews do TripAdvisor via Apify Actor com ordenação por mais recentes e corte por data
+ */
+export async function fetchTripAdvisorReviewsApify(
+  listingUrlOrLocationId: string,
+  limit = 50,
+  lastSyncAt?: string | null,
+  ctx?: ApifyContext,
+  jobType: 'backfill' | 'incremental' = 'incremental'
+): Promise<any[]> {
+  const token = getApifyToken()
+  if (!token) throw new Error('APIFY_TOKEN não configurado')
+
+  const actor = normalizeActorId('compass~tripadvisor-scraper')
+
+  let url = listingUrlOrLocationId
+  if (!url.startsWith('http')) {
+    const locationId = listingUrlOrLocationId.replace(/\D/g, '')
+    url = `https://www.tripadvisor.com/LocationPhotoDirectLink-g1-d${locationId}-Reviews.html`
+  }
+
+  const reviewsStartDate = lastSyncAt ? new Date(lastSyncAt).toISOString().split('T')[0] : undefined
+
+  const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
+
+  if (ctx?.tenant_id) {
+    const quota = await checkTenantScrapeQuota(ctx.tenant_id, 'tripadvisor', limit, jobType)
+    if (!quota.allowed) {
+      throw new Error(`[Apify Bloqueio de Cota] ${quota.reason || 'Cota mensal de reviews atingida'}`)
+    }
+    limit = quota.safeLimit
+  }
+
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('tripadvisor', limit)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      {
+        startUrls: [{ url }],
+        maxReviews: safeLimit,
+        limit: safeLimit,
+        sort: 'newest', // ⚠️ Obrigatório: ordena por mais recentes no TripAdvisor
+        ...(reviewsStartDate ? { reviewsStartDate } : {})
+      },
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
+    )
+
+    const items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (ctx?.tenant_id) {
+      await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'tripadvisor', items.length, estimatedCostUsd)
+    }
+
+    return items
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro TripAdvisor:`, JSON.stringify(err.response.data))
+    }
+    throw err
+  }
+}
+

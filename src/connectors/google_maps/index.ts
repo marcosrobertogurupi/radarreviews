@@ -42,6 +42,10 @@ const OldPlaceResponseSchema = z.object({
   status: z.string(),
 })
 
+import { runGoogleMapsOAuth } from '../google-maps-oauth.js'
+import { getGoogleTokens } from '../../api/googleAuth.js'
+import { fetchGoogleMapsReviewsApify } from '../../lib/apify.js'
+
 // ── Função Principal ──────────────────────────────────────────────────────────
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
@@ -54,66 +58,90 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   const config = (connector.config ?? {}) as unknown as GoogleMapsConfig
-  const useScraper = config.mode === 'scraping' || config.use_scraper !== false
-  
-  let reviews: NormalizedReview[] = []
+  const maxReviews = config.max_reviews ?? 50
+  const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
 
+  // ── CAMADA 1: Google Business Profile OAuth API (Custo ZERO, Sem Limite de 5) ──
+  const tokens = await getGoogleTokens(connector.tenant_id)
+  if (tokens?.access_token) {
+    logger.info(`[${CHANNEL}] Executando via Camada 1: Google Business Profile OAuth API`)
+    return await runGoogleMapsOAuth(connector)
+  }
+
+  // ── CAMADA 2: Apify Actor Scraper (Com Ordenação Newest e Corte por Data) ────
+  if (process.env['APIFY_TOKEN']) {
+    try {
+      logger.info(`[${CHANNEL}] Executando via Camada 2: Apify Actor (${jobType})`, { placeId, lastSyncAt: connector.last_sync_at })
+      const rawApify = await fetchGoogleMapsReviewsApify(
+        placeId,
+        maxReviews,
+        connector.last_sync_at,
+        { tenant_id: connector.tenant_id, connector_id: connector.id },
+        jobType
+      )
+
+      if (rawApify.length > 0) {
+        const apifyNormalized: NormalizedReview[] = rawApify.map(raw => normalizeApifyItem(raw, connector))
+        result.reviews_fetched = apifyNormalized.length
+
+        const ingest = await ingestReviews(apifyNormalized, CHANNEL, connector.id, connector.business_id)
+        result.reviews_new = ingest.reviews_new
+        result.reviews_updated = ingest.reviews_updated
+
+        logger.info(`[${CHANNEL}] Apify retornou ${apifyNormalized.length} reviews (${ingest.reviews_new} novos).`)
+        return result
+      }
+    } catch (apifyErr: any) {
+      logger.warn(`[${CHANNEL}] Falha na Camada 2 (Apify): ${apifyErr.message}. Alternando para fallback...`)
+      if (apifyErr.message?.includes('Bloqueio de Cota')) {
+        result.error = apifyErr.message
+        return result
+      }
+    }
+  }
+
+  // ── CAMADA 3: Fallback Legado (APIs Públicas + Playwright) ────────────────────
+  logger.info(`[${CHANNEL}] Executando via Camada 3: Fallback Legado (API Places + Playwright)...`)
+  let reviews: NormalizedReview[] = []
   let scraperFailed = false
   let apiOldFailed = false
   let apiNewFailed = false
 
-  // 1. Tentar APIs do Google (Novo Primário: Rápido e Estável)
-  logger.info(`[${CHANNEL}] Buscando reviews via APIs do Google (Primário)...`)
   const apiReviews: NormalizedReview[] = []
 
-  // Tentar API Nova (Relevant)
+  // Tentar API Nova
   try {
     const novas = await fetchFromApiNew(placeId)
     apiReviews.push(...novas.map(r => normalizeNew(r, connector)))
-    logger.info(`[${CHANNEL}] API Nova retornou ${novas.length} reviews.`)
   } catch (err) {
     apiNewFailed = true
-    logger.warn(`[${CHANNEL}] API Nova falhou:`, {
-      error: err instanceof Error ? err.message : String(err),
-    })
   }
 
-  // Tentar API Legada (Newest)
+  // Tentar API Legada
   try {
     const legadas = await fetchFromApiOld(placeId)
     apiReviews.push(...legadas.map(r => normalizeOld(r, connector)))
-    logger.info(`[${CHANNEL}] API Legada retornou ${legadas.length} reviews.`)
   } catch (err) {
     apiOldFailed = true
-    logger.warn(`[${CHANNEL}] API Legada falhou:`, {
-      error: err instanceof Error ? err.message : String(err),
-    })
   }
 
   reviews = apiReviews
 
-  // 2. Tentar Scraping via Playwright (Secundário/Complemento para histórico profundo)
+  const useScraper = config.mode === 'scraping' || config.use_scraper !== false
   if (useScraper) {
     try {
       const rawScraped = await scrapeGoogleMapsReviews(placeId, config)
       if (rawScraped.length > 0) {
         const scrapedNormalized = rawScraped.map(r => mapReviewToNormalized(r, connector))
-        // Dedup: Adicionar apenas reviews obtidos pelo scraper que não foram pegos pela API
         const existingIds = new Set(reviews.map(r => r.external_id))
-        let scrapedAdded = 0
         for (const sr of scrapedNormalized) {
           if (!existingIds.has(sr.external_id)) {
             reviews.push(sr)
-            scrapedAdded++
           }
         }
-        logger.info(`[${CHANNEL}] Scraper retornou ${scrapedNormalized.length} reviews (${scrapedAdded} novos mesclados).`)
       }
     } catch (err) {
       scraperFailed = true
-      logger.warn(`[${CHANNEL}] Scraper falhou:`, {
-        error: err instanceof Error ? err.message : String(err),
-      })
     }
   }
 
@@ -130,14 +158,32 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return result
   }
 
-  // 3. Ingestão
   result.reviews_fetched = reviews.length
   const ingest = await ingestReviews(reviews, CHANNEL, connector.id, connector.business_id)
-  
   result.reviews_new = ingest.reviews_new
   result.reviews_updated = ingest.reviews_updated
 
   return result
+}
+
+function normalizeApifyItem(raw: any, connector: ChannelConnector): NormalizedReview {
+  const reviewId = raw.reviewId || raw.id || raw.cid || `apify_gmaps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const publishedAt = raw.publishedAtDate || raw.date || (raw.timestamp ? new Date(raw.timestamp).toISOString() : new Date().toISOString())
+
+  return {
+    tenant_id: connector.tenant_id,
+    business_id: connector.business_id,
+    connector_id: connector.id,
+    channel: CHANNEL,
+    external_id: String(reviewId),
+    published_at: publishedAt,
+    body: raw.text || raw.reviewText || raw.caption || '',
+    author_name: raw.name || raw.authorName || raw.reviewerName || 'Anônimo',
+    rating: raw.stars || raw.rating || undefined,
+    sentiment: 'unanalyzed',
+    url: raw.reviewUrl || `https://www.google.com/maps/place/?q=place_id:${connector.external_id}`,
+    raw_data: raw
+  }
 }
 
 // ── Helpers da API ────────────────────────────────────────────────────────────

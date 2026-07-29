@@ -85,18 +85,22 @@ O servidor Node.js (TypeScript) roda na porta `3001` (ambiente dev) e em contêi
 
 O backend executa um Worker unificado (`src/scheduler/index.ts`) que opera continuamente os seguintes serviços:
 
-1. **Polling de Conectores (60s):** Busca registros na tabela `channel_connectors` onde `status = 'active'` e `next_sync_at <= now()`.
+1. **Polling de Conectores (60s):** Busca registros na tabela `channel_connectors` onde `status = 'active'` e `next_sync_at <= now()`. Seta automaticamente `job_type = 'backfill'` (1ª execução) ou `'incremental'` (sincronização de rotina).
 2. **Fila Atômica por Lock Distribuído:** Utiliza o procedimento `claim_review_jobs` com `FOR UPDATE SKIP LOCKED` para evitar que múltiplos workers processem o mesmo job.
-3. **Execução dos 8 Conectores:** Dispara a classe responsável por cada canal: Google Maps, TripAdvisor, Consumidor.gov, Trustpilot, Reddit, Facebook, Instagram, Reclame Aqui.
-4. **Pipeline de Ingestão (`src/lib/ingest.ts`):** 
+3. **Execução dos 8 Conectores em 3 Camadas:** 
+   - **Google Maps:** 1) Google Business Profile OAuth API (`sync_mode: oauth_api` - R$ 0, sem teto de 5, 50 itens/pág), 2) Apify Actor (`compass~google-maps-reviews-scraper` com `sort: "newest"` e `reviewsStartDate`), 3) Fallback API legada/Playwright.
+   - **TripAdvisor:** 1) Apify Actor (`compass~tripadvisor-scraper` com `sort: "newest"` e `reviewsStartDate`), 2) Fallback DataForSEO/Playwright/API.
+   - **Consumidor.gov, Trustpilot, Reddit, Facebook, Instagram, Reclame Aqui:** Executam seus conectores dedicados.
+4. **Governança de Cotas & Orçamento Apify (`src/lib/apify-quota.ts`):** Intercepta e valida `consumed_this_cycle < monthly_review_budget` na tabela `tenant_scrape_quotas` antes de disparar requisições ao Apify. Grava telemetria e custo estimado USD.
+5. **Pipeline de Ingestão (`src/lib/ingest.ts`):** 
    - Executa `upsert` na tabela `reviews` com base na constraint `(external_id, channel, tenant_id)`.
    - Armazena o JSON completo na coluna `raw_data`.
-5. **Análise de Sentimento em Batch (`src/lib/sentiment.ts`):** 
+6. **Análise de Sentimento em Batch (`src/lib/sentiment.ts`):** 
    - Processa novas avaliações com o Gemini 2.5 Flash respeitando os limites da cota (`gemini-rate-limiter.ts`).
-6. **Watchdog de Saúde e Conectores Travados:**
+7. **Watchdog de Saúde e Conectores Travados:**
    - Detecta conectores travados no estado `running` e aplica reset automático com geração de alertas (6h, 24h, 48h, 72h).
    - O `system-health-job.ts` avalia a saúde operacional dos jobs e notifica os operadores.
-7. **Jobs Estratégicos Regulares:**
+8. **Jobs Estratégicos Regulares:**
    - `reputationScore.ts`: Recalcula diariamente o Reputation Score (0–1000).
    - `prescriptiveAnalysis.ts`: Gera recomendações estratégicas com IA.
    - `benchmark-snapshot-job.ts`: Atualiza os snapshots de concorrentes locais.

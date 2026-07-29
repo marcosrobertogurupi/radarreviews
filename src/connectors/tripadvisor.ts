@@ -64,6 +64,8 @@ const LocationDetailsSchema = z.object({
 
 type TripAdvisorReview = z.infer<typeof TripAdvisorReviewSchema>
 
+import { fetchTripAdvisorReviewsApify } from '../lib/apify.js'
+
 // ── Função principal ─────────────────────────────────────────────
 
 export async function run(connector: ChannelConnector): Promise<JobResult> {
@@ -73,33 +75,57 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   const config = connector.config as Record<string, unknown>
   const maxReviews = (config['max_reviews'] as number | undefined) ?? 50
   const sinceDays = (config['since_days'] as number | undefined) ?? 90
+  const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
 
-  // ── 1. Estratégia DataForSEO (Primária) ──────────────────────
-  
-  let urlPath = config['url_path'] as string | undefined
   let listingUrl = config['listing_url'] as string | undefined
+  let urlPath = config['url_path'] as string | undefined
   let reviews: NormalizedReview[] = []
 
-  if (urlPath) {
+  // ── 1. Estratégia Apify Actor (Primária — Suporta Sort por Recentes + Corte por Data) ──
+  if (process.env['APIFY_TOKEN']) {
+    try {
+      const targetIdentifier = listingUrl || urlPath || connector.external_id
+      if (targetIdentifier) {
+        logger.info(`[${CHANNEL}] Iniciando Apify Actor (${jobType}) para: ${targetIdentifier}`)
+        const rawApify = await fetchTripAdvisorReviewsApify(
+          targetIdentifier,
+          maxReviews,
+          connector.last_sync_at,
+          { tenant_id: connector.tenant_id, connector_id: connector.id },
+          jobType
+        )
+
+        if (rawApify.length > 0) {
+          reviews = rawApify.map(raw => normalizeApifyTripAdvisor(raw, connector))
+          logger.info(`[${CHANNEL}] Apify retornou ${reviews.length} reviews`)
+        }
+      }
+    } catch (apifyErr: any) {
+      logger.warn(`[${CHANNEL}] Falha no Apify Actor: ${apifyErr.message}. Alternando para fallback...`)
+      if (apifyErr.message?.includes('Bloqueio de Cota')) {
+        result.error = apifyErr.message
+        return result
+      }
+    }
+  }
+
+  // ── 2. Fallback: DataForSEO (Secundário) ──────────────────────
+  if (reviews.length === 0 && urlPath) {
     try {
       logger.info(`[${CHANNEL}] Iniciando DataForSEO para url_path: ${urlPath}`)
       const postRes = await tripadvisorReviewsTaskPost(urlPath, `${connector.id}_${Date.now()}`)
       const taskId = postRes.tasks?.[0]?.id
 
       if (taskId) {
-        // Polling de 30s (15 tentativas a cada 2s)
         let dfReviewsRaw: any[] = []
         for (let i = 0; i < 15; i++) {
           await new Promise(r => setTimeout(r, 2000))
           const getRes = await tripadvisorReviewsTaskGet(taskId)
           const task = getRes.tasks?.[0]
           
-          if (task?.status_code === 20000) { // Success
+          if (task?.status_code === 20000) {
             dfReviewsRaw = task.result?.[0]?.items ?? []
             break
-          }
-          if (task?.status_code !== 40100) { // Not ready yet
-            logger.debug(`[${CHANNEL}] DataForSEO task ${taskId} status: ${task?.status_message}`)
           }
         }
 
@@ -113,19 +139,15 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     }
   }
 
-  // ── 2. Fallback: Scraper Playwright (Secundária) ──────────────
-
+  // ── 3. Fallback: Scraper Playwright (Terciário) ──────────────
   if (reviews.length === 0) {
-
     if (!listingUrl) {
       listingUrl = await discoverListingUrl(connector)
       if (listingUrl) {
-        // Persiste para evitar chamada de API em syncs futuros
         await supabase
           .from('channel_connectors')
           .update({ config: { ...config, listing_url: listingUrl } })
           .eq('id', connector.id)
-        logger.info(`[${CHANNEL}] URL de listagem descoberta e salva`, { listingUrl })
       }
     }
 
@@ -144,45 +166,15 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     }
   }
 
-  // ── 3. Fallback: API (máx 5 reviews no plano free) ────────────
-
+  // ── 4. Fallback: API Oficial ──────────────────────────────────
   if (reviews.length === 0) {
     try {
       const apiItems = await fetchFromApi(connector)
       if (apiItems.length > 0) {
         reviews = apiItems.map(r => normalizeApi(r, connector))
-        logger.info(`[${CHANNEL}] API fallback retornou ${reviews.length} reviews`)
-
-        // Aproveita a URL de um review da API para cache futuro
-        if (!listingUrl && apiItems[0]?.url) {
-          const discoveredUrl = extractListingUrlFromReviewUrl(apiItems[0].url)
-          if (discoveredUrl) {
-            await supabase
-              .from('channel_connectors')
-              .update({ config: { ...config, listing_url: discoveredUrl } })
-              .eq('id', connector.id)
-            logger.info(`[${CHANNEL}] URL descoberta via review da API`, { discoveredUrl })
-          }
-        }
       }
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err)
-      if (
-        axios.isAxiosError(err) &&
-        (err.response?.status === 401 || err.response?.status === 403)
-      ) {
-        await supabase
-          .from('channel_connectors')
-          .update({
-            status: 'pending_auth',
-            error_message: `API key inválida ou sem permissão: ${err instanceof Error ? err.message : ''}`,
-          })
-          .eq('id', connector.id)
-      }
-      logger.error(`[${CHANNEL}] Ambas as estratégias falharam`, {
-        connector_id: connector.id,
-        error: result.error,
-      })
       return result
     }
   }
@@ -370,4 +362,25 @@ function normalizeRating(value: unknown): number | undefined {
   const num = Number(value)
   if (isNaN(num)) return undefined
   return Math.min(5, Math.max(0, num))
+}
+
+function normalizeApifyTripAdvisor(raw: any, connector: ChannelConnector): NormalizedReview {
+  const reviewId = raw.id || raw.reviewId || `apify_ta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const publishedAt = raw.publishedDate || raw.date || (raw.createdAt ? new Date(raw.createdAt).toISOString() : new Date().toISOString())
+
+  return {
+    tenant_id: connector.tenant_id,
+    business_id: connector.business_id,
+    connector_id: connector.id,
+    channel: CHANNEL,
+    external_id: String(reviewId),
+    published_at: publishedAt,
+    body: raw.text || raw.reviewDescription || raw.content || '',
+    title: raw.title || raw.reviewTitle || undefined,
+    author_name: raw.user?.username || raw.author || raw.reviewer || 'Anônimo',
+    rating: raw.rating || raw.stars || undefined,
+    sentiment: 'unanalyzed',
+    url: raw.url || raw.reviewUrl || undefined,
+    raw_data: raw
+  }
 }

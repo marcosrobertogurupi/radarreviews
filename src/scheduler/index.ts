@@ -354,9 +354,11 @@ export async function runOnce(): Promise<void> {
     await Promise.all(
       connectors.map(async (connector) => {
         // 1. Primeiro, insere o job pendente e trata o erro do Supabase
+        const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
         const { error: insertError } = await supabase.from('sync_jobs').insert({
           connector_id: connector.id,
           status: 'pending',
+          job_type: jobType,
           started_at: null
         })
 

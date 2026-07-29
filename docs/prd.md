@@ -62,23 +62,30 @@ Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de s
 ## 4. Requisitos Funcionais por Módulo
 
 ### 4.1 Ingestão e Conectores
-O sistema sincroniza periodicamente dados de 8 canais diferentes:
+O sistema sincroniza periodicamente dados de 8 canais diferentes através de uma **Arquitetura de Coleta em 3 Camadas** com governança orçamentária por tenant:
 
-1. **Google Maps (`google_maps`):** Coleta via Google Places API (New) / Google Business Profile API.
-2. **TripAdvisor (`tripadvisor`):** Coleta via Content API v2, com suporte a paginação baseada em `offset` para histórico completo.
+1. **Google Maps (`google_maps`):** 
+   - *Camada 1 (OAuth API - Custo R$ 0):* Utiliza o token OAuth do Google Business Profile (`tenants.google_oauth_tokens`) no endpoint `accounts.locations.reviews.list` com paginação nativa de 50 em 50 reviews, sem teto de 5.
+   - *Camada 2 (Apify Actor):* Se OAuth não estiver conectado, executa o Actor Apify `compass~google-maps-reviews-scraper` forçando `sort: "newest"` e corte por data `reviewsStartDate = last_sync_at`.
+   - *Camada 3 (Fallback Legado):* APIs públicas do Google Places / Playwright.
+2. **TripAdvisor (`tripadvisor`):** 
+   - *Camada 1 (Apify Actor):* Executa o Actor Apify `compass~tripadvisor-scraper` com `sort: "newest"` e corte por data `reviewsStartDate = last_sync_at`.
+   - *Camada 2 (Fallback):* Content API v1 / DataForSEO / Playwright.
 3. **Consumidor.gov (`consumidor_gov`):** Ingestão via dados abertos (CSV mensais dados.gov.br) com hash SHA-256 para ID externo único.
-4. **Trustpilot (`trustpilot`):** Coleta via Consumer API v1 (leitura pública sem auth).
+4. **Trustpilot (`trustpilot`):** Coleta via Apify Actor `pear_fight~trustpilot-scraper` / Consumer API v1.
 5. **Reddit (`reddit`):** Busca menções públicas por palavras-chave (JSON público e OAuth2 Client Credentials).
-6. **Facebook (`facebook`):** Busca avaliações públicas via Meta Graph API com tokens armazenados no Vault.
-7. **Instagram (`instagram`):** Busca comentários via Instagram Graph API com filtro de palavras-chave.
-8. **Reclame Aqui (`reclame_aqui`):** Coleta de reclamações públicas via API de parceiro ou raspagem com Playwright.
+6. **Facebook (`facebook`):** Busca avaliações públicas via Meta Graph API / Apify Actor.
+7. **Instagram (`instagram`):** Busca comentários via Instagram Graph API / Apify Actor.
+8. **Reclame Aqui (`reclame_aqui`):** Coleta de reclamações públicas via Apify Actor / Playwright.
 
-#### Regras de Ingestão:
-- **Deduplicação Obrigatória:** Inserções na tabela `reviews` utilizam `ON CONFLICT` com a constraint composta `(external_id, channel, tenant_id)` (Migration `appsec_hardening_2026_06_01`).
+#### Regras de Ingestão e Controle Orçamentário (Apify Quotas):
+- **Governança de Cotas por Tenant (`tenant_scrape_quotas`):** Teto mensal de reviews raspados no Apify por plano (Trial: 200, Básico: 1.000, Completo: 5.000, Enterprise: 20.000). A rotina `checkTenantScrapeQuota` intercepta e bloqueia execuções na API do Apify se a cota do tenant for atingida.
+- **Tipos de Job (`sync_jobs.job_type`):** Categorizados em `'backfill'` (primeiro sync/manual, busca histórico) e `'incremental'` (syncs diários com `reviewsStartDate` obrigatório, eliminando reprocessamento de reviews antigos).
+- **Deduplicação Obrigatória:** Inserções na tabela `reviews` utilizam `ON CONFLICT` com a constraint composta `(external_id, channel, tenant_id)`.
 - **Lock Distribuído na Fila:** Procedimento armazenado `claim_review_jobs` com `FOR UPDATE SKIP LOCKED` evita condições de corrida entre workers.
 - **Preservação de Dados:** Payload bruto (JSON) mantido integralmente em `raw_data`.
 - **Log de Execução:** Histórico completo registrado em `sync_jobs`.
-- **Atualização de Status:** `last_sync_at`, `next_sync_at` e `status` atualizados em `channel_connectors`.
+- **Atualização de Status:** `last_sync_at`, `next_sync_at`, `sync_mode` (`'oauth_api'` | `'scrape'`) e `status` atualizados em `channel_connectors`.
 
 ### 4.2 Integração Google Business Profile (OAuth 2.0)
 O portal do assinante permite conectar a conta Google Business Profile via OAuth 2.0 Authorization Code flow:

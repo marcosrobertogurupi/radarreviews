@@ -1,5 +1,5 @@
-// Testes do conector Google Maps
-// Usa mocks do Supabase e do axios para evitar chamadas reais à API
+process.env['SUPABASE_URL'] = 'https://test-supabase.supabase.co'
+process.env['SUPABASE_SERVICE_ROLE_KEY'] = 'test-service-role-key'
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { run } from '../../src/connectors/google_maps/index.js'
@@ -9,8 +9,9 @@ import { mockConnector } from '../fixtures/connector.js'
 // Mocks
 // -----------------------------------------------------------------------------
 
-// Mock do dotenv para não precisar do .env em testes
-vi.mock('dotenv/config', () => ({}))
+vi.mock('../../src/api/googleAuth.js', () => ({
+  getGoogleTokens: vi.fn().mockResolvedValue(null),
+}))
 
 // Mock do cliente Supabase
 // Mock do Supabase com rpc na raiz e encadeamento de select/in
@@ -106,8 +107,11 @@ describe('Google Maps connector', () => {
     axiosMock = vi.mocked(axiosModule.default.get)
     axiosMock.mockResolvedValue(googleMapsApiResponse)
 
-    // Definir variável de ambiente necessária
+    // Definir variáveis de ambiente necessárias para teste da API legada
     process.env['GOOGLE_MAPS_API_KEY'] = 'test-api-key'
+    process.env['SUPABASE_URL'] = 'https://test-supabase.supabase.co'
+    process.env['SUPABASE_SERVICE_ROLE_KEY'] = 'test-service-role-key'
+    delete process.env['APIFY_TOKEN']
   })
 
   it('retorna JobResult com reviews_fetched > 0 para um place_id válido', async () => {
