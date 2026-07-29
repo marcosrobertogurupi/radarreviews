@@ -6,9 +6,10 @@
   if (!token) return;
 
   let API_BASE = 'https://api.reputei.com.br';
-  if (document.currentScript && document.currentScript.src) {
+  let scriptEl = document.currentScript || document.querySelector('script[src*="widget.js"]');
+  if (scriptEl && scriptEl.src) {
     try {
-      const url = new URL(document.currentScript.src);
+      const url = new URL(scriptEl.src);
       API_BASE = url.origin;
     } catch(e) {}
   }

@@ -10,6 +10,7 @@ import { supabase } from './supabase.js'
 import { logger } from './logger.js'
 import { checkAlerts } from './alerts.js'
 import { analyzeBatch } from './sentiment.js'
+import { processAutonomousAutoReplies } from '../services/ai/autoReplyGenerator.js'
 import type { NormalizedReview, SourceChannel } from '../types/review.js'
 import DOMPurify from 'isomorphic-dompurify'
 import { z } from 'zod'
@@ -212,6 +213,10 @@ export async function ingestReviews(
   // ------------------------------------------------------------------
   if (newReviews.length > 0) {
     await checkAlerts(newReviews, businessId, channel)
+    // Dispara geração autônoma de respostas por IA em segundo plano
+    processAutonomousAutoReplies(newReviews, businessId).catch(err => {
+      logger.error('[ingest] Erro ao disparar respostas autônomas:', { error: err })
+    })
   }
 
   return result

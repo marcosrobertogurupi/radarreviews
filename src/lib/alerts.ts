@@ -58,7 +58,6 @@ export async function checkAlerts(
     .select('*')
     .eq('is_active', true)
     .or(`business_id.eq.${businessId},business_id.is.null`)
-    .or(`channel.eq.${channel},channel.is.null`)
 
   if (error) {
     logger.warn('[alerts] Falha ao buscar regras de alerta', {
@@ -67,7 +66,9 @@ export async function checkAlerts(
     })
   }
 
-  let activeRules = (rules as AlertRule[]) ?? []
+  let activeRules = ((rules as AlertRule[]) ?? []).filter(
+    r => !r.channel || r.channel === channel
+  )
 
   // Se não existirem regras para a empresa/tenant, garantir regra padrão de Critical Review
   if (activeRules.length === 0 && reviews.length > 0) {
@@ -275,9 +276,9 @@ export async function checkAlerts(
 
   const rulesById = new Map((activeRules).map(r => [r.id, r]))
 
-  // Obter o e-mail do assinante para notificação
+  // Obter e-mail e WhatsApp do assinante para notificação
   const tenantId = reviews[0]?.tenant_id
-  const subscriberEmail = tenantId ? await getSubscriberEmail(tenantId) : null
+  const subscriberDetails = tenantId ? await getSubscriberDetails(tenantId) : { email: null, whatsapp: null }
 
   for (const event of insertedEvents) {
     const rule = rulesById.get(event.rule_id)
@@ -294,8 +295,8 @@ export async function checkAlerts(
       }
 
       const extraData = {
-        subscriber_whatsapp: '',
-        subscriber_email: subscriberEmail || '',
+        subscriber_whatsapp: subscriberDetails.whatsapp || '',
+        subscriber_email: subscriberDetails.email || '',
       }
 
       try {
@@ -336,12 +337,12 @@ export async function checkAlerts(
     }
 
     // Enviar e-mail de alerta para o administrador do assinante
-    if (subscriberEmail) {
+    if (subscriberDetails.email) {
       const reviewExtId = (event.detail as any)?.review_external_id || (event.detail as any)?.external_id
       const matchedReview = reviews.find(r => r.external_id === reviewExtId)
       if (matchedReview) {
-        await emailService.sendReviewAlertEmail(subscriberEmail, matchedReview, rule?.name || 'Avaliação Crítica Detectada').then(() => {
-          logger.info('[alerts] E-mail de alerta enviado para o assinante', { recipient: subscriberEmail, review_id: matchedReview.external_id })
+        await emailService.sendReviewAlertEmail(subscriberDetails.email, matchedReview, rule?.name || 'Avaliação Crítica Detectada').then(() => {
+          logger.info('[alerts] E-mail de alerta enviado para o assinante', { recipient: subscriberDetails.email, review_id: matchedReview.external_id })
         }).catch(err => {
           logger.error('[alerts] Erro ao enviar e-mail de alerta', { rule_id: rule?.id, err })
         })
@@ -351,28 +352,29 @@ export async function checkAlerts(
 }
 
 /**
- * Busca o e-mail do administrador do assinante para notificações.
+ * Busca e-mail e WhatsApp do administrador do assinante para notificações.
  */
-async function getSubscriberEmail(tenantId: string): Promise<string | null> {
+async function getSubscriberDetails(tenantId: string): Promise<{ email: string | null; whatsapp: string | null }> {
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('admin_email')
+    .select('admin_email, admin_whatsapp')
     .eq('id', tenantId)
     .single()
 
-  if (tenant?.admin_email) {
-    return tenant.admin_email
+  let email = tenant?.admin_email ?? null
+  const whatsapp = tenant?.admin_whatsapp ?? null
+
+  if (!email) {
+    const { data: user } = await supabase
+      .from('tenant_users')
+      .select('email')
+      .eq('tenant_id', tenantId)
+      .limit(1)
+      .single()
+    email = user?.email ?? null
   }
 
-  // Fallback: buscar na tabela tenant_users um usuário com perfil admin ou owner
-  const { data: user } = await supabase
-    .from('tenant_users')
-    .select('email')
-    .eq('tenant_id', tenantId)
-    .limit(1)
-    .single()
-
-  return user?.email ?? null
+  return { email, whatsapp }
 }
 
 

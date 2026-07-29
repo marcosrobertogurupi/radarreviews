@@ -47,6 +47,7 @@ import { calculateAllScoresForTenant } from '../services/reputationScore.js'
 import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
 import { handleGoogleConnect, handleGoogleCallback, handleGoogleStatus, handleGoogleDisconnect } from './googleAuth.js'
 import { updateCompetitorStats } from '../services/ai/benchmarking.js'
+import { handleAutoReplyRoutes } from './autoReplyRoutes.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -2817,6 +2818,20 @@ const server = http.createServer(async (req, res) => {
       console.error('[support-api] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
+    return
+  }
+
+  if (url.startsWith('/api/auto-reply')) {
+    handleAutoReplyRoutes(req, res, url).catch(err => {
+      console.error('[auto-reply-api] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  if (url === '/cc39ff0d-24d3-471a-bdcd-1cc2e912354c.html' || url === '/cc39ff0d-24d3-471a-bdcd-1cc2e912354c') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end('cc39ff0d-24d3-471a-bdcd-1cc2e912354c\n')
     return
   }
 

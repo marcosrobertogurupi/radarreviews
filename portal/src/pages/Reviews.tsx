@@ -124,14 +124,14 @@ export default function Reviews({ tenantId, onNavigateCopilot }: Props) {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
-      const res = await fetch(`${API_URL}/api/reviews/${selected.id}/respond`, {
+      const res = await fetch(`${API_URL}/api/auto-reply/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ message: responseText }),
+        body: JSON.stringify({ review_id: selected.id, response_text: responseText }),
       })
-      const json = await res.json() as { ok?: boolean; error?: string }
-      if (json.ok) {
-        toast('Resposta enviada com sucesso!', 'success')
+      const json = await res.json() as { success?: boolean; ok?: boolean; error?: string }
+      if (json.success || json.ok) {
+        toast('Resposta transmitida com sucesso e aprendizado da IA atualizado!', 'success')
         load(true)
         closeDetail()
       } else {

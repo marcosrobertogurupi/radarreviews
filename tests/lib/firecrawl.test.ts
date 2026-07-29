@@ -14,12 +14,15 @@ vi.mock('axios')
 const mockSupabaseMethods = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
-  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+  gte: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
   or: vi.fn().mockResolvedValue({ data: [], error: null }),
   upsert: vi.fn().mockReturnThis(),
   single: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
   update: vi.fn().mockReturnThis(),
-  insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+  insert: vi.fn().mockReturnThis(),
 }
 
 vi.mock('../../src/lib/supabase.js', () => ({

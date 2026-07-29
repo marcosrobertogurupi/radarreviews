@@ -131,7 +131,7 @@ describe('Motor de Regras de Alertas - Reputei', () => {
     expect(mocks.state.insertedEvents[0].rule_id).toBe('rule-1')
     expect(axios.post).toHaveBeenCalled()
     expect(mocks.state.updatedEvents.length).toBe(1)
-    expect(mocks.state.updatedEvents[0].notified).toBe(true)
+    expect(mocks.state.updatedEvents[0].detail.webhook_sent).toBe(true)
   })
 
   it('deve disparar alerta keyword se a palavra-chave configurada estiver presente no review', async () => {
