@@ -355,12 +355,22 @@ export async function runOnce(): Promise<void> {
       connectors.map(async (connector) => {
         // 1. Primeiro, insere o job pendente e trata o erro do Supabase
         const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
-        const { error: insertError } = await supabase.from('sync_jobs').insert({
+        let insertRes = await supabase.from('sync_jobs').insert({
           connector_id: connector.id,
           status: 'pending',
           job_type: jobType,
           started_at: null
         })
+
+        if (insertRes.error && insertRes.error.message.includes('job_type')) {
+          insertRes = await supabase.from('sync_jobs').insert({
+            connector_id: connector.id,
+            status: 'pending',
+            started_at: null
+          })
+        }
+
+        const insertError = insertRes.error
 
         if (insertError) {
           logger.error('[scheduler] Falha ao criar sync_job para o conector', {
@@ -370,7 +380,6 @@ export async function runOnce(): Promise<void> {
             details: insertError.details,
             hint: insertError.hint
           })
-          // Não avança para marcar o conector como 'running' se falhar na criação do job
           return
         }
 

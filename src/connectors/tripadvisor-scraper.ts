@@ -135,13 +135,16 @@ export async function scrapeTripAdvisorReviews(
 // Ex: Hotel_Review-g123-d456-Reviews-Hotel_Name.html
 //  → Hotel_Review-g123-d456-Reviews-or10-Hotel_Name.html (offset 10)
 function buildPageUrl(baseUrl: string, offset: number): string {
-  if (offset === 0) return baseUrl
-  // Remove offset existente se houver
-  const cleaned = baseUrl.replace(/-or\d+-/, '-')
+  let urlWithSort = baseUrl
+  if (!urlWithSort.includes('sortType=')) {
+    const sep = urlWithSort.includes('?') ? '&' : '?'
+    urlWithSort = `${urlWithSort}${sep}sortType=RECENCY`
+  }
+  if (offset === 0) return urlWithSort
+  const cleaned = urlWithSort.replace(/-or\d+-/, '-')
   if (cleaned.includes('-Reviews-')) {
     return cleaned.replace('-Reviews-', `-Reviews-or${offset}-`)
   }
-  // Fallback: query param
   const sep = cleaned.includes('?') ? '&' : '?'
   return `${cleaned}${sep}offset=${offset}`
 }
