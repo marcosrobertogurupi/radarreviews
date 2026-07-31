@@ -176,6 +176,10 @@ async function loadConnector(channel: string): Promise<ConnectorRunner | null> {
       const mod = await import('../connectors/reclame-aqui.js')
       return mod.run
     }
+    if (channel === 'booking') {
+      const mod = await import('../connectors/booking.js')
+      return mod.run
+    }
 
     logger.warn(`[scheduler] Canal desconhecido: ${channel}`)
     return null

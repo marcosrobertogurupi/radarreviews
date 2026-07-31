@@ -18,7 +18,7 @@ import { z } from 'zod'
 // [APPSEC] C9 — Schema Zod para validação e sanitização XSS
 export const RawReviewSchema = z.object({
   external_id:        z.string().max(255),
-  channel:            z.enum(['google_maps', 'facebook', 'instagram', 'reclame_aqui', 'consumidor_gov', 'tripadvisor', 'trustpilot', 'reddit']).optional(),
+  channel:            z.enum(['google_maps', 'facebook', 'instagram', 'reclame_aqui', 'consumidor_gov', 'tripadvisor', 'trustpilot', 'reddit', 'booking']).optional(),
   rating:             z.number().min(0).max(5).nullable().optional(),
   title:              z.string().max(255).nullable().optional()
                         .transform(s => s ? DOMPurify.sanitize(s, { ALLOWED_TAGS: [] }) : s),

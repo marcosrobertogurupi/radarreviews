@@ -87,3 +87,11 @@ export interface JobResult {
   /** Sinaliza se é um erro que exige nova autenticação */
   is_auth_error?: boolean
 }
+
+/** Configuração específica para o conector do Booking.com */
+export interface BookingConnectorConfig {
+  /** URL pública do hotel no Booking.com */
+  hotel_url: string
+  /** Intervalo em minutos entre sincronizações (padrão: 1440 min = 24h) */
+  interval_minutes?: number
+}

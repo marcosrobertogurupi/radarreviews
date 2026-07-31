@@ -52,6 +52,7 @@ export const ACTOR_SAFETY_LIMITS: Record<string, ActorSafetyLimit> = {
   facebook_reviews:   { maxItems: 20, costPerItem: 0.005 },
   instagram_mentions: { maxItems: 20, costPerItem: 0.005 },
   instagram_hashtags: { maxItems: 20, costPerItem: 0.005 },
+  booking:            { maxItems: 30, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
 }
 
 /**
@@ -643,6 +644,61 @@ export async function fetchTripAdvisorReviewsApify(
   } catch (err: any) {
     if (err.response?.data) {
       console.error(`[Apify] Detalhes do erro TripAdvisor:`, JSON.stringify(err.response.data))
+    }
+    throw err
+  }
+}
+
+/**
+ * Extrai reviews de um hotel no Booking.com via Apify.
+ */
+export async function scrapeBookingReviews(
+  hotelUrl: string,
+  limit = 20,
+  ctx?: ApifyContext,
+  jobType: 'backfill' | 'incremental' = 'incremental'
+): Promise<any[]> {
+  const token = getApifyToken()
+  if (!token) {
+    throw new Error('[Apify] Token não configurado. Adicione APIFY_TOKEN nas variáveis de ambiente.')
+  }
+
+  const actor = normalizeActorId('voyager~booking-reviews-scraper')
+
+  const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
+
+  if (ctx?.tenant_id) {
+    const quota = await checkTenantScrapeQuota(ctx.tenant_id, 'booking', limit, jobType)
+    if (!quota.allowed) {
+      throw new Error(`[Apify Bloqueio de Cota] ${quota.reason || 'Cota mensal de reviews atingida'}`)
+    }
+    limit = quota.safeLimit
+  }
+
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('booking', limit)
+
+  try {
+    const response = await axios.post(
+      `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
+      {
+        startUrls: [{ url: hotelUrl }],
+        maxItems: safeLimit,
+        limit: safeLimit,
+        sortBy: 'newest'
+      },
+      { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
+    )
+
+    const items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (ctx?.tenant_id) {
+      await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'booking', items.length, estimatedCostUsd)
+    }
+
+    return items
+  } catch (err: any) {
+    if (err.response?.data) {
+      console.error(`[Apify] Detalhes do erro Booking:`, JSON.stringify(err.response.data))
     }
     throw err
   }

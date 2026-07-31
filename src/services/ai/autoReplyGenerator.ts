@@ -22,6 +22,8 @@ function getChannelStyleGuide(channel: SourceChannel): string {
   switch (channel) {
     case 'tripadvisor':
       return 'Canal TripAdvisor: Resposta hospitaleira, elegante, cordialmente assinada, valorizando a experiência da estadia/visita e convidando para retorno.'
+    case 'booking':
+      return 'Canal Booking.com: Resposta hospitaleira, atenciosa e profissional. Agradeça os pontos positivos mencionados e aborde com empatia os pontos de melhoria apontados.'
     case 'google_maps':
       return 'Canal Google Maps: Resposta corporativa, direta, amigável e profissional. Otimizada para SEO local e reputação da marca.'
     case 'reclame_aqui':

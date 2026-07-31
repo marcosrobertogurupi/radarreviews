@@ -11,6 +11,7 @@ export type SourceChannel =
   | 'tripadvisor'
   | 'trustpilot'
   | 'reddit'
+  | 'booking'
 
 /** Análise de sentimento de um review */
 export type SentimentType = 'positive' | 'neutral' | 'negative' | 'critical' | 'unanalyzed'

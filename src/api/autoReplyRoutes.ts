@@ -130,7 +130,7 @@ export async function handleAutoReplyRoutes(
         tone_of_voice: 'cordial e profissional',
         mention_staff_names: true,
         auto_publish_min_rating: 4,
-        channels: ['google_maps', 'tripadvisor', 'facebook', 'instagram', 'reclame_aqui', 'consumidor_gov', 'trustpilot', 'reddit'],
+        channels: ['google_maps', 'tripadvisor', 'facebook', 'instagram', 'reclame_aqui', 'consumidor_gov', 'trustpilot', 'reddit', 'booking'],
       }
 
       const result = await generateAutoReply({

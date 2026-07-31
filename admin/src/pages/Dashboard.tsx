@@ -359,39 +359,118 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
   async function loadTopics() {
     try {
-      // Buscar do cache review_topics
+      let cachedTopics: TopicData[] = []
+
+      // 1. Tentar buscar do cache review_topics
       let q = supabase.from('review_topics')
-        .select('topics')
+        .select('topics, business_id')
         .order('generated_at', { ascending: false })
-        .limit(1)
       
       if (selectedTenantId) {
-        // Aqui precisaríamos de um monitored_business_id, mas para o dashboard 
-        // do tenant, pegamos o mais recente do tenant
         const { data: biz } = await supabase.from('monitored_businesses')
-          .select('id').eq('tenant_id', selectedTenantId).limit(1)
-        if (biz && biz.length > 0) {
-          q = q.eq('business_id', biz[biz.length - 1].id)
+          .select('id').eq('tenant_id', selectedTenantId)
+        const bizIds = (biz || []).map(b => b.id)
+        if (bizIds.length > 0) {
+          q = q.in('business_id', bizIds)
         }
       }
 
-      const { data, error } = await q
-      if (error) {
-        if (error.code === 'PGRST116' || error.message.includes('not found')) {
-           // Tabela pode não existir ainda
-           setTopics([])
-           return
+      const { data, error } = await q.limit(20)
+      if (!error && data && data.length > 0) {
+        const topicMap: Record<string, { positivo: number; negativo: number }> = {}
+        for (const row of data) {
+          const rowTopics = row.topics as TopicData[] | undefined
+          if (Array.isArray(rowTopics)) {
+            for (const item of rowTopics) {
+              if (!item.tema) continue
+              const key = item.tema.toLowerCase().trim()
+              if (!topicMap[key]) topicMap[key] = { positivo: 0, negativo: 0 }
+              topicMap[key].positivo += Number(item.positivo || 0)
+              topicMap[key].negativo += Number(item.negativo || 0)
+            }
+          }
         }
-        throw error
+        cachedTopics = Object.entries(topicMap).map(([tema, c]) => ({
+          tema,
+          positivo: c.positivo,
+          negativo: c.negativo,
+        })).sort((a, b) => (b.positivo + b.negativo) - (a.positivo + a.negativo))
       }
 
-      if (data && data.length > 0) {
-        setTopics(data[0].topics as TopicData[])
-      } else {
-        setTopics([])
+      if (cachedTopics.length > 0) {
+        setTopics(cachedTopics)
+        return
       }
+
+      // 2. Fallback: Se review_topics estiver vazio, agregar diretamente das avaliações recentes (reviews)
+      let qRev = supabase.from('reviews')
+        .select('sentiment_topics, sentiment, body')
+        .order('published_at', { ascending: false })
+        .limit(200)
+
+      if (selectedTenantId) {
+        qRev = qRev.eq('tenant_id', selectedTenantId)
+      }
+
+      const { data: reviewsData } = await qRev
+
+      if (reviewsData && reviewsData.length > 0) {
+        const topicMap: Record<string, { positivo: number; negativo: number }> = {}
+        const KEYWORD_MAP: Record<string, string[]> = {
+          atendimento: ['atendimento', 'atendente', 'recepcao', 'recepção', 'vendedor', 'equipe', 'suporte', 'atencioso', 'prestativo', 'educado'],
+          limpeza: ['limpeza', 'limpo', 'sujo', 'sujeira', 'higiene', 'higienizado', 'cheiro', 'organizado'],
+          preço: ['preço', 'preco', 'valor', 'caro', 'barato', 'cobrança', 'cobranca', 'taxa', 'custo'],
+          qualidade: ['qualidade', 'bom', 'otimo', 'ótimo', 'excelente', 'defeito', 'ruim', 'pessimo', 'péssimo'],
+          entrega: ['entrega', 'envio', 'prazo', 'atraso', 'atrasou', 'chegou', 'demorou', 'rapidez', 'frete'],
+          espera: ['espera', 'fila', 'demora', 'tempo de espera', 'aguardo'],
+          ambiente: ['ambiente', 'espaço', 'espaco', 'local', 'estacionamento', 'ar condicionado', 'estrutura'],
+          produto: ['produto', 'peça', 'peca', 'veiculo', 'veículo', 'carro', 'serviço', 'servico'],
+        }
+
+        for (const r of reviewsData) {
+          const isPos = r.sentiment === 'positive'
+          const isNeg = r.sentiment === 'negative' || r.sentiment === 'critical'
+          let foundTopics = new Set<string>()
+
+          if (Array.isArray(r.sentiment_topics) && r.sentiment_topics.length > 0) {
+            for (const t of r.sentiment_topics) {
+              if (t && typeof t === 'string' && t !== 'outro') foundTopics.add(t.toLowerCase().trim())
+            }
+          }
+
+          if (foundTopics.size === 0) {
+            const bodyLower = (r.body || '').toLowerCase()
+            for (const [topicKey, keywords] of Object.entries(KEYWORD_MAP)) {
+              if (keywords.some(kw => bodyLower.includes(kw))) {
+                foundTopics.add(topicKey)
+              }
+            }
+          }
+
+          for (const t of foundTopics) {
+            if (!topicMap[t]) topicMap[t] = { positivo: 0, negativo: 0 }
+            if (isPos) topicMap[t].positivo++
+            if (isNeg) topicMap[t].negativo++
+            if (!isPos && !isNeg) topicMap[t].positivo++
+          }
+        }
+
+        const fallbackTopics: TopicData[] = Object.entries(topicMap)
+          .map(([tema, c]) => ({
+            tema,
+            positivo: c.positivo,
+            negativo: c.negativo,
+          }))
+          .sort((a, b) => (b.positivo + b.negativo) - (a.positivo + a.negativo))
+          .slice(0, 8)
+
+        setTopics(fallbackTopics)
+        return
+      }
+
+      setTopics([])
     } catch (err) {
-      console.warn('Erro ao carregar tópicos (pode ser tabela inexistente):', err)
+      console.warn('Erro ao carregar tópicos:', err)
       setTopics([])
     }
   }

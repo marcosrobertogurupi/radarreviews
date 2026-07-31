@@ -82,6 +82,13 @@ Contexto: Review em plataforma verificada de avaliações B2C (Trustpilot).
 - Score 1-2: cliente muito insatisfeito e motivado a avisar outros.
 - Presença aqui indica problema sistemático (clientes não reclamam por capricho).`.trim(),
 
+  booking: `
+Contexto: Review de hospedagem e hotelaria no Booking.com.
+- Plataforma líder global para reservas de hotéis, pousadas e resorts.
+- Hóspedes costumam detalhar aspectos como limpeza, conforto, atendimento e localização.
+- Reviews negativos afetam diretamente a taxa de conversão e ocupação do estabelecimento.
+- O comentário frequentemente contém pontos positivos (👍) e pontos negativos (👎) separados.`.trim(),
+
   reclame_aqui: `
 CONTEXTO CRÍTICO: Reclamação formal no Reclame Aqui — plataforma de última instância do consumidor brasileiro.
 
@@ -743,6 +750,7 @@ function buildHeuristicSummary(
     reddit: 'Reddit',
     facebook: 'Facebook',
     instagram: 'Instagram',
+    booking: 'Booking.com',
   }
 
   const topicNames: Record<string, string> = {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Connector, SyncJob } from '../lib/supabase'
-import { formatDate } from '../lib/utils'
+import { formatDate, API_URL } from '../lib/utils'
 import { History, ShieldAlert, Activity, Ghost, ShieldCheck } from 'lucide-react'
 
 interface QuietFailure {

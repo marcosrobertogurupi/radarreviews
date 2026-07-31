@@ -8,6 +8,7 @@ const CHANNEL_HINTS: Record<string, string> = {
   trustpilot:     'Trustpilot — informe o slug da empresa',
   reclame_aqui:   'Reclame Aqui — informe o slug da empresa',
   consumidor_gov: 'Consumidor.gov — informe a URL do CSV',
+  booking:        'Booking.com — informe a URL pública do hotel',
 }
 
 export async function notifyAdminChannels(data: {
