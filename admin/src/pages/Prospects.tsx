@@ -138,9 +138,17 @@ export default function Prospects() {
   const [previewText, setPreviewText] = useState('')
   const [previewSubject, setPreviewSubject] = useState('')
   const [sendingDispatch, setSendingDispatch] = useState(false)
+  const [enrichingId, setEnrichingId] = useState<string | null>(null)
+  const [searchKipflowModal, setSearchKipflowModal] = useState(false)
+  const [kipflowQuery, setKipflowQuery] = useState('')
+  const [kipflowState, setKipflowState] = useState('')
+  const [kipflowResults, setKipflowResults] = useState<any[]>([])
+  const [searchingKipflow, setSearchingKipflow] = useState(false)
+
   useEffect(() => {
     loadCampaigns()
   }, [])
+
 
   useEffect(() => {
     if (selectedCampId) {
@@ -148,7 +156,57 @@ export default function Prospects() {
     }
   }, [selectedCampId])
 
+  async function handleEnrichLead(leadId: string) {
+    try {
+      setEnrichingId(leadId)
+      toast({ title: 'Iniciando enriquecimento Kipflow + IA...', type: 'info' })
+      const session = (await supabase.auth.getSession()).data.session
+      const res = await fetch(`${API_URL}/api/admin/prospects/enrich/${leadId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        }
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Falha ao enriquecer lead')
+      toast({ title: `Enriquecido com sucesso! ICP Score: ${data.icp_score} | ${data.decidors?.length || 0} decisores encontrados`, type: 'success' })
+      loadLeadsAndFollowups()
+    } catch (err: any) {
+      toast({ title: err.message, type: 'error' })
+    } finally {
+      setEnrichingId(null)
+    }
+  }
+
+  async function handleSearchKipflow() {
+    try {
+      setSearchingKipflow(true)
+      const session = (await supabase.auth.getSession()).data.session
+      const res = await fetch(`${API_URL}/api/admin/prospects/kipflow/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({
+          query: kipflowQuery || undefined,
+          state: kipflowState || undefined
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro na busca Kipflow')
+      setKipflowResults(data || [])
+      toast({ title: `${data.length || 0} empresas encontradas na Kipflow`, type: 'info' })
+    } catch (err: any) {
+      toast({ title: err.message, type: 'error' })
+    } finally {
+      setSearchingKipflow(false)
+    }
+  }
+
   async function loadCampaigns() {
+
     try {
       const { data, error } = await supabase
         .from('prospect_campaigns')
@@ -990,7 +1048,30 @@ REQUISITOS ADICIONAIS:
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {/* Botão de Enriquecimento Kipflow + IA */}
+                          <button
+                            onClick={() => handleEnrichLead(lead.id)}
+                            disabled={enrichingId === lead.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                              color: '#fff',
+                              border: 'none',
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                            title="Buscar na Kipflow e enriquecer contatos/decisores + IA Fit"
+                          >
+                            {enrichingId === lead.id ? <Loader2 size={12} className="animate-spin" /> : '⚡ Enriquecer'}
+                          </button>
+
                           {/* Botão de Envio Manual via WhatsApp Web */}
+
                           <a
                             href={`https://api.whatsapp.com/send?phone=${lead.phone?.replace(/\D/g, '')}&text=${encodeURIComponent(
                               `Oi, ${lead.contact_name || 'Gestor'}! Tudo bem? Sou Consultor da Reputei. Notamos que a ${lead.company_name} tem oportunidade de melhorar as avaliações no Google Maps (nota atual: ${lead.variables.nota_google || 'N/A'}). Oferecemos 30 dias de trial grátis. Faz sentido em 10 minutos?`
