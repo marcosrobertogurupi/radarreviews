@@ -1024,8 +1024,8 @@ REQUISITOS ADICIONAIS:
                           </div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 12 }}>⭐ Google: <strong style={{ color: 'var(--accent)' }}>{lead.variables.nota_google ?? '—'}</strong></div>
-                            <div style={{ fontSize: 12 }}>⚠️ RA: <strong style={{ color: '#f43f5e' }}>{lead.variables.qtd_reclamacoes ?? '0'}</strong></div>
+                            <div style={{ fontSize: 12 }}>⭐ Google: <strong style={{ color: 'var(--accent)' }}>{lead.variables?.nota_google ?? '—'}</strong></div>
+                            <div style={{ fontSize: 12 }}>⚠️ RA: <strong style={{ color: '#f43f5e' }}>{lead.variables?.qtd_reclamacoes ?? '0'}</strong></div>
                             <button
                               onClick={() => {
                                 setEditingLeadId(lead.id)
@@ -1092,7 +1092,7 @@ REQUISITOS ADICIONAIS:
 
                           <a
                             href={`https://api.whatsapp.com/send?phone=${lead.phone?.replace(/\D/g, '')}&text=${encodeURIComponent(
-                              `Oi, ${lead.contact_name || 'Gestor'}! Tudo bem? Sou Consultor da Reputei. Notamos que a ${lead.company_name} tem oportunidade de melhorar as avaliações no Google Maps (nota atual: ${lead.variables.nota_google || 'N/A'}). Oferecemos 30 dias de trial grátis. Faz sentido em 10 minutos?`
+                              `Oi, ${lead.contact_name || 'Gestor'}! Tudo bem? Sou Consultor da Reputei. Notamos que a ${lead.company_name} tem oportunidade de melhorar as avaliações no Google Maps (nota atual: ${lead.variables?.nota_google || 'N/A'}). Oferecemos 30 dias de trial grátis. Faz sentido em 10 minutos?`
                             )}`}
                             target="_blank"
                             rel="noopener noreferrer"
