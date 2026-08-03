@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
   Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, CreditCard, LifeBuoy,
-  Target, Briefcase
+  Target, Briefcase, CalendarDays
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -21,9 +21,10 @@ import Commercial from './pages/Commercial'
 import Partners from './pages/Partners'
 import PartnerCommissions from './pages/PartnerCommissions'
 import ResourceCostControl from './pages/ResourceCostControl'
+import Meetings from './pages/Meetings'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'costs' | 'audit' | 'support' | 'prospects' | 'commercial' | 'partners' | 'partner_commissions'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'costs' | 'audit' | 'support' | 'prospects' | 'commercial' | 'meetings' | 'partners' | 'partner_commissions'
 
 
 export interface TenantOption { id: string; name: string }
@@ -33,6 +34,7 @@ const NAV = [
   { id: 'costs' as Page,       label: 'Custos & Recursos', icon: CreditCard },
   { id: 'commercial' as Page,  label: 'Comercial',   icon: Briefcase },
   { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
+  { id: 'meetings' as Page,    label: 'Reuniões',    icon: CalendarDays },
   { id: 'partners' as Page,    label: 'Parceiros',   icon: Building2 },
   { id: 'partner_commissions' as Page, label: 'Comissões', icon: CreditCard },
   { id: 'reviews' as Page,     label: 'Reviews',     icon: MessageSquare },
@@ -282,6 +284,7 @@ export default function App() {
     costs:      <ResourceCostControl />,
     commercial: <Commercial />,
     prospects:  <Prospects />,
+    meetings:   <Meetings />,
     reviews:    <Reviews    {...filterProps} />,
     alerts:     <Alerts     {...filterProps} />,
     connectors: <Connectors />,
