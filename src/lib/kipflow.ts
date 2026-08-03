@@ -193,8 +193,32 @@ export class KipflowClient {
     }));
   }
 
-  // Dados mock para testes/fallback sem API KEY
+  // Dados mock para testes/fallback sem API KEY configurada nas envs
   private getMockCompanies(filters: KipflowCompanySearchFilters): KipflowCompanyResult[] {
+    const q = (filters.query || filters.cnpj || '').trim();
+    const cleanCnpj = q.replace(/\D/g, '');
+
+    // Se a pesquisa for um CNPJ válido de 14 dígitos, simular o resultado específico desse CNPJ
+    if (cleanCnpj.length === 14) {
+      return [
+        {
+          cnpj: cleanCnpj,
+          company_name: `Empresa Cadastrada (${cleanCnpj})`,
+          trade_name: 'Unidade Comercial Registrada',
+          domain: 'empresa-consulta.com.br',
+          cnae_code: '8630-5/04',
+          cnae_description: 'Atividade Comercial / Serviços em Geral',
+          size: 'Médio',
+          estimated_revenue: 'R$ 2.000.000 a R$ 5.000.000',
+          city: 'Palmas',
+          state: 'TO',
+          phone: '(63) 3215-9000',
+          email: 'contato@empresa-consulta.com.br',
+          website: 'https://empresa-consulta.com.br',
+        }
+      ];
+    }
+
     return [
       {
         cnpj: '12345678000199',
