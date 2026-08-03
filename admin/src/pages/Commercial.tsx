@@ -562,12 +562,12 @@ export default function Commercial() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
             <Briefcase size={24} style={{ color: '#818cf8' }} />
-            <span style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#818cf8', fontWeight: 600 }}>Time Comercial</span>
+            <span style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#818cf8', fontWeight: 600 }}>Gestão de Contas</span>
           </div>
           <h1 style={{ fontSize: '32px', fontWeight: 700, margin: 0 }}>
-            Área de <span className="text-gradient">Prospecção Inteligente</span>
+            Mapeamento de <span className="text-gradient">Contas & Redes (ABM)</span>
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: '14px', marginTop: '6px' }}>Mapeie corporações, monitore scores locais e gere abordagens de alto impacto usando IA.</p>
+          <p style={{ color: '#94a3b8', fontSize: '14px', marginTop: '6px' }}>Mapeie grupos corporativos, audite a reputação de filiais e envie contas para a Esteira de Prospecção.</p>
         </div>
 
         <button className="button-premium" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsNewCompanyOpen(true)}>
