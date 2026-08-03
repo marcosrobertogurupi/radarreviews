@@ -1423,37 +1423,37 @@ REQUISITOS ADICIONAIS:
 
       {/* Modal de Busca na Kipflow */}
       {searchKipflowModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, width: '100%', maxWidth: 700, padding: 24, maxHeight: '85vh', overflowY: 'auto' }}>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Search size={20} color="#818cf8" /> Buscar Empresas no Kipflow
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <div style={{ background: '#0f111a', border: '1px solid rgba(99, 102, 241, 0.4)', borderRadius: 16, width: '100%', maxWidth: 720, padding: 28, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.8)' }}>
+            <h2 style={{ margin: '0 0 12px 0', fontSize: 22, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10, color: '#f8fafc' }}>
+              <Search size={22} color="#818cf8" /> Buscar Empresas no Kipflow
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+            <p style={{ fontSize: 13.5, color: '#94a3b8', marginBottom: 24, lineHeight: 1.5 }}>
               Pesquise na base de inteligência B2B por palavra-chave, segmento, CNPJ ou Estado.
             </p>
 
-            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
               <input
                 type="text"
                 placeholder="Ex: Odontologia, Hospital, Transportes..."
                 value={kipflowQuery}
                 onChange={e => setKipflowQuery(e.target.value)}
-                style={{ flex: 1, background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-main)', fontSize: 14 }}
+                style={{ flex: 1, background: '#1e2130', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '12px 16px', color: '#ffffff', fontSize: 14, outline: 'none' }}
               />
               <input
                 type="text"
-                placeholder="UF (Ex: SP, RJ)"
+                placeholder="UF (Ex: SP)"
                 maxLength={2}
                 value={kipflowState}
                 onChange={e => setKipflowState(e.target.value.toUpperCase())}
-                style={{ width: 80, background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-main)', fontSize: 14, textAlign: 'center' }}
+                style={{ width: 90, background: '#1e2130', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '12px 16px', color: '#ffffff', fontSize: 14, textAlign: 'center', outline: 'none' }}
               />
               <button
                 onClick={handleSearchKipflow}
                 disabled={searchingKipflow}
-                style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', color: '#fff', padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', color: '#fff', padding: '12px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)' }}
               >
-                {searchingKipflow ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} Buscar
+                {searchingKipflow ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Buscar
               </button>
             </div>
 
