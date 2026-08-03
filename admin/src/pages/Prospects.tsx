@@ -159,7 +159,7 @@ export default function Prospects() {
   async function handleEnrichLead(leadId: string) {
     try {
       setEnrichingId(leadId)
-      toast({ title: 'Iniciando enriquecimento Kipflow + IA...', type: 'info' })
+      toast('Iniciando enriquecimento Kipflow + IA...', 'info')
       const session = (await supabase.auth.getSession()).data.session
       const res = await fetch(`${API_URL}/api/admin/prospects/enrich/${leadId}`, {
         method: 'POST',
@@ -170,10 +170,10 @@ export default function Prospects() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Falha ao enriquecer lead')
-      toast({ title: `Enriquecido com sucesso! ICP Score: ${data.icp_score} | ${data.decidors?.length || 0} decisores encontrados`, type: 'success' })
+      toast(`Enriquecido com sucesso! ICP Score: ${data.icp_score} | ${data.decidors?.length || 0} decisores encontrados`, 'success')
       loadLeadsAndFollowups()
     } catch (err: any) {
-      toast({ title: err.message, type: 'error' })
+      toast(err.message, 'error')
     } finally {
       setEnrichingId(null)
     }
@@ -197,9 +197,9 @@ export default function Prospects() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro na busca Kipflow')
       setKipflowResults(data || [])
-      toast({ title: `${data.length || 0} empresas encontradas na Kipflow`, type: 'info' })
+      toast(`${data.length || 0} empresas encontradas na Kipflow`, 'info')
     } catch (err: any) {
-      toast({ title: err.message, type: 'error' })
+      toast(err.message, 'error')
     } finally {
       setSearchingKipflow(false)
     }
@@ -1467,7 +1467,7 @@ REQUISITOS ADICIONAIS:
                   <button
                     onClick={() => {
                       setSearchKipflowModal(false)
-                      toast({ title: `Empresa ${item.company_name} importada para o pipeline!`, type: 'success' })
+                      toast(`Empresa ${item.company_name} importada para o pipeline!`, 'success')
                     }}
                     style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                   >
