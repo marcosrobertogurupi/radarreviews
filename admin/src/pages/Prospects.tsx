@@ -710,6 +710,24 @@ REQUISITOS ADICIONAIS:
             ))}
           </select>
           <button 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff',
+              border: 'none',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+            onClick={() => setSearchKipflowModal(true)}
+          >
+            <Search size={16} />
+            Buscar Empresas (Kipflow)
+          </button>
+          <button 
             className="btn btn-primary"
             onClick={() => setShowImportModal(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8 }}
@@ -1401,6 +1419,82 @@ REQUISITOS ADICIONAIS:
         </div>
       )}
 
+      {/* Modal de Busca na Kipflow */}
+      {searchKipflowModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, width: '100%', maxWidth: 700, padding: 24, maxHeight: '85vh', overflowY: 'auto' }}>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Search size={20} color="#818cf8" /> Buscar Empresas no Kipflow
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              Pesquise na base de inteligência B2B por palavra-chave, segmento, CNPJ ou Estado.
+            </p>
+
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+              <input
+                type="text"
+                placeholder="Ex: Odontologia, Hospital, Transportes..."
+                value={kipflowQuery}
+                onChange={e => setKipflowQuery(e.target.value)}
+                style={{ flex: 1, background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-main)', fontSize: 14 }}
+              />
+              <input
+                type="text"
+                placeholder="UF (Ex: SP, RJ)"
+                maxLength={2}
+                value={kipflowState}
+                onChange={e => setKipflowState(e.target.value.toUpperCase())}
+                style={{ width: 80, background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-main)', fontSize: 14, textAlign: 'center' }}
+              />
+              <button
+                onClick={handleSearchKipflow}
+                disabled={searchingKipflow}
+                style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', color: '#fff', padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {searchingKipflow ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} Buscar
+              </button>
+            </div>
+
+            {/* Resultados Kipflow */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {kipflowResults.map((item, idx) => (
+                <div key={idx} style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong style={{ fontSize: 15, display: 'block', color: 'var(--text-main)' }}>{item.company_name}</strong>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>CNPJ: {item.cnpj || '—'} | {item.city || ''} - {item.state || ''}</span>
+                    <div style={{ fontSize: 12, color: '#818cf8', marginTop: 4 }}>{item.cnae_description || item.size || 'Empresa B2B'}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSearchKipflowModal(false)
+                      toast({ title: `Empresa ${item.company_name} importada para o pipeline!`, type: 'success' })
+                    }}
+                    style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    + Adicionar Lead
+                  </button>
+                </div>
+              ))}
+
+              {kipflowResults.length === 0 && !searchingKipflow && (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+                  Nenhuma busca realizada ainda. Digite os filtros acima e clique em Buscar.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+              <button
+                onClick={() => setSearchKipflowModal(false)}
+                className="btn btn-ghost"
+                style={{ padding: '8px 16px', borderRadius: 8 }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
