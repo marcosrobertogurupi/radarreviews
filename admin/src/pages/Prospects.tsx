@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 import {
   Target, Users, Send, CheckCircle, AlertOctagon, HelpCircle,
-  Play, Check, Edit3, Trash2, Mail, MessageSquare, ExternalLink, Loader2, ArrowRight
+  Play, Check, Edit3, Trash2, Mail, MessageSquare, ExternalLink, Loader2, ArrowRight, Search
 } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 
@@ -667,15 +667,17 @@ REQUISITOS ADICIONAIS:
  
 
   // Filtrar leads do segmento ativo
-  const filteredLeads = leads.filter(l => l.segment_id === selectedSegId)
+  const safeLeads = Array.isArray(leads) ? leads : []
+  const safeFollowups = Array.isArray(followups) ? followups : []
+  const filteredLeads = safeLeads.filter(l => l && l.segment_id === selectedSegId)
   const currentSeg = SEGMENT_NAMES[selectedSegId]
 
   // Stats
-  const statTotal = leads.length
-  const statContacted = leads.filter(l => l.status === 'contacted').length
-  const statResponded = leads.filter(l => l.status === 'responded').length
-  const statConverted = leads.filter(l => l.status === 'converted').length
-  const pendingQueue = followups.filter(f => f.status === 'pending').length
+  const statTotal = safeLeads.length
+  const statContacted = safeLeads.filter(l => l && l.status === 'contacted').length
+  const statResponded = safeLeads.filter(l => l && l.status === 'responded').length
+  const statConverted = safeLeads.filter(l => l && l.status === 'converted').length
+  const pendingQueue = safeFollowups.filter(f => f && f.status === 'pending').length
 
   return (
     <div className="prospects-container" style={{ padding: 24, maxWidth: 1400, margin: '0 auto' }}>
@@ -705,8 +707,8 @@ REQUISITOS ADICIONAIS:
               cursor: 'pointer'
             }}
           >
-            {campaigns.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+            {(Array.isArray(campaigns) ? campaigns : []).map(c => (
+              <option key={c?.id} value={c?.id}>{c?.name}</option>
             ))}
           </select>
           <button 
@@ -1457,7 +1459,7 @@ REQUISITOS ADICIONAIS:
 
             {/* Resultados Kipflow */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {kipflowResults.map((item, idx) => (
+              {(Array.isArray(kipflowResults) ? kipflowResults : []).map((item, idx) => (
                 <div key={idx} style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ fontSize: 15, display: 'block', color: 'var(--text-main)' }}>{item.company_name}</strong>
