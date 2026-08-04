@@ -170,6 +170,15 @@ function normalizeApifyItem(raw: any, connector: ChannelConnector): NormalizedRe
   const reviewId = raw.reviewId || raw.id || raw.cid || `apify_gmaps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
   const publishedAt = raw.publishedAtDate || raw.date || (raw.timestamp ? new Date(raw.timestamp).toISOString() : new Date().toISOString())
 
+  let ratingNum: number | undefined = undefined
+  const rawRating = raw.stars ?? raw.rating
+  if (typeof rawRating === 'number') {
+    ratingNum = rawRating
+  } else if (typeof rawRating === 'string') {
+    const parsed = parseFloat(rawRating.split('/')[0] ?? rawRating)
+    if (!isNaN(parsed)) ratingNum = parsed
+  }
+
   return {
     tenant_id: connector.tenant_id,
     business_id: connector.business_id,
@@ -179,7 +188,7 @@ function normalizeApifyItem(raw: any, connector: ChannelConnector): NormalizedRe
     published_at: publishedAt,
     body: raw.text || raw.reviewText || raw.caption || '',
     author_name: raw.name || raw.authorName || raw.reviewerName || 'Anônimo',
-    rating: raw.stars || raw.rating || undefined,
+    rating: ratingNum,
     sentiment: 'unanalyzed',
     url: raw.reviewUrl || `https://www.google.com/maps/place/?q=place_id:${connector.external_id}`,
     raw_data: raw
