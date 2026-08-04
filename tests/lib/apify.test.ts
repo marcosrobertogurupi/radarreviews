@@ -39,8 +39,8 @@ describe('Apify Integration & Safety Limits', () => {
   describe('ACTOR_SAFETY_LIMITS', () => {
     it('deve possuir limites seguros predefinidos para Reclame Aqui e Trustpilot', () => {
       expect(ACTOR_SAFETY_LIMITS.reclame_aqui).toBeDefined()
-      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.maxItems).toBe(5)
-      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.costPerItem).toBe(0.09)
+      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.maxItems).toBe(10)
+      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.costPerItem).toBe(0.05)
 
       expect(ACTOR_SAFETY_LIMITS.trustpilot).toBeDefined()
       expect(ACTOR_SAFETY_LIMITS.trustpilot.maxItems).toBe(100)
@@ -52,8 +52,8 @@ describe('Apify Integration & Safety Limits', () => {
     it('deve aplicar o teto máximo de itens do canal quando o valor solicitado for alto', () => {
       process.env.APIFY_MAX_COST_PER_RUN = '0.50'
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 100)
-      expect(safeLimit).toBe(5)
-      expect(estimatedCostUsd).toBeCloseTo(0.45, 4)
+      expect(safeLimit).toBe(10)
+      expect(estimatedCostUsd).toBeCloseTo(0.50, 4)
     })
 
     it('deve aplicar o teto do Trustpilot corretamente', () => {
@@ -66,14 +66,14 @@ describe('Apify Integration & Safety Limits', () => {
       process.env.APIFY_MAX_COST_PER_RUN = '0.50'
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 5)
       expect(safeLimit).toBe(5)
-      expect(estimatedCostUsd).toBeCloseTo(0.45, 4)
+      expect(estimatedCostUsd).toBeCloseTo(0.25, 4)
     })
 
     it('deve reduzir o limite automaticamente quando o orcamento APIFY_MAX_COST_PER_RUN for menor que o custo normal', () => {
-      process.env.APIFY_MAX_COST_PER_RUN = '0.27' // $0.27 USD max ($0.09 * 3 = 0.27)
+      process.env.APIFY_MAX_COST_PER_RUN = '0.25' // $0.25 USD max ($0.05 * 5 = 0.25)
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 10)
-      expect(safeLimit).toBe(3)
-      expect(estimatedCostUsd).toBeCloseTo(0.27, 4)
+      expect(safeLimit).toBe(5)
+      expect(estimatedCostUsd).toBeCloseTo(0.25, 4)
     })
 
     it('deve zerar o limite quando o Kill Switch DISABLE_APIFY_FALLBACK_RECLAMEAQUI estiver ativo', () => {

@@ -12,7 +12,8 @@ const APIFY_API = 'https://api.apify.com/v2'
 // Mapa de actor ID → nome amigável (para exibição no Admin)
 const ACTOR_LABELS: Record<string, string> = {
   'compass~google-maps-reviews-scraper': 'Google Maps Reviews',
-  'viralanalyzer~reclameaqui-scraper':   'Reclame Aqui',
+  'gabruck97~reclameaqui':              'Reclame Aqui',
+  'viralanalyzer~reclameaqui-scraper':   'Reclame Aqui (Legado)',
   'pear_fight~trustpilot-scraper':       'Trustpilot',
   'compass~tripadvisor-scraper':         'TripAdvisor',
   'apify~instagram-comment-scraper':     'Instagram Comments',

@@ -84,7 +84,7 @@ export async function getActorPricing(actorId: string): Promise<number | null> {
  * Permite capturar integralmente todos os reviews recentes para canais de baixo custo (Google Maps, TripAdvisor, Trustpilot).
  */
 export const ACTOR_SAFETY_LIMITS: Record<string, ActorSafetyLimit> = {
-  reclame_aqui:       { maxItems: 5,   costPerItem: 0.09 },    // US$90.00 / 1.000 itens (viralanalyzer scraper)
+  reclame_aqui:       { maxItems: 10,  costPerItem: 0.05 },    // US$50.00 / 1.000 itens (gabruck97 scraper)
   trustpilot:         { maxItems: 100, costPerItem: 0.0015 },  // US$1.50 / 1.000 itens ($0,0015/item)
   google_maps:        { maxItems: 150, costPerItem: 0.0006 },  // US$0.60 / 1.000 itens ($0,0006/item)
   tripadvisor:        { maxItems: 100, costPerItem: 0.0015 },  // US$1.50 / 1.000 itens ($0,0015/item)
@@ -246,7 +246,7 @@ export async function fetchReclameAquiComplaints(
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
-  const rawActor = actorId || 'viralanalyzer~reclameaqui-scraper'
+  const rawActor = actorId || 'gabruck97~reclameaqui'
   const actor = normalizeActorId(rawActor)
 
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', limit)
@@ -256,6 +256,25 @@ export async function fetchReclameAquiComplaints(
     return []
   }
 
+  // Formatar a data limite no formato DD/MM/AAAA para o ator gabruck97/reclameaqui
+  let dataLimite: string | undefined = undefined
+  if (options?.since) {
+    const d = new Date(options.since)
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      dataLimite = `${day}/${month}/${year}`
+    }
+  } else {
+    // Padrão de 30 dias atrás
+    const d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    dataLimite = `${day}/${month}/${year}`
+  }
+
   try {
     const raTimeoutSecs = 300 // 5 minutos para o Reclame Aqui superar Cloudflare
     const raMemoryMb = 1024   // 1GB de RAM é necessário para o Chrome no container da Apify
@@ -263,12 +282,12 @@ export async function fetchReclameAquiComplaints(
     const response = await axios.post(
       `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${raTimeoutSecs}&memory=${raMemoryMb}`,
       {
-        companies: [companySlug],
+        nome_loja: companySlug,
+        termo_busca: '',
+        max_reclamacoes: safeLimit,
         limit: safeLimit,
-        maxResults: safeLimit,
-        maxComplaints: safeLimit,
-        includeCompanyStats: false,
-        statusFilter: 'all',
+        companies: [companySlug],
+        ...(dataLimite ? { data_limite: dataLimite } : {})
       },
       { timeout: (raTimeoutSecs + 30) * 1000 }
     )
@@ -292,15 +311,15 @@ export async function fetchReclameAquiComplaints(
     }
 
     const mapped = items.map(item => ({
-      id: item.complaint_id || item.id || item.complaintId,
-      title: item.title,
-      description: item.description || item.text || item.company_response,
+      id: item.complaint_id || item.id || item.complaintId || item.id_reclamacao,
+      title: item.title || item.titulo,
+      description: item.description || item.text || item.company_response || item.texto || item.descricao,
       status: item.status,
-      author: item.author || item.authorName,
-      date: item.created_at || item.datetime || item.date || item.createdAt,
-      url: item.url,
-      isResolved: item.is_resolved ?? (item.status === 'Resolvida'),
-      rating: item.rating,
+      author: item.author || item.authorName || item.autor || item.nome_autor,
+      date: item.created_at || item.datetime || item.date || item.createdAt || item.data || item.data_criacao,
+      url: item.url || item.link,
+      isResolved: item.is_resolved ?? (item.status === 'Resolvida' || item.status === 'Resolvido'),
+      rating: item.rating || item.nota,
     }))
 
     // Incremental filtering: se options.since for fornecido, descartar itens mais antigos
