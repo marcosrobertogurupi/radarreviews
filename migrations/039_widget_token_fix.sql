@@ -6,7 +6,12 @@ begin;
 
 create extension if not exists pgcrypto;
 
--- Nunca mais existirá tenant novo sem token
+-- Adiciona as colunas caso não existam no banco de produção
+alter table public.tenants
+  add column if not exists widget_token text default gen_random_uuid()::text,
+  add column if not exists widget_config jsonb default '{"theme":"light","limit":5,"show_rating":true,"show_channel":true}'::jsonb;
+
+-- Garantir defaults e preenchimento de valores nulos
 alter table public.tenants
   alter column widget_token set default gen_random_uuid()::text;
 
