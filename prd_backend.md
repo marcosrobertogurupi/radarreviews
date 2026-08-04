@@ -6,9 +6,9 @@
 O Backend do Radar de Reviews (Reputei) opera como a ponte de serviços, orquestrador de inteligência artificial e motor de processamento assíncrono do SaaS. O banco de dados é um **Supabase (PostgreSQL 15+)**, onde as operações do portal do assinante utilizam RLS direto via cliente `@supabase/supabase-js`.
 
 O servidor Node.js (TypeScript) roda na porta `3001` (ambiente dev) e em contêiner Railway (produção), sendo responsável por:
-- **Tarefas Assíncronas (Cron Jobs / Polling):** Coleta de avaliações em 8 canais a cada 60 segundos e execução de jobs estratégicos.
-- **Processamento Pesado:** Ingestão, deduplicação (`upsert`), e análise de sentimento via Google Gemini 2.5 Flash.
-- **Endpoints Exclusivos:** Rotas HTTP dedicadas para Autenticação OAuth (Google e Meta), Billing/Webhooks (Asaas), Comunicação (WhatsApp/Uazapi), Suporte/RAG, Widget e Copilot.
+- **Tarefas Assíncronas (Cron Jobs / Polling):** Coleta de avaliações em 9 canais a cada 60 segundos e execução de jobs estratégicos.
+- **Processamento Pesado:** Ingestão, deduplicação (`upsert`), e análise de sentimento via Claude 3.5 Haiku (motor primário) + Google Gemini 2.5 Flash (fallback e triagem).
+- **Endpoints Exclusivos:** Rotas HTTP dedicadas para Autenticação OAuth (Google e Meta), Billing/Webhooks (Asaas), Comunicação (WhatsApp/Uazapi), Suporte/RAG, Widget, Copilot, Respostas Automáticas e Prospecção Outbound.
 
 ---
 
@@ -16,7 +16,7 @@ O servidor Node.js (TypeScript) roda na porta `3001` (ambiente dev) e em contêi
 
 ### 2.1. Inteligência Artificial & Copilot
 - **`POST /api/copilot`**
-  - **Descrição:** Recebe perguntas gerenciais do assinante, recupera contexto do banco de dados (estatísticas de 30 dias, reviews negativos) e consulta a IA Gemini.
+  - **Descrição:** Recebe perguntas gerenciais do assinante, recupera contexto do banco de dados (estatísticas de 30 dias, reviews negativos) e consulta a IA (Claude 3.5 Haiku como motor principal e Gemini 2.5 Flash como fallback).
   - **Headers:** `Authorization: Bearer <supabase-jwt>`
   - **Payload:** `{ "message": "string", "history": [...] }`
   - **Retorno (200 OK):** `{ "reply": "string_markdown" }`
@@ -72,12 +72,16 @@ O servidor Node.js (TypeScript) roda na porta `3001` (ambiente dev) e em contêi
 - **`POST /api/admin/partners`** — Cadastra novo parceiro (apenas admin).
 - **`PUT /api/admin/commissions/:id/status`** — Atualiza o status do pagamento da comissão.
 
-### 2.9. Prospecção Outbound & Scoring Comercial
-- **`POST /api/admin/prospects/*`** — Gestão de campanhas e leads de prospecção.
+### 2.9. Prospecção Outbound Avançada & Scoring Comercial
+- **`POST /api/admin/prospects/*`** — Gestão de campanhas, leads, cache Kipflow (`prospect_kipflow_cache`), ledger de créditos (`prospect_credit_ledger`), segmentos ICP (`prospect_icp_segments`), cadências multi-canal (`prospect_sequences`, `prospect_touches`), reuniões nativas (`prospect_meetings`) e opt-out LGPD (`prospect_optout`).
 - **`GET /api/admin/commercial/*`** — Scoring e classificação comercial de empresas.
 
 ### 2.10. Relatórios Executivos em PDF
 - **`POST /api/reports/generate`** — Consolida KPIs e gera arquivo PDF do relatório mensal.
+
+### 2.11. Motor Autônomo de Respostas com IA
+- **`GET /api/auto-reply/settings` & `PUT /api/auto-reply/settings`** — Gestão de configurações e políticas de automação por tenant (`src/api/autoReplyRoutes.ts`).
+- **`GET /api/auto-reply/pending` & `POST /api/auto-reply/approve`** — Fila de moderação e publicação de rascunhos de resposta gerados com IA.
 
 ---
 
@@ -87,10 +91,10 @@ O backend executa um Worker unificado (`src/scheduler/index.ts`) que opera conti
 
 1. **Polling de Conectores (60s):** Busca registros na tabela `channel_connectors` onde `status = 'active'` e `next_sync_at <= now()`. Seta automaticamente `job_type = 'backfill'` (1ª execução) ou `'incremental'` (sincronização de rotina).
 2. **Fila Atômica por Lock Distribuído:** Utiliza o procedimento `claim_review_jobs` com `FOR UPDATE SKIP LOCKED` para evitar que múltiplos workers processem o mesmo job.
-3. **Execução dos 8 Conectores em 3 Camadas:** 
+3. **Execução dos 9 Conectores em 3 Camadas:** 
    - **Google Maps:** 1) Google Business Profile OAuth API (`sync_mode: oauth_api` - R$ 0, sem teto de 5, 50 itens/pág), 2) Apify Actor (`compass~google-maps-reviews-scraper` com `sort: "newest"` e `reviewsStartDate`), 3) Fallback API legada/Playwright.
    - **TripAdvisor:** 1) Apify Actor (`compass~tripadvisor-scraper` com `sort: "newest"` e `reviewsStartDate`), 2) Fallback DataForSEO/Playwright/API.
-   - **Consumidor.gov, Trustpilot, Reddit, Facebook, Instagram, Reclame Aqui:** Executam seus conectores dedicados.
+   - **Consumidor.gov, Trustpilot, Reddit, Facebook, Instagram, Reclame Aqui, Booking.com:** Executam seus conectores dedicados (`src/connectors/booking.ts` para Booking.com).
 4. **Governança de Cotas & Orçamento Apify (`src/lib/apify-quota.ts`):** Intercepta e valida `consumed_this_cycle < monthly_review_budget` na tabela `tenant_scrape_quotas` antes de disparar requisições ao Apify. Grava telemetria e custo estimado USD.
 5. **Pipeline de Ingestão (`src/lib/ingest.ts`):** 
    - Executa `upsert` na tabela `reviews` com base na constraint `(external_id, channel, tenant_id)`.

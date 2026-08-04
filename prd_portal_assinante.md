@@ -3,7 +3,7 @@
 
 ## 1. Visão Geral do Produto
 
-O **Portal do Assinante** (localizado no diretório `portal/`) é a interface central "Client-Facing" do Reputei. É um painel web multi-tenant desenvolvido em React, Vite e Vanilla CSS, onde as empresas monitoram sua reputação online em 8 canais (Google Maps, TripAdvisor, Facebook, Instagram, Reclame Aqui, Consumidor.gov, Trustpilot e Reddit).
+O **Portal do Assinante** (localizado no diretório `portal/`) é a interface central "Client-Facing" do Reputei. É um painel web multi-tenant desenvolvido em React, Vite e Vanilla CSS, onde as empresas monitoram sua reputação online em 9 canais (Google Maps, TripAdvisor, Facebook, Instagram, Reclame Aqui, Consumidor.gov, Trustpilot, Reddit e Booking.com).
 
 **Arquitetura e Segurança:**
 - O Portal do Assinante é **totalmente separado** do Painel Administrativo Operacional (`admin/`) e do Portal do Parceiro (`partner/`).
@@ -27,10 +27,10 @@ O **Portal do Assinante** (localizado no diretório `portal/`) é a interface ce
 - **Recursos:** Reputation Score em destaque (0–1000 com classificação qualitativa), nota média por canal, total de avaliações, distribuição de sentimento (positivo, neutro, negativo e crítico) e nuvem de tópicos recorrentes.
 - **Gráficos:** Evolução temporal de reviews e tendências de sentimento produzidas com Recharts.
 
-### 3.2. Reviews (Avaliações)
-- **Recursos:** Tabela e grid interativo com todas as avaliações normalizadas coletadas.
+### 3.2. Reviews (Avaliações) e Respostas Automáticas
+- **Recursos:** Tabela e grid interativo com todas as avaliações normalizadas coletadas nos 9 canais.
 - **Filtros Avançados:** Filtro por canal de origem, nota (1 a 5 estrelas), período e sentimento.
-- **IA "Sugerir Resposta":** Reviews classificados como `negative` ou `critical` exibem o resumo da IA (`sentiment_summary`) e o botão **"Sugerir Resposta"**, que invoca o Gemini 2.5 Flash para gerar uma resposta empática e profissional adaptada ao problema.
+- **IA "Sugerir Resposta" & Automação:** Reviews classificados como `negative` ou `critical` exibem o resumo da IA (`sentiment_summary`) e o botão **"Sugerir Resposta"**, que gera uma resposta adaptada ao problema. O portal dispõe de aba de **Regras de Resposta Automática** e **Fila de Aprovação** para moderar rascunhos de resposta gerados com IA.
 
 ### 3.3. Alertas
 - **Recursos:** Fila de trabalho com notificações de eventos críticos (ex: quedas bruscas na média de notas, surtos de insatisfação ou termos ofensivos).
@@ -38,7 +38,7 @@ O **Portal do Assinante** (localizado no diretório `portal/`) é a interface ce
 
 ### 3.4. IA Copilot (Reputei IA)
 - **Recursos:** Interface de chat interativo. O copiloto responde a perguntas sobre a reputação da empresa extraindo o contexto do banco de dados (estatísticas dos últimos 30 dias, principais temas de insatisfação e reviews críticos).
-- **Modelo:** Gemini 2.5 Flash operando com contexto customizado do tenant.
+- **Modelo:** Claude 3.5 Haiku como motor principal e Gemini 2.5 Flash como fallback, operando com contexto customizado do tenant.
 
 ### 3.5. Benchmarking Local
 - **Recursos:** Análise comparativa da empresa monitorada contra concorrentes diretos da região.

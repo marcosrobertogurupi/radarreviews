@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 import {
   LayoutDashboard, MessageSquare, Bell, Radio,
   Building2, RefreshCw, ChevronRight, LogOut, ShieldCheck, CreditCard, LifeBuoy,
-  Target, Briefcase, CalendarDays
+  Target, Briefcase, CalendarDays, Activity
 } from 'lucide-react'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -22,9 +22,10 @@ import Partners from './pages/Partners'
 import PartnerCommissions from './pages/PartnerCommissions'
 import ResourceCostControl from './pages/ResourceCostControl'
 import Meetings from './pages/Meetings'
+import ApifyMonitor from './pages/ApifyMonitor'
 
 
-type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'costs' | 'audit' | 'support' | 'prospects' | 'commercial' | 'meetings' | 'partners' | 'partner_commissions'
+type Page = 'dashboard' | 'reviews' | 'alerts' | 'connectors' | 'tenants' | 'plans' | 'costs' | 'apify' | 'audit' | 'support' | 'prospects' | 'commercial' | 'meetings' | 'partners' | 'partner_commissions'
 
 
 export interface TenantOption { id: string; name: string }
@@ -32,6 +33,7 @@ export interface TenantOption { id: string; name: string }
 const NAV = [
   { id: 'dashboard' as Page,   label: 'Dashboard',   icon: LayoutDashboard },
   { id: 'costs' as Page,       label: 'Custos & Recursos', icon: CreditCard },
+  { id: 'apify' as Page,       label: 'Apify Monitor',    icon: Activity },
   { id: 'commercial' as Page,  label: 'Comercial',   icon: Briefcase },
   { id: 'prospects' as Page,   label: 'Prospecção',  icon: Target },
   { id: 'meetings' as Page,    label: 'Reuniões',    icon: CalendarDays },
@@ -181,7 +183,8 @@ export default function App() {
       try {
         const { data, error } = await supabase.from('tenants').select('id, name').order('name')
         if (error) throw error
-        setTenants(data ?? [])
+        const sorted = (data ?? []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+        setTenants(sorted)
       } catch (err) {
         console.error('Erro ao carregar tenants:', err)
       }
@@ -282,6 +285,7 @@ export default function App() {
   const pages: Record<Page, ReactElement> = {
     dashboard:  <Dashboard  {...filterProps} />,
     costs:      <ResourceCostControl />,
+    apify:      <ApifyMonitor />,
     commercial: <Commercial />,
     prospects:  <Prospects />,
     meetings:   <Meetings />,

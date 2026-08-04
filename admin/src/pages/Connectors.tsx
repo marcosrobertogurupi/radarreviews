@@ -305,10 +305,11 @@ export default function Connectors() {
 
     setConnectors(data ?? [])
 
-    const { data: bData } = await supabase.from('monitored_businesses').select('id, name, tenant_id')
-    setAllBusinesses(bData || [])
-    if (bData && bData.length > 0 && !newConn.business_id) {
-      setNewConn(prev => ({ ...prev, business_id: bData[0].id }))
+    const { data: bData } = await supabase.from('monitored_businesses').select('id, name, tenant_id').order('name')
+    const sortedBusinesses = (bData || []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+    setAllBusinesses(sortedBusinesses)
+    if (sortedBusinesses.length > 0 && !newConn.business_id) {
+      setNewConn(prev => ({ ...prev, business_id: sortedBusinesses[0].id }))
     }
 
     // Mapa business_id → nome

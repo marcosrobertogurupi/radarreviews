@@ -328,8 +328,8 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     // 3. Garantir lista de nomes dos assinantes
     let tenantList = tenants
     if (!tenantList || tenantList.length === 0) {
-      const { data: tData } = await supabase.from('tenants').select('id, name')
-      if (tData) tenantList = tData
+      const { data: tData } = await supabase.from('tenants').select('id, name').order('name')
+      if (tData) tenantList = (tData ?? []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
     }
 
     // 4. Agrupar por tenant

@@ -48,6 +48,7 @@ import { handleReviewFunnelPortal, handlePublicFunnel } from './reviewFunnel.js'
 import { handleGoogleConnect, handleGoogleCallback, handleGoogleStatus, handleGoogleDisconnect } from './googleAuth.js'
 import { updateCompetitorStats } from '../services/ai/benchmarking.js'
 import { handleAutoReplyRoutes } from './autoReplyRoutes.js'
+import { getRecentRuns, getAccountStats, detectWasteRuns, getCostByActor } from '../lib/apify-monitor.js'
 
 // ── Clientes ────────────────────────────────────────────────────
 
@@ -2366,6 +2367,57 @@ const server = http.createServer(async (req, res) => {
       console.error('[admin-plans] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
+    return
+  }
+
+  if (url.startsWith('/api/apify')) {
+    ; (async () => {
+      setCors(req, res, 'Content-Type, Authorization')
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+      const auth = await getAuthUser(req.headers.authorization)
+      if (!auth || !['admin', 'operador'].includes(auth.perfil)) {
+        res.writeHead(403); res.end(JSON.stringify({ error: 'Acesso negado — apenas admin/operador' })); return
+      }
+
+      try {
+        const qs = new URL(req.url ?? '', 'http://localhost').searchParams
+        const limit = Math.min(200, parseInt(qs.get('limit') ?? '50', 10))
+
+        if (url === '/api/apify/runs' || url.startsWith('/api/apify/runs?')) {
+          const runs = await getRecentRuns(limit)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, data: runs, count: runs.length }))
+          return
+        }
+
+        if (url === '/api/apify/account' || url.startsWith('/api/apify/account?')) {
+          const stats = await getAccountStats()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, data: stats }))
+          return
+        }
+
+        if (url === '/api/apify/waste' || url.startsWith('/api/apify/waste?')) {
+          const waste = await detectWasteRuns(limit)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, data: waste, count: waste.length }))
+          return
+        }
+
+        if (url === '/api/apify/cost-by-actor' || url.startsWith('/api/apify/cost-by-actor?')) {
+          const cost = await getCostByActor(limit)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, data: cost }))
+          return
+        }
+
+        res.writeHead(404); res.end(JSON.stringify({ error: 'Rota Apify não encontrada' }))
+      } catch (err: any) {
+        console.error('[apify-monitor] Erro:', err.message)
+        res.writeHead(500); res.end(JSON.stringify({ error: err.message ?? 'Erro no monitor Apify' }))
+      }
+    })()
     return
   }
 

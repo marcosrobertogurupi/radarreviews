@@ -99,7 +99,7 @@ export default function ResourceCostControl() {
       setLogs(logItems)
 
       // 3. Buscar tenants e planos para cruzar tickets
-      const { data: tenantsData } = await supabase.from('tenants').select('id, name, plan')
+      const { data: tenantsData } = await supabase.from('tenants').select('id, name, plan').order('name')
       const { data: plansData } = await supabase.from('plans').select('slug, price_monthly')
 
       const planPrices: Record<string, number> = {}

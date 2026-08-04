@@ -128,18 +128,20 @@ export default function Tenants() {
     setLoading(true)
     
     // Fetch tenants
-    const { data: tData } = await supabase.from('tenants').select('*').order('created_at', { ascending: false })
+    const { data: tData } = await supabase.from('tenants').select('*').order('name', { ascending: true })
     
     // Fetch businesses
-    const { data: bData } = await supabase.from('monitored_businesses').select('*')
+    const { data: bData } = await supabase.from('monitored_businesses').select('*').order('name', { ascending: true })
 
     const bMap: Record<string, Business[]> = {}
-    for (const b of bData || []) {
+    for (const b of (bData || []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))) {
       if (!bMap[b.tenant_id]) bMap[b.tenant_id] = []
       bMap[b.tenant_id].push(b)
     }
 
-    setTenants(tData || [])
+    const sortedTenants = (tData || []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+
+    setTenants(sortedTenants)
     setBusinesses(bMap)
     setLoading(false)
   }

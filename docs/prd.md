@@ -1,13 +1,13 @@
 # PRD — Radar de Reviews (Reputei)
 **Documento de Requisitos do Produto**  
 *SaaS Multi-tenant para Monitoramento e Gestão de Reputação Online*  
-**Última Atualização:** 2026-07-28  
+**Última Atualização:** 2026-08-04  
 
 ---
 
 ## 1. Visão Geral do Produto
 
-O **Radar de Reviews (Reputei)** é um SaaS multi-tenant de monitoramento de reputação online. O sistema coleta avaliações (reviews), menções e reclamações de múltiplos canais (plataformas digitais e governamentais), normaliza estes dados em um banco de dados unificado, realiza análise de sentimentos inteligente e enriquecimento de dados via Inteligência Artificial (Google Gemini) e fornece painéis analíticos consolidados e ferramentas de resposta para as empresas assinantes.
+O **Radar de Reviews (Reputei)** é um SaaS multi-tenant de monitoramento de reputação online. O sistema coleta avaliações (reviews), menções e reclamações de 9 canais (plataformas digitais, governamentais e de reservas), normaliza estes dados em um banco de dados unificado, realiza análise de sentimentos inteligente e enriquecimento de dados via Inteligência Artificial (Claude 3.5 Haiku + Google Gemini 2.5 Flash) e fornece painéis analíticos consolidados e ferramentas de resposta para as empresas assinantes.
 
 ### 1.1 Proposta de Valor
 Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de seus clientes, automatizarem o processo de suporte técnico com IA de ponta (Agentic RAG) e agirem rapidamente diante de crises reputacionais (alertas de sentimentos, surtos de críticas e notificações via WhatsApp/E-mail).
@@ -45,7 +45,7 @@ Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de s
 - **Banco de Dados:** Supabase (PostgreSQL 15+)
 - **Extensões de Banco:** `uuid-ossp`, `pg_cron`, `pgsodium` (Supabase Vault), `vector` (pgvector para embeddings)
 - **Cliente Supabase:** `@supabase/supabase-js` v2
-- **IA Primária:** Google Gemini 2.5 Flash (`@google/generative-ai`) para análise de sentimentos, copilot e triagem
+- **IA Primária:** Claude 3.5 Haiku (`src/services/ai/claude.ts`) para Copilot e geração de respostas, com **Google Gemini 2.5 Flash** (`@google/generative-ai`) como motor secundário (fallback) e para análise de sentimentos e triagem
 - **IA de Embedding:** Gemini `text-embedding-004` (vetor de 768 dimensões)
 - **Testes:** `vitest`
 - **Validação de Schemas:** `zod` para entrada e saída de APIs
@@ -62,7 +62,7 @@ Ajudar empresas B2C e marcas a monitorarem de forma centralizada o feedback de s
 ## 4. Requisitos Funcionais por Módulo
 
 ### 4.1 Ingestão e Conectores
-O sistema sincroniza periodicamente dados de 8 canais diferentes através de uma **Arquitetura de Coleta em 3 Camadas** com governança orçamentária por tenant:
+O sistema sincroniza periodicamente dados de 9 canais diferentes através de uma **Arquitetura de Coleta em 3 Camadas** com governança orçamentária por tenant:
 
 1. **Google Maps (`google_maps`):** 
    - *Camada 1 (OAuth API - Custo R$ 0):* Utiliza o token OAuth do Google Business Profile (`tenants.google_oauth_tokens`) no endpoint `accounts.locations.reviews.list` com paginação nativa de 50 em 50 reviews, sem teto de 5.
@@ -77,6 +77,7 @@ O sistema sincroniza periodicamente dados de 8 canais diferentes através de uma
 6. **Facebook (`facebook`):** Busca avaliações públicas via Meta Graph API / Apify Actor.
 7. **Instagram (`instagram`):** Busca comentários via Instagram Graph API / Apify Actor.
 8. **Reclame Aqui (`reclame_aqui`):** Coleta de reclamações públicas via Apify Actor / Playwright.
+9. **Booking.com (`booking`):** Ingestão via conector dedicado (`src/connectors/booking.ts`), raspagem de avaliações de hotéis e acomodações com normalização de notas (0-10 para 0-5) e deduplicação automática.
 
 #### Regras de Ingestão e Controle Orçamentário (Apify Quotas):
 - **Governança de Cotas por Tenant (`tenant_scrape_quotas`):** Teto mensal de reviews raspados no Apify por plano (Trial: 200, Básico: 1.000, Completo: 5.000, Enterprise: 20.000). A rotina `checkTenantScrapeQuota` intercepta e bloqueia execuções na API do Apify se a cota do tenant for atingida.
@@ -153,8 +154,12 @@ Calculado para cada empresa (`monitored_businesses`) com base nos últimos 90 di
 - Impersonation/SSO para acesso rápido aos tenants vinculados.
 - Portal exclusivo do parceiro (`partner/src/pages/`) com 19 telas operacionais.
 
-### 4.13 Sistema de Prospecção Outbound e Commercial Scoring
-- Campanhas de prospecção (`prospect_campaigns`), enriquecimento de leads (`prospect_leads`), fila de follow-ups (`prospect_followup_queue`) e scoring comercial de empresas (`commercial_channel_scores`).
+### 4.13 Sistema de Prospecção Outbound Avançado e Commercial Scoring
+- Arquitetura de prospecção B2B com suporte a **cache da Kipflow** (`prospect_kipflow_cache`) e **Ledger de créditos** (`prospect_credit_ledger`).
+- **Segmentos ICP** (`prospect_icp_segments`) com calculadoras de fit score.
+- **Sequências de Cadência Multi-Canal** (`prospect_sequences`, `prospect_sequence_steps`, `prospect_touches`) cobrindo Email, WhatsApp e LinkedIn.
+- **Gestão Nativa de Reuniões Comerciais** (`prospect_meetings`) com integração à esteira de vendas.
+- **Governança LGPD:** Registro centralizado de opt-out (`prospect_optout`).
 
 ### 4.14 Telemetria, Quotas e Saúde do Sistema
 - **System Health Watchdog:** `system-health-job.ts` avalia taxa de erro de conectores e envia alertas aos administradores do SaaS.
@@ -165,6 +170,11 @@ Calculado para cada empresa (`monitored_businesses`) com base nos últimos 90 di
 ### 4.15 Billing e Checkout via Asaas
 - Gerenciamento de assinaturas via gateway Asaas (`src/api/asaas-webhook.ts` + `src/lib/asaas.ts`).
 - Suporte a pagamentos por Pix, Cartão de Crédito e Boleto Bancário.
+
+### 4.16 Motor Autônomo de Respostas com IA e Fila de Aprovação
+- Configuração de regras automáticas de resposta por tenant (`035_autonomous_reply_and_learning.sql`).
+- Geração automática de rascunhos pela IA para avaliações positivas, neutras e críticas.
+- Fila de aprovação moderada antes da publicação nos canais integrados.
 
 ---
 
@@ -201,7 +211,7 @@ Calculado para cada empresa (`monitored_businesses`) com base nos últimos 90 di
 |---|---|---|---|---|
 | `trial` | Trial | R$ 0,00 | 3 | Avaliação gratuita de 7 dias. |
 | `basico` | Básico | R$ 289,00 | 3 | Negócios locais. 500 reviews/mês, Google Maps & TripAdvisor, alertas e relatórios. |
-| `completo` | Completo | R$ 459,00 | 8 | Monitoramento total + IA. Reviews ilimitados, todos os canais, Copilot IA, WhatsApp. |
+| `completo` | Completo | R$ 459,00 | 9 | Monitoramento total + IA. Reviews ilimitados, todos os 9 canais, Copilot IA, WhatsApp. |
 | `custom` | Custom | R$ 389,00 | 4 | Flexibilidade para marcas. Atender até 4 canais escolhidos sob demanda. |
 | `enterprise` | Enterprise | R$ 1.500,00 | 999 | Escala máxima. Canais ilimitados, SLA garantido, Webhooks, suporte dedicado 24/7. |
 

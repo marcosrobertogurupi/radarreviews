@@ -50,9 +50,10 @@ export default function MyClients({ onSelectTenant }: { onSelectTenant: (id: str
         .from('tenants')
         .select('*')
         .eq('partner_id', partner.id)
-        .order('created_at', { ascending: false })
+        .order('name', { ascending: true })
 
-      setTenants(tData || [])
+      const sortedTenants = (tData || []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+      setTenants(sortedTenants)
     } catch (err: any) {
       toast('Erro ao carregar clientes: ' + err.message, 'error')
     } finally {

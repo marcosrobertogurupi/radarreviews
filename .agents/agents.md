@@ -107,18 +107,19 @@ radar-reviews/
 | facebook        | 2    | connectors/facebook.ts       | ✅ concluído |
 | instagram       | 2    | connectors/instagram.ts      | ✅ concluído |
 | reclame_aqui    | 3    | connectors/reclame-aqui.ts   | ✅ concluído |
+| booking         | 4    | connectors/booking.ts        | ✅ concluído |
 
 ---
 
-## Estado do produto (2026-04-13)
+## Estado do produto (2026-08-04)
 
 ### Backend
-- ✅ 8 conectores implementados + testados (88 testes, 0 falhas)
+- ✅ 9 conectores implementados + testados (Google Maps, TripAdvisor, Consumidor.gov, Trustpilot, Reddit, Facebook, Instagram, Reclame Aqui, Booking.com)
 - ✅ Pipeline de ingestão com deduplicação, análise de sentimento e alertas
 - ✅ Scheduler com loop de polling a cada 60s
-- ✅ Análise de sentimento: Gemini 2.5 Flash (primária) + heurística (fallback)
+- ✅ Motores de IA: Claude 3.5 Haiku (Copilot & respostas) + Gemini 2.5 Flash (fallback & sentimentos)
 - ✅ TypeScript limpo (`tsc --noEmit` sem erros)
-- ✅ API copilot: `src/api/server.ts` (porta 3001)
+- ✅ API Backend: `src/api/server.ts` (porta 3001)
 
 ### Frontend — Admin (`admin/`)
 - ✅ Dashboard com KPIs e gráficos (Recharts)
