@@ -606,8 +606,8 @@ export async function fetchGoogleMapsReviewsApify(
       reviewsStartDate = bufferDate.toISOString().split('T')[0]
     }
   } else if (jobType === 'backfill') {
-    // Backfill inicial: corte padrão de 180 dias atrás
-    const bufferDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+    // Backfill inicial: corte estrito de 30 dias atrás (diretriz de produto)
+    const bufferDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     reviewsStartDate = bufferDate.toISOString().split('T')[0]
   }
 
@@ -679,7 +679,18 @@ export async function fetchTripAdvisorReviewsApify(
     url = `https://www.tripadvisor.com/LocationPhotoDirectLink-g1-d${locationId}-Reviews.html`
   }
 
-  const reviewsStartDate = lastSyncAt ? new Date(lastSyncAt).toISOString().split('T')[0] : undefined
+  let reviewsStartDate: string | undefined
+  if (lastSyncAt) {
+    const syncDate = new Date(lastSyncAt)
+    if (!isNaN(syncDate.getTime())) {
+      const bufferDate = new Date(syncDate.getTime() - 24 * 60 * 60 * 1000)
+      reviewsStartDate = bufferDate.toISOString().split('T')[0]
+    }
+  } else if (jobType === 'backfill') {
+    // Backfill inicial: corte estrito de 30 dias atrás (diretriz de produto)
+    const bufferDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    reviewsStartDate = bufferDate.toISOString().split('T')[0]
+  }
 
   const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
 

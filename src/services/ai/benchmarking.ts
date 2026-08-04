@@ -103,7 +103,7 @@ export async function updateCompetitorStats(targetIdOrName?: string): Promise<{ 
         if (rating == null || reviewCount == null || rating === 0 || reviewCount === 0) {
           try {
             logger.info(`[benchmarking] Executando scraper Playwright para concorrente ${comp.name}...`)
-            const scraped = await scrapeGoogleMapsReviews(comp.place_id, { mode: 'scraping', place_id: comp.place_id, max_reviews: 20, since_days: 180 })
+            const scraped = await scrapeGoogleMapsReviews(comp.place_id, { mode: 'scraping', place_id: comp.place_id, max_reviews: 20, since_days: 30 })
             if (scraped.length > 0) {
               fetchedReviews = scraped.map(r => ({
                 author: r.author,

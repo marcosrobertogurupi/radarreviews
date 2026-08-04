@@ -74,7 +74,7 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
 
   const config = connector.config as Record<string, unknown>
   const maxReviews = (config['max_reviews'] as number | undefined) ?? 50
-  const sinceDays = (config['since_days'] as number | undefined) ?? 90
+  const sinceDays = (config['since_days'] as number | undefined) ?? 30
   const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
 
   let listingUrl = config['listing_url'] as string | undefined
