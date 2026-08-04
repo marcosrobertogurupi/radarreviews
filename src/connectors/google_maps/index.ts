@@ -58,8 +58,8 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   const config = (connector.config ?? {}) as unknown as GoogleMapsConfig
-  const maxReviews = config.max_reviews ?? 50
   const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
+  const maxReviews = config.max_reviews ?? (jobType === 'backfill' ? 50 : 100)
 
   // ── CAMADA 1: Google Business Profile OAuth API (Custo ZERO, Sem Limite de 5) ──
   const tokens = await getGoogleTokens(connector.tenant_id)

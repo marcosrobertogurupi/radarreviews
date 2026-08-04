@@ -654,6 +654,17 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   }
 
   // 3. Fallback 2: Apify (Terciário / Último recurso - se APIFY_TOKEN estiver configurado)
+  const killSwitch = process.env['DISABLE_APIFY_FALLBACK_RECLAMEAQUI']
+  if (killSwitch === 'true' || killSwitch === '1') {
+    logger.warn(
+      `[${CHANNEL}] Fallback para a Apify bloqueado pelo Kill Switch (DISABLE_APIFY_FALLBACK_RECLAMEAQUI=true)`,
+      { connector_id: connector.id, error: pwMsg }
+    )
+    result.error = `Playwright falhou: ${pwMsg}. (Fallback Apify desativado via Kill Switch).`
+    result.error_type = isTransientPw ? 'transient' : 'fatal'
+    return result
+  }
+
   if (isTransientPw) {
     logger.warn(
       `[${CHANNEL}] Playwright e Firecrawl indisponíveis. Ativando fallback Apify`,

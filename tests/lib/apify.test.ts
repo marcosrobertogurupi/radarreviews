@@ -39,40 +39,49 @@ describe('Apify Integration & Safety Limits', () => {
   describe('ACTOR_SAFETY_LIMITS', () => {
     it('deve possuir limites seguros predefinidos para Reclame Aqui e Trustpilot', () => {
       expect(ACTOR_SAFETY_LIMITS.reclame_aqui).toBeDefined()
-      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.maxItems).toBe(10)
-      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.costPerItem).toBe(0.05)
+      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.maxItems).toBe(5)
+      expect(ACTOR_SAFETY_LIMITS.reclame_aqui.costPerItem).toBe(0.09)
 
       expect(ACTOR_SAFETY_LIMITS.trustpilot).toBeDefined()
-      expect(ACTOR_SAFETY_LIMITS.trustpilot.maxItems).toBe(15)
+      expect(ACTOR_SAFETY_LIMITS.trustpilot.maxItems).toBe(100)
       expect(ACTOR_SAFETY_LIMITS.trustpilot.costPerItem).toBe(0.0015)
     })
   })
 
   describe('calculateAndClampLimit (Guard-Rail de Custo)', () => {
     it('deve aplicar o teto máximo de itens do canal quando o valor solicitado for alto', () => {
+      process.env.APIFY_MAX_COST_PER_RUN = '0.50'
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 100)
-      expect(safeLimit).toBe(10)
-      expect(estimatedCostUsd).toBeCloseTo(0.50, 4)
+      expect(safeLimit).toBe(5)
+      expect(estimatedCostUsd).toBeCloseTo(0.45, 4)
     })
 
     it('deve aplicar o teto do Trustpilot corretamente', () => {
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('trustpilot', 50)
-      expect(safeLimit).toBe(15)
-      expect(estimatedCostUsd).toBeCloseTo(0.0225, 4)
+      expect(safeLimit).toBe(50)
+      expect(estimatedCostUsd).toBeCloseTo(0.075, 4)
     })
 
     it('deve respeitar limites baixos dentro do teto permitido', () => {
+      process.env.APIFY_MAX_COST_PER_RUN = '0.50'
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 5)
       expect(safeLimit).toBe(5)
-      expect(estimatedCostUsd).toBeCloseTo(0.25, 4)
+      expect(estimatedCostUsd).toBeCloseTo(0.45, 4)
     })
 
     it('deve reduzir o limite automaticamente quando o orcamento APIFY_MAX_COST_PER_RUN for menor que o custo normal', () => {
-      process.env.APIFY_MAX_COST_PER_RUN = '0.15' // $0.15 USD max
-      // Para o Reclame Aqui ($0.05/item), $0.15 só permite 3 itens
+      process.env.APIFY_MAX_COST_PER_RUN = '0.27' // $0.27 USD max ($0.09 * 3 = 0.27)
       const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 10)
       expect(safeLimit).toBe(3)
-      expect(estimatedCostUsd).toBeCloseTo(0.15, 4)
+      expect(estimatedCostUsd).toBeCloseTo(0.27, 4)
+    })
+
+    it('deve zerar o limite quando o Kill Switch DISABLE_APIFY_FALLBACK_RECLAMEAQUI estiver ativo', () => {
+      process.env.DISABLE_APIFY_FALLBACK_RECLAMEAQUI = 'true'
+      const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', 10)
+      expect(safeLimit).toBe(0)
+      expect(estimatedCostUsd).toBe(0)
+      delete process.env.DISABLE_APIFY_FALLBACK_RECLAMEAQUI
     })
   })
 })

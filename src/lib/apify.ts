@@ -41,18 +41,58 @@ export function normalizeActorId(actorId: string): string {
 }
 
 /**
+ * Cache em memória para preços dinâmicos de atores da Apify (TTL: 6 horas)
+ */
+const pricingCache: Record<string, { costPerItem: number; fetchedAt: number }> = {}
+const PRICING_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+
+/**
+ * Consulta dinamicamente o preço do actor via API Apify com cache local
+ */
+export async function getActorPricing(actorId: string): Promise<number | null> {
+  const normalized = normalizeActorId(actorId)
+  const cached = pricingCache[normalized]
+  if (cached && Date.now() - cached.fetchedAt < PRICING_CACHE_TTL_MS) {
+    return cached.costPerItem
+  }
+
+  const token = getApifyToken()
+  if (!token) return null
+
+  try {
+    const res = await axios.get(`https://api.apify.com/v2/acts/${normalized}?token=${token}`, { timeout: 8000 })
+    const pricing = res.data?.data?.pricing
+    let costPerItem: number | null = null
+    if (pricing?.pricingModel === 'PER_DATASET_ITEM' && pricing?.pricePerUnitUsd) {
+      costPerItem = Number(pricing.pricePerUnitUsd)
+    } else if (pricing?.datasetItemPriceUsd) {
+      costPerItem = Number(pricing.datasetItemPriceUsd)
+    }
+
+    if (costPerItem && !isNaN(costPerItem) && costPerItem > 0) {
+      pricingCache[normalized] = { costPerItem, fetchedAt: Date.now() }
+      return costPerItem
+    }
+  } catch {
+    // Fallback silencioso para a tabela estática ACTOR_SAFETY_LIMITS
+  }
+  return null
+}
+
+/**
  * Tabela centralizada de limites de segurança e custos estimados por canal/actor.
+ * Permite capturar integralmente todos os reviews recentes para canais de baixo custo (Google Maps, TripAdvisor, Trustpilot).
  */
 export const ACTOR_SAFETY_LIMITS: Record<string, ActorSafetyLimit> = {
-  reclame_aqui:       { maxItems: 10, costPerItem: 0.05 },    // $50.00 / 1.000 itens ($0,05/item)
-  trustpilot:         { maxItems: 15, costPerItem: 0.0015 },  // $1.50 / 1.000 itens ($0,0015/item)
-  google_maps:        { maxItems: 50, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
-  tripadvisor:        { maxItems: 50, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
-  instagram_comments: { maxItems: 50, costPerItem: 0.0026 },  // $2.60 / 1.000 itens
-  facebook_reviews:   { maxItems: 20, costPerItem: 0.005 },
-  instagram_mentions: { maxItems: 20, costPerItem: 0.005 },
-  instagram_hashtags: { maxItems: 20, costPerItem: 0.005 },
-  booking:            { maxItems: 30, costPerItem: 0.003 },   // $3.00 / 1.000 itens ($0,003/item)
+  reclame_aqui:       { maxItems: 5,   costPerItem: 0.09 },    // US$90.00 / 1.000 itens (viralanalyzer scraper)
+  trustpilot:         { maxItems: 100, costPerItem: 0.0015 },  // US$1.50 / 1.000 itens ($0,0015/item)
+  google_maps:        { maxItems: 150, costPerItem: 0.0006 },  // US$0.60 / 1.000 itens ($0,0006/item)
+  tripadvisor:        { maxItems: 100, costPerItem: 0.0015 },  // US$1.50 / 1.000 itens ($0,0015/item)
+  instagram_comments: { maxItems: 50,  costPerItem: 0.0026 },  // US$2.60 / 1.000 itens
+  facebook_reviews:   { maxItems: 50,  costPerItem: 0.005 },
+  instagram_mentions: { maxItems: 50,  costPerItem: 0.005 },
+  instagram_hashtags: { maxItems: 50,  costPerItem: 0.005 },
+  booking:            { maxItems: 50,  costPerItem: 0.003 },   // US$3.00 / 1.000 itens ($0,003/item)
 }
 
 /**
@@ -63,10 +103,18 @@ export function calculateAndClampLimit(
   channel: string,
   requestedLimit: number
 ): { safeLimit: number; estimatedCostUsd: number } {
-  const envMaxCost = process.env['APIFY_MAX_COST_PER_RUN']
-  const maxCostPerRunUsd = envMaxCost && !isNaN(Number(envMaxCost)) ? Number(envMaxCost) : 0.50
+  // 1. Kill Switch por Variável de Ambiente para Reclame Aqui
+  const disableReclameAquiApify = process.env['DISABLE_APIFY_FALLBACK_RECLAMEAQUI']
+  if (channel === 'reclame_aqui' && (disableReclameAquiApify === 'true' || disableReclameAquiApify === '1')) {
+    console.warn('[Apify Guard-Rail] Bloqueado pelo Kill Switch (DISABLE_APIFY_FALLBACK_RECLAMEAQUI=true)')
+    return { safeLimit: 0, estimatedCostUsd: 0 }
+  }
 
-  const config = ACTOR_SAFETY_LIMITS[channel] ?? { maxItems: 20, costPerItem: 0.01 }
+  // 2. Limite Máximo de Custo por Run (Padrão: US$ 0.10)
+  const envMaxCost = process.env['APIFY_MAX_COST_PER_RUN']
+  const maxCostPerRunUsd = envMaxCost && !isNaN(Number(envMaxCost)) ? Number(envMaxCost) : 0.10
+
+  const config = ACTOR_SAFETY_LIMITS[channel] ?? { maxItems: 10, costPerItem: 0.01 }
   
   let safeLimit = Math.min(Math.max(1, requestedLimit), config.maxItems)
   let estimatedCostUsd = safeLimit * config.costPerItem
@@ -203,6 +251,11 @@ export async function fetchReclameAquiComplaints(
 
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', limit)
 
+  if (safeLimit <= 0) {
+    console.warn(`[Apify] fetchReclameAquiComplaints ignorado: safeLimit=0 (Kill Switch ativo ou teto de orçamento atingido)`)
+    return []
+  }
+
   try {
     const raTimeoutSecs = 300 // 5 minutos para o Reclame Aqui superar Cloudflare
     const raMemoryMb = 1024   // 1GB de RAM é necessário para o Chrome no container da Apify
@@ -308,7 +361,8 @@ export async function fetchTrustpilotReviews(
         ],
         maxReviews: safeLimit,
         limit: safeLimit,
-        maxResults: safeLimit
+        maxResults: safeLimit,
+        sortBy: options.sortBy || 'recency'
       }
     )
 
@@ -542,18 +596,35 @@ export async function fetchGoogleMapsReviewsApify(
 
   const actor = normalizeActorId('compass~google-maps-reviews-scraper')
   
-  // Data de corte para sync incremental (YYYY-MM-DD)
-  const reviewsStartDate = lastSyncAt ? new Date(lastSyncAt).toISOString().split('T')[0] : undefined
+  // Data de corte para sync incremental ou backfill (YYYY-MM-DD)
+  // Adiciona 1 dia de margem de segurança retroativa no incremental para evitar perder itens no limite do fuso
+  let reviewsStartDate: string | undefined
+  if (lastSyncAt) {
+    const syncDate = new Date(lastSyncAt)
+    if (!isNaN(syncDate.getTime())) {
+      const bufferDate = new Date(syncDate.getTime() - 24 * 60 * 60 * 1000)
+      reviewsStartDate = bufferDate.toISOString().split('T')[0]
+    }
+  } else if (jobType === 'backfill') {
+    // Backfill inicial: corte padrão de 180 dias atrás
+    const bufferDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+    reviewsStartDate = bufferDate.toISOString().split('T')[0]
+  }
+
+  // Se for backfill, solicitar até 50 itens; se incremental, até 150 itens sem truncar novos reviews
+  const requestedLimit = jobType === 'backfill' ? Math.min(limit, 50) : Math.min(limit, 150)
 
   // Importar dinamicamente para evitar ciclo
   const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
 
   if (ctx?.tenant_id) {
-    const quota = await checkTenantScrapeQuota(ctx.tenant_id, 'google_maps', limit, jobType)
+    const quota = await checkTenantScrapeQuota(ctx.tenant_id, 'google_maps', requestedLimit, jobType)
     if (!quota.allowed) {
       throw new Error(`[Apify Bloqueio de Cota] ${quota.reason || 'Cota mensal de reviews atingida'}`)
     }
     limit = quota.safeLimit
+  } else {
+    limit = requestedLimit
   }
 
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('google_maps', limit)
@@ -565,7 +636,8 @@ export async function fetchGoogleMapsReviewsApify(
         startUrls: [{ url: `https://www.google.com/maps/place/?q=place_id:${placeId}` }],
         maxReviews: safeLimit,
         limit: safeLimit,
-        sort: 'newest', // ⚠️ Obrigatório: ordena por mais recentes no Google Maps
+        sort: 'newest',
+        reviewsSort: 'newest', // ⚠️ Reforça ordenação por mais recentes no compass actor
         ...(reviewsStartDate ? { reviewsStartDate } : {})
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
