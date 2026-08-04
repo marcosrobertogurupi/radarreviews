@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Copy, RefreshCw, Eye, Code, Palette, Save, Loader2, Star, ShieldCheck, Sparkles, Check } from 'lucide-react'
+import { Copy, RefreshCw, Eye, Code, Palette, Save, Loader2, ShieldCheck, Sparkles, Check, AlertTriangle } from 'lucide-react'
 import { API_URL } from '../lib/utils'
 import { useToast } from '../components/Toast'
 
@@ -8,13 +8,26 @@ interface Props {
   tenantId: string
 }
 
+type WidgetConfig = {
+  theme: 'light' | 'dark'
+  limit: number
+  show_score: boolean
+  show_channel: boolean
+}
+
+type WidgetState = 
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'success'; token: string; config: WidgetConfig; businessName: string; sampleReviews: any[] }
+
 export default function Widget({ tenantId }: Props) {
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState<WidgetState>({ status: 'loading' })
   const [saving, setSaving] = useState(false)
   const [rotating, setRotating] = useState(false)
   const [copied, setCopied] = useState(false)
   const { toast } = useToast()
 
+  // Form states
   const [widgetToken, setWidgetToken] = useState('')
   const [businessName, setBusinessName] = useState('Sua Empresa')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
@@ -24,72 +37,118 @@ export default function Widget({ tenantId }: Props) {
   const [sampleReviews, setSampleReviews] = useState<any[]>([])
 
   useEffect(() => {
-    loadWidgetConfig()
+    loadWidgetToken()
   }, [tenantId])
 
-  async function loadWidgetConfig() {
-    setLoading(true)
+  function applySuccessData(data: {
+    widget_token: string
+    widget_config?: Partial<WidgetConfig>
+    business_name?: string
+    sample_reviews?: any[]
+  }) {
+    const token = data.widget_token
+    const name = data.business_name || 'Sua Empresa'
+    const config: WidgetConfig = {
+      theme: data.widget_config?.theme || 'light',
+      limit: data.widget_config?.limit || 5,
+      show_score: data.widget_config?.show_score !== false,
+      show_channel: data.widget_config?.show_channel !== false
+    }
+
+    setWidgetToken(token)
+    setBusinessName(name)
+    setTheme(config.theme)
+    setLimit(config.limit)
+    setShowScore(config.show_score)
+    setShowChannel(config.show_channel)
+    if (data.sample_reviews?.length) {
+      setSampleReviews(data.sample_reviews)
+    }
+
+    setState({
+      status: 'success',
+      token,
+      config,
+      businessName: name,
+      sampleReviews: data.sample_reviews || []
+    })
+  }
+
+  async function loadWidgetToken() {
+    setState({ status: 'loading' })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+    let fetchedData: any = null
+
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         const res = await fetch(`${API_URL}/api/portal/widget`, {
-          headers: { Authorization: `Bearer ${session.access_token}` }
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          signal: controller.signal
         })
         if (res.ok) {
           const data = await res.json()
           if (data.widget_token) {
-            setWidgetToken(data.widget_token)
-            setBusinessName(data.business_name || 'Sua Empresa')
-            if (data.widget_config) {
-              setTheme(data.widget_config.theme || 'light')
-              setLimit(data.widget_config.limit || 5)
-              setShowScore(data.widget_config.show_score !== false)
-              setShowChannel(data.widget_config.show_channel !== false)
-            }
-            if (data.sample_reviews?.length) {
-              setSampleReviews(data.sample_reviews)
-            }
-            setLoading(false)
-            return
+            fetchedData = data
           }
         }
       }
-    } catch (e) {
-      console.warn('[Widget] Erro ao carregar via API, tentando fallback direct:', e)
+    } catch (err) {
+      console.warn('[Widget] API falhou ou atingiu timeout (8s), tentando fallback Supabase direct:', err)
+    } finally {
+      clearTimeout(timeoutId)
     }
 
-    // Fallback direct query
+    if (fetchedData) {
+      applySuccessData(fetchedData)
+      return
+    }
+
+    // Fallback direct query via Supabase SDK
     try {
-      const { data: t } = await supabase
+      const { data: t, error: selectErr } = await supabase
         .from('tenants')
         .select('id, name, widget_token, widget_config')
         .eq('id', tenantId)
-        .single()
+        .maybeSingle()
+
+      if (selectErr) throw selectErr
 
       if (t) {
-        setBusinessName(t.name || 'Sua Empresa')
-        if (t.widget_config) {
-          setTheme(t.widget_config.theme || 'light')
-          setLimit(t.widget_config.limit || 5)
-          setShowScore(t.widget_config.show_score !== false)
-          setShowChannel(t.widget_config.show_channel !== false)
+        let token = t.widget_token
+        let config = t.widget_config || { theme: 'light', limit: 5, show_score: true, show_channel: true }
+
+        if (!token) {
+          // Se widget_token for nulo, regenera via RPC de segurança
+          const { data: rpcData, error: rpcErr } = await supabase.rpc('regenerate_widget_token')
+          if (!rpcErr && rpcData && rpcData.length > 0) {
+            token = rpcData[0].widget_token
+            if (rpcData[0].widget_config) config = rpcData[0].widget_config
+          }
         }
 
-        let token = t.widget_token
-        // Se widget_token for nulo ou vazio no banco, gera um novo UUID automaticamente
-        if (!token) {
-          token = crypto.randomUUID()
-          await supabase
-            .from('tenants')
-            .update({ widget_token: token })
-            .eq('id', tenantId)
+        if (token) {
+          applySuccessData({
+            widget_token: token,
+            widget_config: config,
+            business_name: t.name || 'Sua Empresa'
+          })
+          return
         }
-        setWidgetToken(token)
       }
-    } catch (err) {
-      console.error('[Widget] Erro no fallback direct:', err)
-    } finally {
-      setLoading(false)
+
+      setState({
+        status: 'error',
+        message: 'Não foi possível carregar o token de segurança do widget. Tente novamente ou entre em contato com o suporte.'
+      })
+    } catch (err: any) {
+      console.error('[Widget] Fallback Supabase falhou:', err)
+      setState({
+        status: 'error',
+        message: err.message || 'Erro de conexão ao carregar configurações do widget.'
+      })
     }
   }
 
@@ -116,21 +175,20 @@ export default function Widget({ tenantId }: Props) {
         }
       }
     } catch (e: any) {
-      console.warn('[Widget] Erro ao rotacionar via API, tentando fallback direct:', e)
+      console.warn('[Widget] Erro ao rotacionar via API, tentando RPC fallback:', e)
     }
 
-    // Fallback direct update via Supabase client
+    // Fallback RPC via Supabase client
     try {
-      const newToken = crypto.randomUUID()
-      const { error } = await supabase
-        .from('tenants')
-        .update({ widget_token: newToken })
-        .eq('id', tenantId)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('regenerate_widget_token')
+      if (rpcErr) throw rpcErr
 
-      if (error) throw error
-
-      setWidgetToken(newToken)
-      toast('Novo token de segurança gerado com sucesso!', 'success')
+      if (rpcData && rpcData.length > 0) {
+        setWidgetToken(rpcData[0].widget_token)
+        toast('Novo token de segurança gerado com sucesso!', 'success')
+      } else {
+        throw new Error('Falha ao regenerar token via RPC')
+      }
     } catch (err: any) {
       console.error('[Widget] Erro ao atualizar token:', err)
       toast(err.message || 'Erro ao gerar novo token', 'error')
@@ -188,7 +246,7 @@ export default function Widget({ tenantId }: Props) {
 
   const embedCode = widgetToken 
     ? `<div id="reputei-widget" data-token="${widgetToken}"></div>\n<script src="${API_URL}/widget.js" async></script>`
-    : 'Gerando token de segurança...'
+    : ''
 
   function copyCode() {
     if (!widgetToken) return
@@ -214,9 +272,35 @@ export default function Widget({ tenantId }: Props) {
         </p>
       </div>
 
-      {loading ? (
-        <div className="skeleton" style={{ height: 320, background: 'var(--bg-darker, #0e1017)', borderRadius: 16 }} />
-      ) : (
+      {state.status === 'loading' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', background: 'var(--bg-card)', borderRadius: 16, border: '1px solid var(--border)' }}>
+          <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)', marginBottom: 16 }} />
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Carregando configurações do widget...</p>
+        </div>
+      )}
+
+      {state.status === 'error' && (
+        <div style={{ padding: 24, background: 'rgba(239, 68, 68, 0.08)', borderRadius: 16, border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+            <AlertTriangle size={24} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>Falha ao gerar código do widget</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 480, margin: '0 auto' }}>
+              {state.message}
+            </p>
+          </div>
+          <button 
+            onClick={() => loadWidgetToken()} 
+            className="btn btn-primary"
+            style={{ padding: '10px 20px', fontWeight: 700, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <RefreshCw size={16} /> Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {state.status === 'success' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 24, alignItems: 'start' }}>
           
           {/* Coluna 1: Estilo & Configuração */}
@@ -333,7 +417,7 @@ export default function Widget({ tenantId }: Props) {
                 fontFamily: 'monospace', display: 'block', background: 'rgba(0,0,0,0.3)',
                 padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)'
               }}>
-                {widgetToken || 'Gerando token...'}
+                {widgetToken}
               </code>
             </div>
 
@@ -457,3 +541,4 @@ export default function Widget({ tenantId }: Props) {
     </div>
   )
 }
+

@@ -20,23 +20,40 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, unkno
 export async function handleGetPortalWidget(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-  if (req.method !== 'GET')     { res.writeHead(405); res.end('Method not allowed'); return }
+  if (req.method !== 'GET')     { res.writeHead(405); res.end(JSON.stringify({ error: 'method_not_allowed' })); return }
 
-  const auth = await getAuthUser(req.headers.authorization)
-  if (!auth || !auth.tenantId) {
-    res.writeHead(401); res.end(JSON.stringify({ error: 'Não autorizado' })); return
+  const authHeader = req.headers.authorization
+  if (!authHeader) {
+    res.writeHead(401, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'missing_token', message: 'Cabeçalho Authorization ausente' }))
+    return
+  }
+
+  const auth = await getAuthUser(authHeader)
+  if (!auth) {
+    res.writeHead(401, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'invalid_token', message: 'Token inválido ou expirado' }))
+    return
+  }
+
+  if (!auth.tenantId) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'no_tenant_association', message: 'Usuário autenticado sem tenant associado' }))
+    return
   }
 
   try {
-    // 1. Buscar tenant com token e config
+    // 1. Buscar tenant com token e config via service role (bypassa RLS)
     const { data: tenant, error: tErr } = await supabaseAdmin
       .from('tenants')
       .select('id, name, widget_token, widget_config')
       .eq('id', auth.tenantId)
-      .single()
+      .maybeSingle()
 
     if (tErr || !tenant) {
-      res.writeHead(404); res.end(JSON.stringify({ error: 'Tenant não encontrado' })); return
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'tenant_not_found', message: 'Tenant não encontrado' }))
+      return
     }
 
     let token = tenant.widget_token
@@ -55,7 +72,11 @@ export async function handleGetPortalWidget(req: http.IncomingMessage, res: http
       }
     }
 
-    // 3. Buscar reviews de amostra para pré-visualização no portal
+    // 3. Obter URL pública da API para montar o embed snippet
+    const publicApiUrl = (process.env.PUBLIC_API_URL || process.env.VITE_API_URL || 'https://api-production-24e1.up.railway.app').replace(/\/+$/, '')
+    const embed_snippet = `<div id="reputei-widget" data-token="${token}"></div>\n<script src="${publicApiUrl}/widget.js" async></script>`
+
+    // 4. Buscar reviews de amostra para pré-visualização no portal
     const { data: reviews } = await supabaseAdmin
       .from('reviews')
       .select('id, author_name, body, rating, published_at, channel, sentiment')
@@ -71,11 +92,15 @@ export async function handleGetPortalWidget(req: http.IncomingMessage, res: http
       business_name: tenant.name,
       widget_token: token,
       widget_config: config,
+      embed_snippet,
       sample_reviews: reviews || []
     }))
   } catch (err: any) {
-    console.error('[portal-widget] Erro GET:', err)
-    res.writeHead(500); res.end(JSON.stringify({ error: err?.message || 'Erro ao carregar widget' }))
+    console.error('[portal-widget] Erro GET:', err?.stack || err)
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'internal_error', message: err?.message || 'Erro ao carregar widget' }))
+    }
   }
 }
 
