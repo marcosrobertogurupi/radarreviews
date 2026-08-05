@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Review, AlertEvent, Connector } from '../lib/supabase'
 import {
@@ -24,6 +24,16 @@ interface Props {
   tenants: TenantOption[]
   selectedTenantId: string
   onTenantChange: (id: string) => void
+}
+
+// Helper para só atualizar o estado se o valor bruto realmente mudou
+function setIfChanged<T>(setter: React.Dispatch<React.SetStateAction<T>>, nextVal: T) {
+  setter((prevVal: T) => {
+    if (JSON.stringify(prevVal) === JSON.stringify(nextVal)) {
+      return prevVal
+    }
+    return nextVal
+  })
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -87,9 +97,24 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const isInitialMount = useRef(true)
+
+  // Memoizações para evitar que o Recharts reinicie animações ou renderize desnecessariamente
+  const memoizedTrendData = useMemo(() => trendData, [trendData])
+  const memoizedSentimentDist = useMemo(() => sentimentDist, [sentimentDist])
+  const memoizedChannelData = useMemo(() => channelData, [channelData])
+  const memoizedTimeline = useMemo(() => timeline, [timeline])
 
   useEffect(() => {
-    loadAll()
+    const isFirst = isInitialMount.current
+    if (isFirst) {
+      isInitialMount.current = false
+      loadAll(false)
+    } else {
+      // Troca de tenant ou atualização subsequente: atualiza suavemente em segundo plano
+      loadAll(true)
+    }
+
     const handleRefresh = () => loadAll(true)
     window.addEventListener('refresh_data', handleRefresh)
 
@@ -97,30 +122,34 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     const handleVisibility = () => { if (document.visibilityState === 'visible') loadAll(true) }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // Realtime — atualização incremental sem re-fetch completo
+    // Realtime — escutadores granulares por tabela
     const channelId = `admin-dash-${Math.random().toString(36).substring(7)}`
     const dashChannel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reviews' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, (payload: any) => {
         const r = payload.new as Review
-        if (selectedTenantId && r.tenant_id !== selectedTenantId) return
-        // Incrementa contadores sem re-fetch
-        setKpis(prev => {
-          if (!prev) return prev
-          const isNegCrit = r.sentiment === 'negative' || r.sentiment === 'critical'
-          const isCrit = r.sentiment === 'critical'
-          const newTotal = prev.totalReviews + 1
-          const newNegCritCount = Math.round(prev.negativeRate * prev.totalReviews / 100) + (isNegCrit ? 1 : 0)
-          return {
-            ...prev,
-            totalReviews: newTotal,
-            criticalCount: prev.criticalCount + (isCrit ? 1 : 0),
-            negativeRate: Math.round((newNegCritCount / newTotal) * 100),
-          }
-        })
-        setRecentReviews(prev => [r, ...prev].slice(0, 5))
+        if (selectedTenantId && r?.tenant_id && r.tenant_id !== selectedTenantId) return
+        loadKPIs()
+        loadRecentReviews()
+        loadTrend()
+        loadChannelData()
+        loadRanking()
+        loadTopVolumeTenants()
+        loadReputation()
+        loadTopics()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, () => loadAlerts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_events' }, (payload: any) => {
+        const a = payload.new as any
+        if (selectedTenantId && a?.tenant_id && a.tenant_id !== selectedTenantId) return
+        loadAlerts()
+        loadKPIs()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'channel_connectors' }, () => {
+        loadKPIs()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_notifications' }, () => {
+        loadSystemNotifications()
+      })
       .subscribe()
 
     return () => {
@@ -131,7 +160,8 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }, [selectedTenantId, tenants])
 
   async function loadAll(silent = false) {
-    if (!silent) setLoading(true)
+    // Só exibe skeleton completo se ainda não houver nenhum dado carregado
+    if (!silent && kpis === null) setLoading(true)
     else setRefreshing(true)
 
     try {
@@ -185,12 +215,11 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
       const avg = totalReviewsWithScore ? Math.round(totalScoreWeight / totalReviewsWithScore) : 0
 
-      // 5. Conectores Ativos e Alertas Pendentes (Lógica simplificada para evitar 400)
+      // 5. Conectores Ativos e Alertas Pendentes
       let activeConnectors = 0
       let pendingAlerts = 0
 
       if (selectedTenantId) {
-        // Buscar IDs das empresas do tenant primeiro
         const { data: bizIds } = await supabase.from('monitored_businesses').select('id').eq('tenant_id', selectedTenantId)
         const ids = (bizIds || []).map(b => b.id)
 
@@ -207,7 +236,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         pendingAlerts = aCount ?? 0
       }
 
-      setKpis({
+      setIfChanged<KPIData | null>(setKpis, {
         totalReviews: totalCount,
         negativeRate: totalCount ? Math.round((negCritCount / totalCount) * 100) : 0,
         criticalCount: critCount,
@@ -226,15 +255,15 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         dist.unanalyzed += s.unanalyzed_count ?? 0
       }
 
-      setSentimentDist(
-        Object.entries(dist)
-          .filter(([, v]) => v > 0)
-          .map(([name, value]) => ({
-            name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
-            value,
-            color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
-          }))
-      )
+      const newSentimentDist = Object.entries(dist)
+        .filter(([, v]) => v > 0)
+        .map(([name, value]) => ({
+          name: SENTIMENT_LABELS[name as keyof typeof SENTIMENT_LABELS] || name,
+          value,
+          color: SENTIMENT_COLORS[name as keyof typeof SENTIMENT_COLORS] || '#6b7280',
+        }))
+
+      setIfChanged(setSentimentDist, newSentimentDist)
     } catch (err) {
       console.error('Erro ao carregar KPIs:', err)
     }
@@ -248,7 +277,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
 
-    setRecentReviews(data ?? [])
+    setIfChanged(setRecentReviews, data ?? [])
   }
 
   async function loadAlerts() {
@@ -256,7 +285,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       .is('resolved_at', null).order('created_at', { ascending: false }).limit(5)
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
-    setRecentAlerts(data ?? [])
+    setIfChanged(setRecentAlerts, data ?? [])
   }
 
   async function loadTrend() {
@@ -284,7 +313,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       bucket.crítico += r.critical_count ?? 0
     }
 
-    setTrendData(days)
+    setIfChanged(setTrendData, days)
   }
 
   async function loadChannelData() {
@@ -298,19 +327,18 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       counts[r.channel] = (counts[r.channel] || 0) + (r.total_reviews ?? 0)
     }
 
-    setChannelData(
-      Object.entries(counts).map(([channel, count]) => ({
-        channel: CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] || channel,
-        icon: CHANNEL_ICONS[channel as keyof typeof CHANNEL_ICONS] || '📱',
-        count,
-      })).sort((a, b) => b.count - a.count)
-    )
+    const newChannelData = Object.entries(counts).map(([channel, count]) => ({
+      channel: CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] || channel,
+      icon: CHANNEL_ICONS[channel as keyof typeof CHANNEL_ICONS] || '📱',
+      count,
+    })).sort((a, b) => b.count - a.count)
+
+    setIfChanged(setChannelData, newChannelData)
   }
   
   async function loadRanking() {
     const since30 = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
 
-    // 1. Tentar buscar reviews negativas/críticas dos últimos 30 dias
     let { data: reviews } = await supabase
       .from('reviews')
       .select('tenant_id, sentiment, dissatisfaction_score')
@@ -319,7 +347,6 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
     const tenantsIn30 = new Set(reviews?.map(r => r.tenant_id).filter(Boolean))
 
-    // 2. Se houver menos de 5 assinantes nos últimos 30 dias, buscar o histórico completo de reviews negativas/críticas
     if (!reviews || tenantsIn30.size < 5) {
       const { data: allReviews } = await supabase
         .from('reviews')
@@ -330,18 +357,16 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     }
 
     if (!reviews || reviews.length === 0) {
-      setRankingData([])
+      setIfChanged<any[]>(setRankingData, [])
       return
     }
 
-    // 3. Garantir lista de nomes dos assinantes
     let tenantList = tenants
     if (!tenantList || tenantList.length === 0) {
       const { data: tData } = await supabase.from('tenants').select('id, name').order('name')
       if (tData) tenantList = (tData ?? []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
     }
 
-    // 4. Agrupar por tenant
     const groups: Record<string, { totalScore: number; negCount: number }> = {}
     for (const r of reviews) {
       if (!r.tenant_id) continue
@@ -357,7 +382,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       count: g.negCount,
     }))
 
-    setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore || b.count - a.count).slice(0, 5))
+    setIfChanged(setRankingData, ranking.sort((a, b) => b.avgScore - a.avgScore || b.count - a.count).slice(0, 5))
   }
 
   async function loadTopVolumeTenants() {
@@ -441,20 +466,19 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     })
 
     result.sort((a, b) => b.count - a.count)
-    setTopVolumeTenants(result.slice(0, 5))
+    setIfChanged(setTopVolumeTenants, result.slice(0, 5))
   }
 
   async function loadReputation() {
     const data = await getReputationData(selectedTenantId)
-    setReputation(data.current)
-    setTimeline(data.timeline)
+    setIfChanged<ReputationScoreData | null>(setReputation, data.current)
+    setIfChanged<TimelinePoint[]>(setTimeline, data.timeline)
   }
 
   async function loadTopics() {
     try {
       let cachedTopics: TopicData[] = []
 
-      // 1. Tentar buscar do cache review_topics
       let q = supabase.from('review_topics')
         .select('topics, business_id')
         .order('generated_at', { ascending: false })
@@ -491,11 +515,10 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       }
 
       if (cachedTopics.length > 0) {
-        setTopics(cachedTopics)
+        setIfChanged<TopicData[]>(setTopics, cachedTopics)
         return
       }
 
-      // 2. Fallback: Se review_topics estiver vazio, agregar diretamente das avaliações recentes (reviews)
       let qRev = supabase.from('reviews')
         .select('sentiment_topics, sentiment, body')
         .order('published_at', { ascending: false })
@@ -557,14 +580,14 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           .sort((a, b) => (b.positivo + b.negativo) - (a.positivo + a.negativo))
           .slice(0, 8)
 
-        setTopics(fallbackTopics)
+        setIfChanged<TopicData[]>(setTopics, fallbackTopics)
         return
       }
 
-      setTopics([])
+      setIfChanged<TopicData[]>(setTopics, [])
     } catch (err) {
       console.warn('Erro ao carregar tópicos:', err)
-      setTopics([])
+      setIfChanged<TopicData[]>(setTopics, [])
     }
   }
 
@@ -576,8 +599,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       .eq('tenant_id', selectedTenantId)
       .limit(1)
     
-    if (data && data.length > 0) setBusiness(data[0])
-    else setBusiness(null)
+    setIfChanged(setBusiness, data && data.length > 0 ? data[0] : null)
   }
 
   async function loadSystemNotifications() {
@@ -590,11 +612,11 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     
     if (selectedTenantId) q = q.eq('tenant_id', selectedTenantId)
     const { data } = await q
-    setSystemNotifications(data || [])
+    setIfChanged(setSystemNotifications, data || [])
   }
 
-  // ── Skeleton ────────────────────────────────────────────────
-  if (loading) {
+  // ── Skeleton (apenas no carregamento inicial se não houver KPIs) ────────────
+  if (loading && kpis === null) {
     return (
       <div>
         <div className="page-header">
@@ -711,7 +733,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
 
       {/* ── Fase 1: Timeline ────────────────────── */}
       <div style={{ marginBottom: 24 }}>
-        <ReputationTimeline data={timeline} />
+        <ReputationTimeline data={memoizedTimeline} />
       </div>
 
       {/* ── Gráficos ─────────────────────────────────────────── */}
@@ -720,7 +742,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         <div className="card" style={{ padding: 20 }}>
           <div className="section-title">📈 Tendência de Sentimento (7 dias)</div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={trendData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+            <AreaChart data={memoizedTrendData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="gPos" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
@@ -748,8 +770,8 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <ResponsiveContainer width={160} height={160}>
               <PieChart>
-                <Pie data={sentimentDist} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
-                  {sentimentDist.map((entry, i) => (
+                <Pie data={memoizedSentimentDist} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
+                  {memoizedSentimentDist.map((entry, i) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
@@ -757,7 +779,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
               </PieChart>
             </ResponsiveContainer>
             <div style={{ flex: 1 }}>
-              {sentimentDist.map(s => (
+              {memoizedSentimentDist.map(s => (
                 <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{s.name}</span>
@@ -779,7 +801,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
       <div className="card" style={{ padding: 20, marginBottom: 24 }}>
         <div className="section-title">📊 Distribuição por Canal</div>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={channelData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+          <BarChart data={memoizedChannelData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />

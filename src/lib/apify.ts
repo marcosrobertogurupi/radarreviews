@@ -649,11 +649,15 @@ export async function fetchGoogleMapsReviewsApify(
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('google_maps', limit)
 
   try {
+    const isUrl = placeId.startsWith('http://') || placeId.startsWith('https://')
+    const locationInput = isUrl
+      ? { startUrls: [{ url: placeId }] }
+      : { placeIds: [placeId] }
+
     const response = await axios.post(
       `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
-        placeIds: [placeId],
-        startUrls: [{ url: `https://www.google.com/maps/search/?api=1&query=hotel&query_place_id=${placeId}` }],
+        ...locationInput,
         maxReviews: safeLimit,
         limit: safeLimit,
         sort: 'newest',
