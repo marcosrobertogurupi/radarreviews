@@ -170,18 +170,37 @@ export async function ingestReviews(
   const toWriteRaw = [...newReviews, ...changedReviews]
   const toWrite: NormalizedReview[] = []
 
+  // Garante tenant_id válido
+  let tenantId = reviews.find(r => r.tenant_id)?.tenant_id
+  if (!tenantId && businessId) {
+    const { data: biz } = await supabase.from('monitored_businesses').select('tenant_id').eq('id', businessId).single()
+    tenantId = biz?.tenant_id
+  }
+
   for (const item of toWriteRaw) {
     const result = RawReviewSchema.safeParse(item)
     if (!result.success) {
       logger.warn('[ingest] Review rejeitado pela validação Zod', { error: result.error, external_id: item.external_id })
       continue
     }
-    // Garante que o tenant_id é o que foi injetado pelo wrapper/contexto
-    toWrite.push({ ...result.data, tenant_id: reviews[0]?.tenant_id } as NormalizedReview)
+    // Garante que o tenant_id é o que foi injetado pelo wrapper/contexto ou buscado da empresa
+    toWrite.push({ ...result.data, tenant_id: item.tenant_id || tenantId } as NormalizedReview)
   }
 
-  if (toWrite.length > 0) {
-    await upsertBatch(toWrite)
+  // Garante unicidade no lote para evitar erro do Postgres: "ON CONFLICT DO UPDATE command cannot affect row a second time"
+  const seenKeys = new Set<string>()
+  const uniqueToWrite: NormalizedReview[] = []
+
+  for (const item of toWrite) {
+    const key = `${item.channel}:${item.external_id}`
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key)
+      uniqueToWrite.push(item)
+    }
+  }
+
+  if (uniqueToWrite.length > 0) {
+    await upsertBatch(uniqueToWrite)
   }
 
   result.reviews_new = newReviews.length

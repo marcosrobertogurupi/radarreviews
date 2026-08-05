@@ -630,8 +630,8 @@ export async function fetchGoogleMapsReviewsApify(
     reviewsStartDate = bufferDate.toISOString().split('T')[0]
   }
 
-  // Se for backfill, solicitar até 50 itens; se incremental, até 150 itens sem truncar novos reviews
-  const requestedLimit = jobType === 'backfill' ? Math.min(limit, 50) : Math.min(limit, 150)
+  // Solicitar até 150 itens sem truncar novos reviews no backfill ou incremental
+  const requestedLimit = Math.min(limit, 150)
 
   // Importar dinamicamente para evitar ciclo
   const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
@@ -652,7 +652,8 @@ export async function fetchGoogleMapsReviewsApify(
     const response = await axios.post(
       `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?token=${token}&timeout=${DEFAULT_TIMEOUT_SECS}&memory=${DEFAULT_MEMORY_MB}`,
       {
-        startUrls: [{ url: `https://www.google.com/maps/place/?q=place_id:${placeId}` }],
+        placeIds: [placeId],
+        startUrls: [{ url: `https://www.google.com/maps/search/?api=1&query=hotel&query_place_id=${placeId}` }],
         maxReviews: safeLimit,
         limit: safeLimit,
         sort: 'newest',
@@ -690,7 +691,7 @@ export async function fetchTripAdvisorReviewsApify(
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
-  const actor = normalizeActorId('compass~tripadvisor-scraper')
+  const actor = normalizeActorId('web_wanderer~tripadvisor-reviews-scraper')
 
   let url = listingUrlOrLocationId
   if (!url.startsWith('http')) {
