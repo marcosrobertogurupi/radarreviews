@@ -656,14 +656,16 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return result
   }
 
-  // ── 3. TERCEIRA OPÇÃO: APIFY (Emergência / Último Recurso) ──────────────────────────
-  const killSwitch = process.env['DISABLE_APIFY_FALLBACK_RECLAMEAQUI']
-  if (killSwitch === 'true' || killSwitch === '1') {
+  // ── 3. TERCEIRA OPÇÃO: APIFY (Bloqueada por Padrão — Proteção Orçamentária Estrita) ──────
+  // O Reclame Aqui na Apify é bloqueado no código por padrão para estancar qualquer consumo.
+  // Só será executado se ENABLE_APIFY_FALLBACK_RECLAMEAQUI === 'true'.
+  const allowApify = process.env['ENABLE_APIFY_FALLBACK_RECLAMEAQUI'] === 'true'
+  if (!allowApify) {
     logger.warn(
-      `[${CHANNEL}] Fallback para a Apify bloqueado pelo Kill Switch (DISABLE_APIFY_FALLBACK_RECLAMEAQUI=true)`,
+      `[${CHANNEL}] Fallback para a Apify bloqueado por padrão para proteção de orçamento.`,
       { connector_id: connector.id, error: pwMsg }
     )
-    result.error = `Firecrawl e Playwright falharam: ${pwMsg}. (Fallback Apify desativado via Kill Switch).`
+    result.error = `Firecrawl e Playwright falharam: ${pwMsg}. (Fallback Apify bloqueado por padrão para proteção orçamentária).`
     result.error_type = isTransientPw ? 'transient' : 'fatal'
     return result
   }

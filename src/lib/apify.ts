@@ -246,7 +246,7 @@ export async function fetchReclameAquiComplaints(
   const token = getApifyToken()
   if (!token) throw new Error('APIFY_TOKEN não configurado')
 
-  const rawActor = actorId || 'gabruck97~reclameaqui'
+  const rawActor = 'gabruck97~reclameaqui'
   const actor = normalizeActorId(rawActor)
 
   const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('reclame_aqui', limit)
