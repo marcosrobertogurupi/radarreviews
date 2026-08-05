@@ -565,7 +565,6 @@ export async function runFirecrawlCollector(
     reviews_updated: ingest.reviews_updated,
   }
 }
-
 export async function run(connector: ChannelConnector): Promise<JobResult> {
   const result: JobResult = {
     reviews_fetched: 0,
@@ -589,7 +588,33 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   // Quantas vezes consecutivas este conector já falhou?
   const previousErrorCount = (connector.error_count as number | null) ?? 0
 
-  // 1. Tentar Playwright (Principal)
+  // ── 1. PRIMEIRA OPÇÃO: FIRECRAWL (Opção Primária de Coleta) ──────────────────────
+  const firecrawlApiKey = getFirecrawlApiKey()
+  if (firecrawlApiKey) {
+    logger.info(
+      `[${CHANNEL}] Executando opção primária: Firecrawl API`,
+      { connector_id: connector.id, slug: sanitizedSlug }
+    )
+    try {
+      const firecrawlRes = await runFirecrawlCollector(connector, slug, sanitizedSlug)
+      if (!firecrawlRes.error && firecrawlRes.reviews_fetched > 0) {
+        logger.info(`[${CHANNEL}] Coleta via Firecrawl concluída com sucesso (${firecrawlRes.reviews_fetched} reviews).`)
+        return firecrawlRes
+      }
+      if (firecrawlRes.error) {
+        logger.warn(`[${CHANNEL}] Firecrawl retornou erro: ${firecrawlRes.error}. Seguindo para opção secundária (Playwright)...`)
+      } else {
+        logger.info(`[${CHANNEL}] Firecrawl não encontrou reviews na página. Seguindo para opção secundária (Playwright)...`)
+      }
+    } catch (fcErr: unknown) {
+      const fcMsg = fcErr instanceof Error ? fcErr.message : String(fcErr)
+      logger.warn(`[${CHANNEL}] Exceção ao executar Firecrawl: ${fcMsg}. Seguindo para opção secundária (Playwright)...`)
+    }
+  } else {
+    logger.info(`[${CHANNEL}] FIRECRAWL_API_KEY não configurada. Seguindo para opção secundária (Playwright).`)
+  }
+
+  // ── 2. SEGUNDA OPÇÃO: PLAYWRIGHT LOCAL (Opção Secundária) ──────────────────────────
   let playwrightResult: JobResult | null = null
   let playwrightError: string | null = null
 
@@ -619,13 +644,11 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     pwMsg.includes('ERR_ABORTED') || pwMsg.includes('net::ERR') ||
     pwMsg.includes('timeout') || pwMsg.includes('Timeout')
 
-  const firecrawlApiKey = getFirecrawlApiKey()
-
-  // Se é o primeiro erro transiente (EAGAIN/ENOMEM), SEM chave Firecrawl e sem falhas anteriores,
-  // retornar como transiente para dar ao Playwright uma chance no próximo ciclo.
-  if (isTransientPw && previousErrorCount === 0 && !firecrawlApiKey) {
+  // Se é o primeiro erro transiente (EAGAIN/ENOMEM) e sem falhas anteriores,
+  // retornar como transiente para tentar novamente no próximo ciclo
+  if (isTransientPw && previousErrorCount === 0) {
     logger.warn(
-      `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez, sem Firecrawl) — será retentado no próximo ciclo`,
+      `[${CHANNEL}] Playwright falhou com erro transiente (1ª vez) — será retentado no próximo ciclo`,
       { error: pwMsg, connector_id: connector.id }
     )
     result.error = pwMsg
@@ -633,72 +656,33 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
     return result
   }
 
-  // 2. Fallback 1: Firecrawl (Secundário - se FIRECRAWL_API_KEY estiver configurada)
-  if (firecrawlApiKey) {
-    logger.warn(
-      `[${CHANNEL}] Playwright falhou (${pwMsg}). Ativando fallback Firecrawl...`,
-      { connector_id: connector.id, previousErrorCount }
-    )
-    try {
-      const firecrawlRes = await runFirecrawlCollector(connector, slug, sanitizedSlug)
-      if (!firecrawlRes.error) {
-        return firecrawlRes
-      }
-      logger.warn(`[${CHANNEL}] Fallback Firecrawl não retornou dados/teve erro: ${firecrawlRes.error}`)
-    } catch (fcErr: unknown) {
-      const fcMsg = fcErr instanceof Error ? fcErr.message : String(fcErr)
-      logger.warn(`[${CHANNEL}] Exceção ao executar fallback Firecrawl: ${fcMsg}`)
-    }
-  } else {
-    logger.info(`[${CHANNEL}] FIRECRAWL_API_KEY não configurada. Pulando fallback Firecrawl.`)
-  }
-
-  // 3. Fallback 2: Apify (Terciário / Último recurso - se APIFY_TOKEN estiver configurado)
+  // ── 3. TERCEIRA OPÇÃO: APIFY (Emergência / Último Recurso) ──────────────────────────
   const killSwitch = process.env['DISABLE_APIFY_FALLBACK_RECLAMEAQUI']
   if (killSwitch === 'true' || killSwitch === '1') {
     logger.warn(
       `[${CHANNEL}] Fallback para a Apify bloqueado pelo Kill Switch (DISABLE_APIFY_FALLBACK_RECLAMEAQUI=true)`,
       { connector_id: connector.id, error: pwMsg }
     )
-    result.error = `Playwright falhou: ${pwMsg}. (Fallback Apify desativado via Kill Switch).`
+    result.error = `Firecrawl e Playwright falharam: ${pwMsg}. (Fallback Apify desativado via Kill Switch).`
     result.error_type = isTransientPw ? 'transient' : 'fatal'
     return result
-  }
-
-  if (isTransientPw) {
-    logger.warn(
-      `[${CHANNEL}] Playwright e Firecrawl indisponíveis. Ativando fallback Apify`,
-      { error: pwMsg, connector_id: connector.id, previousErrorCount }
-    )
-  } else {
-    logger.warn(
-      `[${CHANNEL}] Playwright falhou com erro não-transiente. Tentando Apify como fallback final...`,
-      { error: pwMsg }
-    )
   }
 
   const actorId = process.env['APIFY_RECLAME_AQUI_ACTOR_ID']
-  const token = process.env['APIFY_TOKEN']
-  if (!token) {
-    logger.warn(`[${CHANNEL}] APIFY_TOKEN não configurado, abortando fallback Apify`)
-    result.error = pwMsg
-    result.error_type = isTransientPw ? 'transient' : 'fatal'
-    return result
-  }
-
   try {
     return await runApifyCollector(actorId, connector, slug)
   } catch (apifyErr: any) {
-    logger.error(
-      `[${CHANNEL}] Todos os scrapers (Playwright, Firecrawl e Apify) falharam`,
-      { error: apifyErr.message }
-    )
-    result.error = `Playwright: ${pwMsg}. Apify: ${apifyErr.message}`
-    result.error_type = 'fatal'
+    const apifyMsg = apifyErr instanceof Error ? apifyErr.message : String(apifyErr)
+    logger.error(`[${CHANNEL}] Todas as opções falharam (Firecrawl, Playwright e Apify)`, {
+      connector_id: connector.id,
+      pwError: pwMsg,
+      apifyError: apifyMsg
+    })
+    result.error = `Falha em todas as opções de coleta: ${pwMsg} / Apify: ${apifyMsg}`
+    result.error_type = 'transient'
     return result
   }
 }
-
 // -----------------------------------------------------------------------------
 // Estratégia 1: Extração via __NEXT_DATA__
 // O Next.js injeta dados SSR neste objeto — estrutura mais estável que o DOM
@@ -1100,3 +1084,4 @@ function parseDate(dateStr: string): string | null {
 
   return null
 }
+
