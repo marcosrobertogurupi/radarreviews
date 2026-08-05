@@ -743,7 +743,9 @@ export async function fetchTripAdvisorReviewsApify(
         startUrls: [{ url }],
         maxReviews: safeLimit,
         limit: safeLimit,
-        sort: 'newest', // ⚠️ Obrigatório: ordena por mais recentes no TripAdvisor
+        sort: 'newest',
+        reviewsSort: 'recent',
+        sortBy: 'recent',
         ...(reviewsStartDate ? { reviewsStartDate } : {})
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
@@ -755,7 +757,7 @@ export async function fetchTripAdvisorReviewsApify(
       const startTime = new Date(reviewsStartDate).getTime()
       if (!isNaN(startTime)) {
         items = items.filter(i => {
-          const dStr = i.publishedDate || i.date || i.createdAt || i.reviewDate
+          const dStr = i.published_date || i.publishedDate || i.date || i.createdAt || i.reviewDate
           if (!dStr) return true
           const itemTime = new Date(dStr).getTime()
           return isNaN(itemTime) || itemTime >= startTime

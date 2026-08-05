@@ -365,8 +365,15 @@ function normalizeRating(value: unknown): number | undefined {
 }
 
 function normalizeApifyTripAdvisor(raw: any, connector: ChannelConnector): NormalizedReview {
-  const reviewId = raw.id || raw.reviewId || `apify_ta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  const publishedAt = raw.publishedDate || raw.date || (raw.createdAt ? new Date(raw.createdAt).toISOString() : new Date().toISOString())
+  const reviewId = raw.id || raw.review_id || raw.reviewId || `apify_ta_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const rawDate = raw.published_date || raw.publishedDate || raw.date || raw.createdAt || raw.reviewDate
+  let publishedAt: string
+  if (rawDate) {
+    const d = new Date(rawDate)
+    publishedAt = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString()
+  } else {
+    publishedAt = new Date().toISOString()
+  }
 
   return {
     tenant_id: connector.tenant_id,
