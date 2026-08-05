@@ -21,6 +21,23 @@ export function getFirecrawlApiKey(): string | undefined {
 }
 
 /**
+ * Verifica se o Firecrawl está ativado como 1ª opção de scraping para o canal especificado.
+ * Por padrão, o Reclame Aqui usa Firecrawl como 1ª opção.
+ * Expansível via variável de ambiente: FIRECRAWL_PRIMARY_CHANNELS="reclame_aqui,tripadvisor,trustpilot" ou FIRECRAWL_EXPAND_ALL=true
+ */
+export function isFirecrawlPrimary(channel: string): boolean {
+  if (!getFirecrawlApiKey()) return false
+  if (process.env['FIRECRAWL_EXPAND_ALL'] === 'true' || process.env['FIRECRAWL_EXPAND_ALL'] === '1') {
+    return true
+  }
+  const configuredChannels = process.env['FIRECRAWL_PRIMARY_CHANNELS']
+    ? process.env['FIRECRAWL_PRIMARY_CHANNELS'].split(',').map(c => c.trim().toLowerCase())
+    : ['reclame_aqui']
+
+  return configuredChannels.includes(channel.toLowerCase())
+}
+
+/**
  * Executa o scraping de uma URL utilizando a API do Firecrawl.
  * O Firecrawl executa a renderização JS em nuvem e contorna proteções de anti-bot (ex: Cloudflare).
  */
