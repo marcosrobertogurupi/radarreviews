@@ -75,7 +75,7 @@ const googleMapsApiResponse = {
           uri: 'https://www.google.com/maps/contrib/123456',
           photoUri: 'https://lh3.googleusercontent.com/photo123',
         },
-        publishTime: '2026-05-15T10:00:00Z',
+        publishTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         relativePublishTimeDescription: 'há 2 semanas',
       },
       {
@@ -87,7 +87,7 @@ const googleMapsApiResponse = {
           uri: 'https://www.google.com/maps/contrib/789012',
           photoUri: 'https://lh3.googleusercontent.com/photo456',
         },
-        publishTime: '2026-05-15T10:00:00Z',
+        publishTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         relativePublishTimeDescription: 'há 3 semanas',
       },
     ],
@@ -193,7 +193,10 @@ describe('Google Maps connector', () => {
     expect(fromMock).toHaveBeenCalledWith('reviews')
 
     // Verificar que upsert foi chamado
-    const upsertMock = fromMock.mock.results[0]?.value?.upsert
+    const upsertCall = fromMock.mock.results.find(res => {
+      return res.type === 'return' && res.value && typeof res.value.upsert === 'function'
+    })
+    const upsertMock = (upsertCall?.value as any)?.upsert
     expect(upsertMock).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({

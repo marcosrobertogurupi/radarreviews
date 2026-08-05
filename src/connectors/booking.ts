@@ -31,14 +31,16 @@ export async function run(connector: ChannelConnector): Promise<JobResult> {
   })
 
   try {
+    const jobType = !connector.last_sync_at ? 'backfill' : 'incremental'
     const items = await scrapeBookingReviews(
       hotelUrl,
       30,
+      connector.last_sync_at,
       {
         tenant_id: connector.tenant_id,
         connector_id: connector.id,
       },
-      'incremental'
+      jobType
     )
 
     logger.info(`[booking] ${items.length} itens extraídos via Apify`, {

@@ -56,7 +56,7 @@ const tripAdvisorApiResponse = {
         id: 1056182371,
         lang: 'pt',
         location_id: 21186238,
-        published_date: '2026-04-11T08:38:32Z',
+        published_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
         rating: 5,
         helpful_votes: 3,
         rating_image_url:
@@ -84,22 +84,19 @@ const tripAdvisorApiResponse = {
         id: 1056182200,
         lang: 'en',
         location_id: 21186238,
-        published_date: '2026-04-10T15:00:00Z',
+        published_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
         rating: 4,
         helpful_votes: 0,
         rating_image_url:
           'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s4.0-66827-5.svg',
         url: 'https://www.tripadvisor.com/ShowUserReviews-g187791-d21186238-r1056182200',
-        text: 'Very good service.',
-        title: 'Great place',
+        text: 'Great experience overall.',
+        title: 'Good stay',
         trip_type: 'Couples',
-        travel_date: '2026-04-01',
+        travel_date: '2026-03-30',
         user: {
-          username: 'E2712LGclarer',
-          user_location: {
-            id: '187058',
-            name: 'Watford, England',
-          },
+          username: 'JohnD',
+          user_location: { id: '187791', name: 'Rome' },
         },
         subratings: {},
       },
@@ -212,7 +209,10 @@ describe('TripAdvisor connector', () => {
     const connector = mockConnector('tripadvisor')
     await run(connector)
 
-    const upsertMock = fromMock.mock.results[0]?.value?.upsert
+    const upsertCall = fromMock.mock.results.find(res => {
+      return res.type === 'return' && res.value && typeof res.value.upsert === 'function'
+    })
+    const upsertMock = (upsertCall?.value as any)?.upsert
     expect(upsertMock).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({

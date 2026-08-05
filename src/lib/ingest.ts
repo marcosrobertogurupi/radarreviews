@@ -91,6 +91,68 @@ export async function ingestReviews(
   }
 
   // ------------------------------------------------------------------
+  // 0. Filtro estrito de data de corte (30 dias no backfill ou last_sync_at no incremental)
+  // ------------------------------------------------------------------
+  let cutoffDate: Date | null = null
+  if (connectorId) {
+    try {
+      const { data: conn } = await supabase
+        .from('channel_connectors')
+        .select('last_sync_at, config')
+        .eq('id', connectorId)
+        .maybeSingle()
+
+      if (conn?.last_sync_at) {
+        // Incremental sync: corte = last_sync_at - 24h (margem para fusos horários)
+        const syncTime = new Date(conn.last_sync_at).getTime()
+        if (!isNaN(syncTime)) {
+          cutoffDate = new Date(syncTime - 24 * 60 * 60 * 1000)
+        }
+      } else if (conn) {
+        // Primeira sync (Backfill): 30 dias atrás (ou config.since_days)
+        const sinceDays = (conn.config as Record<string, unknown> | null)?.['since_days']
+        const days = typeof sinceDays === 'number' && sinceDays > 0 ? sinceDays : 30
+        cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      }
+    } catch (connErr) {
+      logger.warn('[ingest] Erro ao consultar channel_connector para filtro de data', {
+        connectorId,
+        error: String(connErr)
+      })
+    }
+  }
+
+  // Fallback padrão se não for possível consultar o conector: 30 dias atrás
+  if (!cutoffDate) {
+    cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  }
+
+  const validDateReviews = reviews.filter(r => {
+    if (!r.published_at) return false
+    const pubDate = new Date(r.published_at)
+    if (isNaN(pubDate.getTime())) return false
+    return pubDate.getTime() >= cutoffDate!.getTime()
+  })
+
+  const discardedCount = reviews.length - validDateReviews.length
+  if (discardedCount > 0) {
+    logger.info('[ingest] Filtro de data de corte aplicado', {
+      canal: channel,
+      connector_id: connectorId,
+      total_recebidos: reviews.length,
+      aceitos: validDateReviews.length,
+      descartados: discardedCount,
+      data_corte: cutoffDate.toISOString(),
+    })
+  }
+
+  if (validDateReviews.length === 0) {
+    return result
+  }
+
+  reviews = validDateReviews
+
+  // ------------------------------------------------------------------
   // 1. Consultar snapshots dos reviews que já existem no banco
   // ------------------------------------------------------------------
   const externalIds = reviews.map(r => r.external_id)

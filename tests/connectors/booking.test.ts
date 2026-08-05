@@ -148,8 +148,9 @@ describe('Booking Connector Unit Tests', () => {
       expect(scrapeBookingReviews).toHaveBeenCalledWith(
         'https://www.booking.com/hotel/br/grand-hotel.html',
         30,
+        dummyConnector.last_sync_at,
         expect.objectContaining({ tenant_id: 'tenant-789', connector_id: 'conn-booking-123' }),
-        'incremental'
+        'backfill'
       )
       expect(result.reviews_fetched).toBe(2)
       expect(result.reviews_new).toBe(2)

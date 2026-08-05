@@ -39,7 +39,7 @@ const validReview = {
   rating:             5,
   body:               'Ótimo atendimento, recomendo!',
   channel:            'google_maps' as const,
-  published_at:       '2024-01-15T10:30:00.000Z',
+  published_at:       new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
 }
 
 describe('[C9] Ingestão — Sanitização XSS com DOMPurify + Zod', () => {

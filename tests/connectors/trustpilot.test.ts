@@ -62,7 +62,7 @@ const makeReview = (id: string, stars = 5, withNextPage = false) => ({
   title: `Ótimo serviço ${id}`,
   text: `Review de teste ${id}`,
   language: 'pt',
-  createdAt: '2026-05-15T10:00:00Z',
+  createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
   consumer: {
     id: `consumer_${id}`,
     displayName: `Usuário ${id}`,
@@ -190,7 +190,7 @@ describe('Trustpilot connector', () => {
           title: 'Bom serviço',
           text: 'Atendimento rápido.',
           language: 'pt',
-          createdAt: '2026-05-15T10:00:00Z',
+          createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           consumer: { id: 'user456', displayName: 'Maria Oliveira' },
           links: [{ rel: 'self', href: 'https://www.trustpilot.com/reviews/abc123' }],
         },

@@ -663,7 +663,19 @@ export async function fetchGoogleMapsReviewsApify(
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
-    const items = (response.data as any[]).filter(i => i && !i.error)
+    let items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (reviewsStartDate) {
+      const startTime = new Date(reviewsStartDate).getTime()
+      if (!isNaN(startTime)) {
+        items = items.filter(i => {
+          const dStr = i.publishedAtDate || i.date || i.publishTime || i.publishedAt
+          if (!dStr) return true
+          const itemTime = new Date(dStr).getTime()
+          return isNaN(itemTime) || itemTime >= startTime
+        })
+      }
+    }
 
     if (ctx?.tenant_id) {
       await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'google_maps', items.length, estimatedCostUsd)
@@ -737,7 +749,19 @@ export async function fetchTripAdvisorReviewsApify(
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
-    const items = (response.data as any[]).filter(i => i && !i.error)
+    let items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (reviewsStartDate) {
+      const startTime = new Date(reviewsStartDate).getTime()
+      if (!isNaN(startTime)) {
+        items = items.filter(i => {
+          const dStr = i.publishedDate || i.date || i.createdAt || i.reviewDate
+          if (!dStr) return true
+          const itemTime = new Date(dStr).getTime()
+          return isNaN(itemTime) || itemTime >= startTime
+        })
+      }
+    }
 
     if (ctx?.tenant_id) {
       await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'tripadvisor', items.length, estimatedCostUsd)
@@ -758,6 +782,7 @@ export async function fetchTripAdvisorReviewsApify(
 export async function scrapeBookingReviews(
   hotelUrl: string,
   limit = 20,
+  lastSyncAt?: string | null,
   ctx?: ApifyContext,
   jobType: 'backfill' | 'incremental' = 'incremental'
 ): Promise<any[]> {
@@ -767,6 +792,18 @@ export async function scrapeBookingReviews(
   }
 
   const actor = normalizeActorId('voyager~booking-reviews-scraper')
+
+  let reviewsStartDate: string | undefined
+  if (lastSyncAt) {
+    const syncDate = new Date(lastSyncAt)
+    if (!isNaN(syncDate.getTime())) {
+      const bufferDate = new Date(syncDate.getTime() - 24 * 60 * 60 * 1000)
+      reviewsStartDate = bufferDate.toISOString().split('T')[0]
+    }
+  } else if (jobType === 'backfill') {
+    const bufferDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    reviewsStartDate = bufferDate.toISOString().split('T')[0]
+  }
 
   const { checkTenantScrapeQuota, recordApifyUsage } = await import('./apify-quota.js')
 
@@ -792,7 +829,19 @@ export async function scrapeBookingReviews(
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
 
-    const items = (response.data as any[]).filter(i => i && !i.error)
+    let items = (response.data as any[]).filter(i => i && !i.error)
+
+    if (reviewsStartDate) {
+      const startTime = new Date(reviewsStartDate).getTime()
+      if (!isNaN(startTime)) {
+        items = items.filter(i => {
+          const dStr = i.date || i.publishedAt || i.reviewDate
+          if (!dStr) return true
+          const itemTime = new Date(dStr).getTime()
+          return isNaN(itemTime) || itemTime >= startTime
+        })
+      }
+    }
 
     if (ctx?.tenant_id) {
       await recordApifyUsage(ctx.tenant_id, ctx.connector_id, 'booking', items.length, estimatedCostUsd)
