@@ -39,6 +39,13 @@ interface KPIData {
   avgScore: number
 }
 
+interface TopVolumeTenant {
+  id: string
+  name: string
+  count: number
+  topChannel: string | null
+}
+
 // ──────────────────────────────────────────────────────────────
 // Tooltip personalizado dos gráficos
 // ──────────────────────────────────────────────────────────────
@@ -69,6 +76,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   const [channelData, setChannelData] = useState<any[]>([])
   const [sentimentDist, setSentimentDist] = useState<any[]>([])
   const [rankingData, setRankingData] = useState<any[]>([])
+  const [topVolumeTenants, setTopVolumeTenants] = useState<TopVolumeTenant[]>([])
   
   // Estados da Fase 1
   const [reputation, setReputation] = useState<ReputationScoreData | null>(null)
@@ -138,6 +146,7 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
         loadTopics(),
         loadBusinessInfo(),
         loadSystemNotifications(),
+        loadTopVolumeTenants(),
       ])
     } catch (err) {
       console.error('Erro ao carregar dados do dashboard:', err)
@@ -349,6 +358,90 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
     }))
 
     setRankingData(ranking.sort((a, b) => b.avgScore - a.avgScore || b.count - a.count).slice(0, 5))
+  }
+
+  async function loadTopVolumeTenants() {
+    const since30Date = new Date(Date.now() - 30 * 86400_000)
+    const since30Str = since30Date.toISOString().split('T')[0]
+
+    let qStats = supabase
+      .from('review_stats_daily')
+      .select('tenant_id, channel, total_reviews')
+      .gte('date', since30Str)
+
+    if (selectedTenantId) {
+      qStats = qStats.eq('tenant_id', selectedTenantId)
+    }
+
+    const { data: stats } = await qStats
+
+    const tenantMap: Record<string, { total: number; channels: Record<string, number> }> = {}
+
+    if (stats && stats.length > 0) {
+      for (const r of stats) {
+        if (!r.tenant_id) continue
+        if (!tenantMap[r.tenant_id]) {
+          tenantMap[r.tenant_id] = { total: 0, channels: {} }
+        }
+        const count = Number(r.total_reviews || 0)
+        tenantMap[r.tenant_id].total += count
+        if (r.channel) {
+          tenantMap[r.tenant_id].channels[r.channel] = (tenantMap[r.tenant_id].channels[r.channel] || 0) + count
+        }
+      }
+    }
+
+    if (Object.keys(tenantMap).length === 0) {
+      let qRev = supabase
+        .from('reviews')
+        .select('tenant_id, channel')
+        .gte('published_at', since30Date.toISOString())
+
+      if (selectedTenantId) {
+        qRev = qRev.eq('tenant_id', selectedTenantId)
+      }
+
+      const { data: revs } = await qRev
+
+      for (const r of revs || []) {
+        if (!r.tenant_id) continue
+        if (!tenantMap[r.tenant_id]) {
+          tenantMap[r.tenant_id] = { total: 0, channels: {} }
+        }
+        tenantMap[r.tenant_id].total += 1
+        if (r.channel) {
+          tenantMap[r.tenant_id].channels[r.channel] = (tenantMap[r.tenant_id].channels[r.channel] || 0) + 1
+        }
+      }
+    }
+
+    let tenantList = tenants
+    if (!tenantList || tenantList.length === 0) {
+      const { data: tData } = await supabase.from('tenants').select('id, name')
+      if (tData) tenantList = tData
+    }
+
+    const result: TopVolumeTenant[] = Object.entries(tenantMap).map(([tid, data]) => {
+      let topChannel: string | null = null
+      let maxChannelCount = -1
+      for (const [ch, chCount] of Object.entries(data.channels)) {
+        if (chCount > maxChannelCount) {
+          maxChannelCount = chCount
+          topChannel = ch
+        }
+      }
+
+      const tenantObj = tenantList.find(t => t.id === tid)
+      return {
+        id: tid,
+        name: tenantObj ? tenantObj.name : 'Desconhecido',
+        count: data.total,
+        topChannel,
+      }
+    })
+
+    result.sort((a, b) => b.count - a.count)
+    setTopVolumeTenants(result.slice(0, 5))
   }
 
   async function loadReputation() {
@@ -793,38 +886,114 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
           )}
         </div>
 
-        {/* Alertas recentes */}
-        <div>
-          <div className="section-title">🚨 Alertas Ativos</div>
-          {recentAlerts.length === 0 ? (
-            <div className="card empty-state">
-              <div className="empty-state-icon">✅</div>
-              <div className="empty-state-text">Nenhum alerta pendente</div>
-            </div>
-          ) : (
-            <div className="alert-list">
-              {recentAlerts.map(a => (
-                <div
-                  key={a.id}
-                  className={`card alert-item ${a.detail?.review_sentiment === 'critical' ? 'critical' : ''}`}
-                >
-                  <div className="alert-header">
-                    <span className="alert-rule">
-                      {CHANNEL_ICONS[a.channel]} {a.alert_rules?.name || a.detail?.triggered_by_rule || 'Alerta'}
-                    </span>
-                    <span className="alert-time">{timeAgo(a.triggered_at)}</span>
-                  </div>
-                  {a.detail?.alert_reason ? (
-                    <div className="alert-reason">⚠️ {a.detail.alert_reason}</div>
-                  ) : (
-                    <div className="alert-reason" style={{ color: 'var(--text-muted)' }}>
-                      {a.detail?.review_body_preview?.slice(0, 100)}...
+        {/* Coluna da direita: Top 5 Volume de Reviews + Alertas */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Top 5 Assinantes em Volume (últimos 30 dias) */}
+          <div className="card" style={{ padding: 20 }}>
+            <div className="section-title">📊 Top 5 Assinantes por Volume (30 dias)</div>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Assinantes com maior volume de avaliações coletadas nos últimos 30 dias
+            </p>
+
+            {topVolumeTenants.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📈</div>
+                <div className="empty-state-text">Nenhum dado de volume nos últimos 30 dias</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {topVolumeTenants.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <div
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: idx === 0 ? '#6366f1' : idx === 1 ? '#8b5cf6' : idx === 2 ? '#ec4899' : 'var(--border)',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        #{idx + 1}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.name}
+                        </div>
+                        {item.topChannel && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                            <span>Canal principal:</span>
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                              {CHANNEL_ICONS[item.topChannel as keyof typeof CHANNEL_ICONS] || '📱'} {CHANNEL_LABELS[item.topChannel as keyof typeof CHANNEL_LABELS] || item.topChannel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: '#6366f1' }}>
+                        {item.count.toLocaleString('pt-BR')}
+                      </div>
+                      <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                        reviews (30d)
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Alertas recentes */}
+          <div>
+            <div className="section-title">🚨 Alertas Ativos</div>
+            {recentAlerts.length === 0 ? (
+              <div className="card empty-state">
+                <div className="empty-state-icon">✅</div>
+                <div className="empty-state-text">Nenhum alerta pendente</div>
+              </div>
+            ) : (
+              <div className="alert-list">
+                {recentAlerts.map(a => (
+                  <div
+                    key={a.id}
+                    className={`card alert-item ${a.detail?.review_sentiment === 'critical' ? 'critical' : ''}`}
+                  >
+                    <div className="alert-header">
+                      <span className="alert-rule">
+                        {CHANNEL_ICONS[a.channel]} {a.alert_rules?.name || a.detail?.triggered_by_rule || 'Alerta'}
+                      </span>
+                      <span className="alert-time">{timeAgo(a.triggered_at)}</span>
+                    </div>
+                    {a.detail?.alert_reason ? (
+                      <div className="alert-reason">⚠️ {a.detail.alert_reason}</div>
+                    ) : (
+                      <div className="alert-reason" style={{ color: 'var(--text-muted)' }}>
+                        {a.detail?.review_body_preview?.slice(0, 100)}...
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
