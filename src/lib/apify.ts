@@ -657,8 +657,13 @@ export async function fetchGoogleMapsReviewsApify(
         maxReviews: safeLimit,
         limit: safeLimit,
         sort: 'newest',
-        reviewsSort: 'newest', // ⚠️ Reforça ordenação por mais recentes no compass actor
-        ...(reviewsStartDate ? { reviewsStartDate } : {})
+        reviewsSort: 'newest',
+        ...(reviewsStartDate ? {
+          startDate: reviewsStartDate,
+          reviewsStartDate,
+          publishedAfter: reviewsStartDate,
+          dateFrom: reviewsStartDate,
+        } : {})
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
@@ -734,7 +739,9 @@ export async function fetchTripAdvisorReviewsApify(
     limit = quota.safeLimit
   }
 
-  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('tripadvisor', limit)
+  // Em execuções incrementais, restringir safeLimit para máximo 20 reviews para poupar créditos
+  const effectiveLimit = jobType === 'incremental' ? Math.min(limit, 20) : limit
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('tripadvisor', effectiveLimit)
 
   try {
     const response = await axios.post(
@@ -743,10 +750,16 @@ export async function fetchTripAdvisorReviewsApify(
         startUrls: [{ url }],
         maxReviews: safeLimit,
         limit: safeLimit,
+        maxResults: safeLimit,
         sort: 'newest',
         reviewsSort: 'recent',
         sortBy: 'recent',
-        ...(reviewsStartDate ? { reviewsStartDate } : {})
+        ...(reviewsStartDate ? {
+          startDate: reviewsStartDate,
+          reviewsStartDate: reviewsStartDate,
+          publishedAfter: reviewsStartDate,
+          dateFrom: reviewsStartDate,
+        } : {})
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
@@ -817,7 +830,8 @@ export async function scrapeBookingReviews(
     limit = quota.safeLimit
   }
 
-  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('booking', limit)
+  const effectiveLimit = jobType === 'incremental' ? Math.min(limit, 20) : limit
+  const { safeLimit, estimatedCostUsd } = calculateAndClampLimit('booking', effectiveLimit)
 
   try {
     const response = await axios.post(
@@ -826,7 +840,15 @@ export async function scrapeBookingReviews(
         startUrls: [{ url: hotelUrl }],
         maxItems: safeLimit,
         limit: safeLimit,
-        sortBy: 'newest'
+        maxReviews: safeLimit,
+        sortBy: 'newest',
+        sort: 'newest',
+        ...(reviewsStartDate ? {
+          startDate: reviewsStartDate,
+          reviewsStartDate,
+          publishedAfter: reviewsStartDate,
+          dateFrom: reviewsStartDate,
+        } : {})
       },
       { timeout: (DEFAULT_TIMEOUT_SECS + 30) * 1000 }
     )
