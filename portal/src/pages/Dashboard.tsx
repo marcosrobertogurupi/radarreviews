@@ -90,7 +90,7 @@ export default function Dashboard({ tenantId }: Props) {
             .catch(() => [])
         : Promise.resolve([])
 
-      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores, presTableRes, presAlertRes] = await Promise.all([
+      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores, presTableRes, presAlertRes, reviewsCount30Res, reviewsTotalRes] = await Promise.all([
         supabase.from('review_stats_daily').select('positive_count, neutral_count, negative_count, critical_count, unanalyzed_count, avg_rating, avg_dissatisfaction_score, total_reviews, date')
           .eq('tenant_id', tenantId).gte('date', since30.split('T')[0]),
         supabase.from('review_stats_daily').select('total_reviews')
@@ -112,13 +112,25 @@ export default function Dashboard({ tenantId }: Props) {
         bizIds.length
           ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').in('business_id', bizIds).eq('notified', false).order('triggered_at', { ascending: false }).limit(10)
           : Promise.resolve({ data: [], error: null }),
+        // Volume real: reviews coletados nos últimos 30 dias (collected_at = data de ingestão pelo Reputei)
+        supabase.from('reviews').select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId).gte('collected_at', since30),
+        // Total histórico: todos os reviews coletados pelo Reputei para este tenant
+        supabase.from('reviews').select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId),
       ] as const)
 
       const stats = statsRes.data ?? []
       const allStats = allStatsRes.data ?? []
 
-      // KPIs a partir do review_stats_daily
-      let total = 0
+      // Volume real de reviews coletados pelo Reputei nos últimos 30 dias (via collected_at)
+      // Usa contagem direta na tabela reviews em vez de review_stats_daily,
+      // pois review_stats_daily agrupa por published_at (data original na plataforma),
+      // o que excluiria reviews antigos que foram coletados recentemente.
+      const total30 = reviewsCount30Res.count ?? 0
+      const totalAll = reviewsTotalRes.count ?? 0
+
+      // Métricas de qualidade (sentimento, rating, score) continuam vindo de review_stats_daily
       let negCritCount = 0
       let critCount = 0
       let totalRatingWeight = 0
@@ -127,7 +139,6 @@ export default function Dashboard({ tenantId }: Props) {
       let totalReviewsWithScore = 0
 
       for (const s of stats) {
-        total += s.total_reviews ?? 0
         negCritCount += (s.negative_count ?? 0) + (s.critical_count ?? 0)
         critCount += s.critical_count ?? 0
 
@@ -141,8 +152,6 @@ export default function Dashboard({ tenantId }: Props) {
           totalReviewsWithScore += s.total_reviews
         }
       }
-
-      const totalAll = allStats.reduce((acc, curr) => acc + (curr.total_reviews ?? 0), 0)
 
       // Obter nota média da empresa a partir dos reviews ou fallback para a nota oficial do Google Maps (4.8)
       const { data: dbReviews } = await supabase
@@ -158,9 +167,9 @@ export default function Dashboard({ tenantId }: Props) {
       const avgScore = totalReviewsWithScore ? totalScoreWeight / totalReviewsWithScore : 0
 
       setKpi({
-        total,
+        total: total30,
         total_all: totalAll,
-        negative_rate: total ? Math.round((negCritCount / total) * 100) : 0,
+        negative_rate: total30 ? Math.round((negCritCount / total30) * 100) : 0,
         critical_count: critCount,
         avg_rating: avgRating,
         pending_alerts: alRes.count ?? 0,
