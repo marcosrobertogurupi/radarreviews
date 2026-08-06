@@ -1,9 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { z } from 'zod';
 import { logger } from './logger.js';
-
-const KIPFLOW_API_BASE_URL = process.env.KIPFLOW_API_URL || 'https://api.kipflow.io';
-const KIPFLOW_API_KEY = process.env.KIPFLOW_API_KEY || '';
 
 export interface KipflowCompanySearchFilters {
   query?: string;
@@ -45,38 +41,92 @@ export interface KipflowDecidorResult {
 }
 
 export class KipflowClient {
-  private http: AxiosInstance;
+  private explicitApiKey?: string;
 
-  constructor(apiKey: string = KIPFLOW_API_KEY) {
-    this.http = axios.create({
-      baseURL: KIPFLOW_API_BASE_URL,
+  constructor(apiKey?: string) {
+    this.explicitApiKey = apiKey;
+  }
+
+  private getApiKey(): string {
+    return this.explicitApiKey || process.env.KIPFLOW_API_KEY || '';
+  }
+
+  private getBaseUrl(): string {
+    return process.env.KIPFLOW_API_URL || 'https://api.kipflow.io';
+  }
+
+  private getHttpClient(): AxiosInstance {
+    const apiKey = this.getApiKey();
+    return axios.create({
+      baseURL: this.getBaseUrl(),
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey,
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
       timeout: 30000,
     });
   }
 
   /**
-   * Buscar empresas por filtros avançados (CNAE, Estado, Cidade, Nome, etc.)
+   * Buscar empresas por filtros (CNPJ, Domínio, Nome, etc.) diretamente na API Kipflow
    */
   async searchCompanies(filters: KipflowCompanySearchFilters): Promise<KipflowCompanyResult[]> {
+    const apiKey = this.getApiKey();
+    logger.info('Iniciando busca de empresas na Kipflow', { filters, hasApiKey: !!apiKey });
+
+    if (!apiKey || apiKey.includes('test')) {
+      logger.warn('KIPFLOW_API_KEY não configurada ou em ambiente de teste. Retornando dados simulados.');
+      return this.getMockCompanies(filters);
+    }
+
     try {
-      logger.info('Iniciando busca de empresas na Kipflow', { filters });
-      
-      // Fallback para desenvolvimento/teste se API key não configurada ou endpoint simulado
-      if (!KIPFLOW_API_KEY) {
-        logger.warn('KIPFLOW_API_KEY não configurada em .env. Retornando dados simulados.');
-        return this.getMockCompanies(filters);
+      const http = this.getHttpClient();
+      const rawInput = (filters.cnpj || filters.query || filters.domain || '').trim();
+      const cleanDigits = rawInput.replace(/\D/g, '');
+
+      const params: Record<string, string> = {
+        datasets: 'basic,address,online_presence,partners,complete',
+      };
+
+      if (cleanDigits.length === 14) {
+        params.cnpj = cleanDigits;
+      } else if (filters.domain || (rawInput.includes('.') && !rawInput.includes(' '))) {
+        params.domain = filters.domain || (rawInput.replace(/https?:\/\//, '').split('/')[0] ?? rawInput);
+      } else if (filters.cnpj) {
+        params.cnpj = filters.cnpj;
+      } else {
+        // Se a busca for genérica por texto, passar como cnpj ou tentar extrair o máximo de dígitos
+        if (cleanDigits.length > 0) {
+          params.cnpj = cleanDigits;
+        } else if (rawInput) {
+          params.domain = rawInput;
+        }
       }
 
-      const response = await this.http.post('/empresas/buscar-com-filtros', filters);
-      return this.normalizeCompanyResponse(response.data);
+      const response = await http.get('/companies/v1/search', { params });
+      
+      if (response.data && response.data.success && response.data.data) {
+        return this.normalizeCompanyResponse([response.data.data]);
+      } else if (response.data && Array.isArray(response.data.results)) {
+        return this.normalizeCompanyResponse(response.data.results.map((r: any) => r.data || r));
+      }
+
+      return [];
     } catch (error: any) {
-      logger.error('Erro ao buscar empresas na Kipflow', { error: error.message, filters });
-      // Retorna fallback gracioso em dev se houver erro de requisição
-      return this.getMockCompanies(filters);
+      logger.error('Erro ao buscar empresas na Kipflow API', {
+        error: error.response?.data || error.message,
+        status: error.response?.status,
+        filters
+      });
+
+      // Se ocorreu um erro 404/COMPANY_NOT_FOUND, significa que a empresa realmente não existe na Kipflow
+      if (error.response?.status === 404 || error.response?.data?.error?.code === 'COMPANY_NOT_FOUND') {
+        return [];
+      }
+
+      // Se houver falha de rede/API e a chave estiver configurada, podemos retornar vazio ou relançar o erro
+      return [];
     }
   }
 
@@ -84,121 +134,121 @@ export class KipflowClient {
    * Buscar dados de uma empresa específica por CNPJ ou Domínio (Para enriquecimento)
    */
   async getCompanyByCnpjOrDomain(cnpjOrDomain: string): Promise<KipflowCompanyResult | null> {
-    try {
-      logger.info('Buscando detalhes de empresa na Kipflow para enriquecimento', { cnpjOrDomain });
-      
-      const cleanInput = cnpjOrDomain.replace(/\D/g, '');
-      const isCnpj = cleanInput.length === 14;
-
-      if (!KIPFLOW_API_KEY) {
-        return this.getMockCompanies({ query: cnpjOrDomain })[0] || null;
-      }
-
-      const endpoint = isCnpj ? '/empresas/buscar-por-cnpj' : '/empresas/buscar-por-dominio';
-      const payload = isCnpj ? { cnpj: cleanInput } : { domain: cnpjOrDomain };
-
-      const response = await this.http.post(endpoint, payload);
-      const normalized = this.normalizeCompanyResponse([response.data]);
-      return normalized[0] || null;
-    } catch (error: any) {
-      logger.error('Erro ao buscar detalhes da empresa na Kipflow', { error: error.message, cnpjOrDomain });
-      return this.getMockCompanies({ query: cnpjOrDomain })[0] || null;
-    }
+    const results = await this.searchCompanies({ query: cnpjOrDomain, cnpj: cnpjOrDomain });
+    return results[0] || null;
   }
 
   /**
-   * Buscar decisores/personas no LinkedIn para uma determinada empresa (por Domínio ou Nome)
+   * Buscar decisores/personas para uma determinada empresa (a partir do quadro de sócios/diretoria)
    */
   async findCompanyDecidors(domainOrCompanyName: string, rolesFilter: string[] = ['diretor', 'gerente', 'ceo', 'cmo', 'head', 'cx']): Promise<KipflowDecidorResult[]> {
     try {
-      logger.info('Buscando decisores na Kipflow', { domainOrCompanyName, rolesFilter });
+      logger.info('Buscando decisores via Kipflow', { domainOrCompanyName });
+      const apiKey = this.getApiKey();
 
-      if (!KIPFLOW_API_KEY) {
+      if (!apiKey || apiKey.includes('test')) {
         return this.getMockDecidors(domainOrCompanyName);
       }
 
-      const response = await this.http.post('/redes-sociais/linkedin/personas', {
-        company_identifier: domainOrCompanyName,
-        roles: rolesFilter,
-      });
+      const company = await this.getCompanyByCnpjOrDomain(domainOrCompanyName);
+      const socios = company?.raw?.socios;
 
-      return (response.data?.items || []).map((item: any) => ({
-        linkedin_id: item.id || item.linkedin_id,
-        name: item.name || item.nome,
-        role: item.headline || item.cargo || item.role,
-        department: item.department || item.departamento,
-        linkedin_url: item.profile_url || item.linkedin_url,
-        email: item.email,
-        phone: item.phone,
-      }));
+      if (Array.isArray(socios) && socios.length > 0) {
+        return socios.map((s: any) => ({
+          name: s.nome_socio || s.nome,
+          role: s.qualificacao_socio || s.qualificacao || 'Sócio / Administrador',
+          department: 'Quadro de Sócios / Diretoria',
+          phone: company?.phone,
+          email: company?.email,
+        }));
+      }
+
+      return [];
     } catch (error: any) {
       logger.error('Erro ao buscar decisores na Kipflow', { error: error.message, domainOrCompanyName });
-      return this.getMockDecidors(domainOrCompanyName);
+      return [];
     }
   }
 
   /**
-   * Revelar e-mail ou telefone direto de um decisor a partir do LinkedIn ID ou Nome + Domínio
+   * Revelar e-mail ou telefone direto de um decisor
    */
-  async enrichDecidorContact(decidor: KipflowDecidorResult, domain?: string): Promise<{ email?: string; phone?: string }> {
+  async enrichDecidorContact(decidor: KipflowDecidorResult, domainOrCnpj?: string): Promise<{ email?: string; phone?: string }> {
     try {
-      const decName = decidor?.name || 'contato';
-      logger.info('Revelando contatos diretos de decisor via Kipflow', { name: decName, domain });
-
-      if (!KIPFLOW_API_KEY) {
-        const safeName = decName || 'contato';
-        const parts = safeName.split(' ');
-        const firstName = (parts[0] || 'contato').toLowerCase();
-        const cleanDomain = domain || 'empresa.com.br';
+      const apiKey = this.getApiKey();
+      if (!apiKey) {
         return {
-          email: `${firstName}@${cleanDomain}`,
-          phone: '(11) 9' + Math.floor(10000000 + Math.random() * 90000000),
+          email: decidor.email || `${(decidor.name.split(' ')[0] || 'contato').toLowerCase()}@${domainOrCnpj || 'empresa.com.br'}`,
+          phone: decidor.phone || '(11) 9' + Math.floor(10000000 + Math.random() * 90000000),
         };
       }
 
-      const response = await this.http.post('/contatos/emails/gerar-por-linkedin-id', {
-        linkedin_id: decidor?.linkedin_id,
-        name: decName,
-        domain: domain,
-      });
+      const cleanCnpj = (domainOrCnpj || '').replace(/\D/g, '');
+      if (cleanCnpj.length === 14 && decidor.name) {
+        const http = this.getHttpClient();
+        const response = await http.post('/contacts/v1/emails/generate-by-cnpj', {
+          cnpj: cleanCnpj,
+          full_name: decidor.name,
+        });
 
-      return {
-        email: response.data?.email || decidor?.email,
-        phone: response.data?.phone || decidor?.phone,
-      };
+        if (response.data?.success && response.data?.email) {
+          return { email: response.data.email, phone: decidor.phone };
+        }
+      }
+
+      return { email: decidor.email, phone: decidor.phone };
     } catch (error: any) {
-      const decName = decidor?.name || 'contato';
-      logger.error('Erro ao revelar contatos do decisor', { error: error.message, decidorName: decName });
-      return { email: decidor?.email, phone: decidor?.phone };
+      logger.error('Erro ao revelar contatos do decisor na Kipflow', { error: error.message, decidorName: decidor?.name });
+      return { email: decidor.email, phone: decidor.phone };
     }
   }
 
   private normalizeCompanyResponse(items: any[]): KipflowCompanyResult[] {
     if (!Array.isArray(items)) return [];
-    return items.map((item) => ({
-      cnpj: item.cnpj || item.tax_id,
-      company_name: item.razao_social || item.company_name || item.name,
-      trade_name: item.nome_fantasia || item.trade_name,
-      domain: item.dominio || item.domain || item.website?.replace(/https?:\/\//, ''),
-      cnae_code: item.cnae_principal_codigo || item.cnae_code,
-      cnae_description: item.cnae_principal_descricao || item.cnae_description,
-      size: item.porte || item.size,
-      estimated_revenue: item.faturamento_estimado || item.estimated_revenue,
-      city: item.municipio || item.city || item.endereco?.cidade,
-      state: item.uf || item.state || item.endereco?.uf,
-      phone: item.telefone || item.phone,
-      email: item.email,
-      website: item.site || item.website,
-      raw: item,
-    }));
+    
+    return items.map((item) => {
+      const data = item.data || item;
+      const cnpj = data.cnpj || data.tax_id;
+      const company_name = data.razao_social || data.company_name || data.name || data.nome_fantasia;
+      const trade_name = data.nome_fantasia || data.trade_name;
+      const domain = data.dominio || data.domain || (data.website ? data.website.replace(/https?:\/\//, '') : undefined);
+      
+      const cnae_code = data.cnae_principal_subclasse ? String(data.cnae_principal_subclasse) : (data.cnae_principal_codigo || data.cnae_code);
+      const cnae_description = data.cnae_principal_desc_subclasse || data.cnae_principal_descricao || data.cnae_description;
+      
+      const size = data.porte || data.size;
+      const estimated_revenue = data.faixa_faturamento_grupo || (data.faturamento ? `R$ ${Number(data.faturamento).toLocaleString('pt-BR')}` : undefined) || data.estimated_revenue;
+      
+      const city = data.municipio || data.city || data.endereco?.cidade;
+      const state = data.uf || data.state || data.endereco?.uf;
+      const phone = data.telefone || data.phone;
+      const email = data.email;
+      const website = data.website || data.site || (data.linkedin_url ? `https://${data.linkedin_url}` : undefined);
+
+      return {
+        cnpj,
+        company_name: company_name || `Empresa ${cnpj || ''}`,
+        trade_name,
+        domain,
+        cnae_code,
+        cnae_description,
+        size,
+        estimated_revenue,
+        city,
+        state,
+        phone,
+        email,
+        website,
+        raw: data,
+      };
+    });
   }
 
-  // Dados mock para testes/fallback sem API KEY configurada nas envs
+  // Dados mock mantidos apenas para fallback de testes sem API key
   private getMockCompanies(filters: KipflowCompanySearchFilters): KipflowCompanyResult[] {
     const q = (filters.query || filters.cnpj || '').trim();
     const cleanCnpj = q.replace(/\D/g, '');
 
-    // Se a pesquisa for um CNPJ válido de 14 dígitos, simular o resultado específico desse CNPJ
     if (cleanCnpj.length === 14) {
       return [
         {
@@ -234,21 +284,6 @@ export class KipflowClient {
         phone: '(11) 3456-7890',
         email: 'contato@odontoexemplo.com.br',
         website: 'https://odontoexemplo.com.br',
-      },
-      {
-        cnpj: '98765432000111',
-        company_name: 'Hospital e Maternidade Conforto S.A.',
-        trade_name: 'Hospital Conforto',
-        domain: 'hospitalconforto.com.br',
-        cnae_code: '8610-1/01',
-        cnae_description: 'Atividades de atendimento hospitalar',
-        size: 'Grande',
-        estimated_revenue: 'R$ 20.000.000+',
-        city: 'Campinas',
-        state: 'SP',
-        phone: '(19) 3123-4567',
-        email: 'atendimento@hospitalconforto.com.br',
-        website: 'https://hospitalconforto.com.br',
       }
     ];
   }
@@ -263,18 +298,10 @@ export class KipflowClient {
         linkedin_url: 'https://linkedin.com/in/carlos-silva-mock',
         email: 'carlos.silva@' + (domainOrCompanyName.includes('.') ? domainOrCompanyName : 'empresa.com.br'),
         phone: '(11) 98765-4321',
-      },
-      {
-        linkedin_id: 'in-mock-2',
-        name: 'Mariana Oliveira',
-        role: 'Gerente Geral de Operações e Ouvidoria',
-        department: 'Operações',
-        linkedin_url: 'https://linkedin.com/in/mariana-oliveira-mock',
-        email: 'mariana.oliveira@' + (domainOrCompanyName.includes('.') ? domainOrCompanyName : 'empresa.com.br'),
-        phone: '(11) 97654-3210',
       }
     ];
   }
 }
 
 export const kipflowClient = new KipflowClient();
+
