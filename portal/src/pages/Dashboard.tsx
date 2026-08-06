@@ -90,16 +90,12 @@ export default function Dashboard({ tenantId }: Props) {
             .catch(() => [])
         : Promise.resolve([])
 
-      const [statsRes, allStatsRes, alRes, recentRes, alertRes, compRes, repScores, presTableRes, presAlertRes, reviewsCount30Res, reviewsTotalRes] = await Promise.all([
-        supabase.from('review_stats_daily').select('positive_count, neutral_count, negative_count, critical_count, unanalyzed_count, avg_rating, avg_dissatisfaction_score, total_reviews, date')
-          .eq('tenant_id', tenantId).gte('date', since30.split('T')[0]),
-        supabase.from('review_stats_daily').select('total_reviews')
-          .eq('tenant_id', tenantId),
+      const [alRes, recentRes, alertRes, compRes, repScores, presTableRes, presAlertRes, reviews30Res, reviewsAllRes] = await Promise.all([
         bizIds.length
           ? supabase.from('alert_events').select('id', { count: 'exact', head: true }).eq('notified', false).in('business_id', bizIds)
           : Promise.resolve({ count: 0, data: null, error: null }),
         supabase.from('reviews').select('*, monitored_businesses(name)')
-          .eq('tenant_id', tenantId).order('published_at', { ascending: false }).limit(5),
+          .eq('tenant_id', tenantId).order('collected_at', { ascending: false }).limit(5),
         bizIds.length
           ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').eq('notified', false).in('business_id', bizIds).order('triggered_at', { ascending: false }).limit(3)
           : Promise.resolve({ data: [], error: null }),
@@ -112,102 +108,84 @@ export default function Dashboard({ tenantId }: Props) {
         bizIds.length
           ? supabase.from('alert_events').select('*, alert_rules(name,condition_type), monitored_businesses(name)').in('business_id', bizIds).eq('notified', false).order('triggered_at', { ascending: false }).limit(10)
           : Promise.resolve({ data: [], error: null }),
-        // Volume real: reviews coletados nos últimos 30 dias (collected_at = data de ingestão pelo Reputei)
-        supabase.from('reviews').select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId).gte('collected_at', since30),
-        // Total histórico: todos os reviews coletados pelo Reputei para este tenant
-        supabase.from('reviews').select('id', { count: 'exact', head: true })
+        // Fonte única de verdade: reviews coletados nos últimos 30 dias (collected_at)
+        // Todos os KPIs derivam deste conjunto para garantir consistência total.
+        supabase.from('reviews')
+          .select('id, sentiment, rating, dissatisfaction_score, collected_at')
+          .eq('tenant_id', tenantId)
+          .gte('collected_at', since30),
+        // Histórico completo para o subtexto "X coletados no histórico"
+        supabase.from('reviews')
+          .select('id', { count: 'exact', head: true })
           .eq('tenant_id', tenantId),
       ] as const)
 
-      const stats = statsRes.data ?? []
-      const allStats = allStatsRes.data ?? []
+      // ── Base de dados: reviews dos últimos 30 dias via collected_at ──────────
+      const reviews30 = reviews30Res.data ?? []
+      const total30   = reviews30.length
+      const totalAll  = reviewsAllRes.count ?? 0
 
-      // Volume real de reviews coletados pelo Reputei nos últimos 30 dias (via collected_at)
-      // Usa contagem direta na tabela reviews em vez de review_stats_daily,
-      // pois review_stats_daily agrupa por published_at (data original na plataforma),
-      // o que excluiria reviews antigos que foram coletados recentemente.
-      const total30 = reviewsCount30Res.count ?? 0
-      const totalAll = reviewsTotalRes.count ?? 0
-
-      // Métricas de qualidade (sentimento, rating, score) continuam vindo de review_stats_daily
+      // ── KPIs derivados do mesmo conjunto ────────────────────────────────────
+      const sentCounts = { positive: 0, neutral: 0, negative: 0, critical: 0, unanalyzed: 0 }
       let negCritCount = 0
-      let critCount = 0
-      let totalRatingWeight = 0
-      let totalReviewsWithRating = 0
-      let totalScoreWeight = 0
-      let totalReviewsWithScore = 0
+      let critCount    = 0
+      let ratingSum    = 0
+      let ratingCount  = 0
+      let scoreSum     = 0
+      let scoreCount   = 0
 
-      for (const s of stats) {
-        negCritCount += (s.negative_count ?? 0) + (s.critical_count ?? 0)
-        critCount += s.critical_count ?? 0
+      for (const r of reviews30) {
+        const sent = (r.sentiment ?? 'unanalyzed') as keyof typeof sentCounts
+        if (sent in sentCounts) sentCounts[sent]++
 
-        if (s.avg_rating != null && s.total_reviews > 0) {
-          totalRatingWeight += Number(s.avg_rating) * s.total_reviews
-          totalReviewsWithRating += s.total_reviews
+        if (sent === 'negative' || sent === 'critical') negCritCount++
+        if (sent === 'critical') critCount++
+
+        if (typeof r.rating === 'number' && r.rating > 0) {
+          ratingSum += r.rating
+          ratingCount++
         }
-
-        if (s.avg_dissatisfaction_score != null && s.total_reviews > 0) {
-          totalScoreWeight += Number(s.avg_dissatisfaction_score) * s.total_reviews
-          totalReviewsWithScore += s.total_reviews
+        if (typeof r.dissatisfaction_score === 'number') {
+          scoreSum += r.dissatisfaction_score
+          scoreCount++
         }
       }
 
-      // Obter nota média da empresa a partir dos reviews ou fallback para a nota oficial do Google Maps (4.8)
-      const { data: dbReviews } = await supabase
-        .from('reviews')
-        .select('rating')
-        .eq('tenant_id', tenantId)
-
-      const validRatings = (dbReviews ?? []).filter(r => typeof r.rating === 'number' && r.rating > 0)
-      const avgRating = validRatings.length > 0
-        ? validRatings.reduce((a, r) => a + (r.rating ?? 0), 0) / validRatings.length
-        : (totalReviewsWithRating ? totalRatingWeight / totalReviewsWithRating : 4.8)
-
-      const avgScore = totalReviewsWithScore ? totalScoreWeight / totalReviewsWithScore : 0
+      const avgRating = ratingCount > 0 ? ratingSum / ratingCount : 4.8
+      const avgScore  = scoreCount  > 0 ? Math.round(scoreSum / scoreCount) : 0
 
       setKpi({
-        total: total30,
-        total_all: totalAll,
+        total:         total30,
+        total_all:     totalAll,
         negative_rate: total30 ? Math.round((negCritCount / total30) * 100) : 0,
         critical_count: critCount,
-        avg_rating: avgRating,
+        avg_rating:    avgRating,
         pending_alerts: alRes.count ?? 0,
-        avg_score: Math.round(avgScore),
+        avg_score:     avgScore,
       })
 
-
-      // Distribuição de sentimento (pizza)
-      const sentCounts = { positive: 0, neutral: 0, negative: 0, critical: 0, unanalyzed: 0 }
-      for (const s of stats) {
-        sentCounts.positive += s.positive_count ?? 0
-        sentCounts.neutral += s.neutral_count ?? 0
-        sentCounts.negative += s.negative_count ?? 0
-        sentCounts.critical += s.critical_count ?? 0
-        sentCounts.unanalyzed += s.unanalyzed_count ?? 0
-      }
-
+      // ── Distribuição de sentimento (pizza) ───────────────────────────────────
       setDist(
         Object.entries(sentCounts)
           .filter(([, v]) => v > 0)
           .map(([k, v]) => ({
-            name: SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k,
+            name:  SENTIMENT_LABELS[k as keyof typeof SENTIMENT_LABELS] ?? k,
             value: v,
-            color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280'
+            color: SENTIMENT_COLORS[k as keyof typeof SENTIMENT_COLORS] ?? '#6b7280',
           }))
       )
 
-      // Tendência 7 dias
+      // ── Tendência 7 dias (contagem diária via collected_at) ──────────────────
       const days: Array<{ date: string; pos: number; neg: number; crit: number }> = []
       for (let i = 6; i >= 0; i--) {
         const d  = new Date(); d.setDate(d.getDate() - i)
         const ds = d.toISOString().split('T')[0]!
-        const dayStats = stats.filter(s => s.date === ds)
+        const dayRevs = reviews30.filter(r => r.collected_at?.startsWith(ds))
         days.push({
           date: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-          pos:  dayStats.reduce((acc, curr) => acc + (curr.positive_count ?? 0), 0),
-          neg:  dayStats.reduce((acc, curr) => acc + (curr.negative_count ?? 0), 0),
-          crit: dayStats.reduce((acc, curr) => acc + (curr.critical_count ?? 0), 0),
+          pos:  dayRevs.filter(r => r.sentiment === 'positive').length,
+          neg:  dayRevs.filter(r => r.sentiment === 'negative').length,
+          crit: dayRevs.filter(r => r.sentiment === 'critical').length,
         })
       }
       setTrend(days)
