@@ -386,57 +386,38 @@ export default function Dashboard({ tenants, selectedTenantId, onTenantChange }:
   }
 
   async function loadTopVolumeTenants() {
+    // Usa collected_at (data de ingestão pelo Reputei) em vez de published_at
+    // (data original na plataforma). Isso garante que o widget mostre
+    // reviews efetivamente monitorados nos últimos 30 dias, independentemente
+    // de quando foram publicados originalmente no canal.
     const since30Date = new Date(Date.now() - 30 * 86400_000)
-    const since30Str = since30Date.toISOString().split('T')[0]
 
-    let qStats = supabase
-      .from('review_stats_daily')
-      .select('tenant_id, channel, total_reviews')
-      .gte('date', since30Str)
+    let qRev = supabase
+      .from('reviews')
+      .select('tenant_id, channel')
+      .gte('collected_at', since30Date.toISOString())
 
     if (selectedTenantId) {
-      qStats = qStats.eq('tenant_id', selectedTenantId)
+      qRev = qRev.eq('tenant_id', selectedTenantId)
     }
 
-    const { data: stats } = await qStats
+    const { data: revs, error } = await qRev
+
+    if (error) {
+      console.error('[loadTopVolumeTenants] Erro ao consultar reviews:', error.message)
+      return
+    }
 
     const tenantMap: Record<string, { total: number; channels: Record<string, number> }> = {}
 
-    if (stats && stats.length > 0) {
-      for (const r of stats) {
-        if (!r.tenant_id) continue
-        if (!tenantMap[r.tenant_id]) {
-          tenantMap[r.tenant_id] = { total: 0, channels: {} }
-        }
-        const count = Number(r.total_reviews || 0)
-        tenantMap[r.tenant_id].total += count
-        if (r.channel) {
-          tenantMap[r.tenant_id].channels[r.channel] = (tenantMap[r.tenant_id].channels[r.channel] || 0) + count
-        }
+    for (const r of revs || []) {
+      if (!r.tenant_id) continue
+      if (!tenantMap[r.tenant_id]) {
+        tenantMap[r.tenant_id] = { total: 0, channels: {} }
       }
-    }
-
-    if (Object.keys(tenantMap).length === 0) {
-      let qRev = supabase
-        .from('reviews')
-        .select('tenant_id, channel')
-        .gte('published_at', since30Date.toISOString())
-
-      if (selectedTenantId) {
-        qRev = qRev.eq('tenant_id', selectedTenantId)
-      }
-
-      const { data: revs } = await qRev
-
-      for (const r of revs || []) {
-        if (!r.tenant_id) continue
-        if (!tenantMap[r.tenant_id]) {
-          tenantMap[r.tenant_id] = { total: 0, channels: {} }
-        }
-        tenantMap[r.tenant_id].total += 1
-        if (r.channel) {
-          tenantMap[r.tenant_id].channels[r.channel] = (tenantMap[r.tenant_id].channels[r.channel] || 0) + 1
-        }
+      tenantMap[r.tenant_id].total += 1
+      if (r.channel) {
+        tenantMap[r.tenant_id].channels[r.channel] = (tenantMap[r.tenant_id].channels[r.channel] || 0) + 1
       }
     }
 
