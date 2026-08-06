@@ -1779,6 +1779,68 @@ async function handleGenerateReport(req: http.IncomingMessage, res: http.ServerR
   }
 }
 
+async function handleDeleteReport(req: http.IncomingMessage, res: http.ServerResponse, reportId: string): Promise<void> {
+  setCors(req, res, 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+
+  const auth = await getAuthUser(req.headers.authorization)
+  if (!auth) { res.writeHead(401).end(JSON.stringify({ error: 'Não autorizado' })); return }
+
+  try {
+    // Buscar o relatório e validar que pertence ao tenant do usuário autenticado
+    const { data: report, error: fetchErr } = await supabaseAdmin
+      .from('reports')
+      .select('id, tenant_id, pdf_url')
+      .eq('id', reportId)
+      .single()
+
+    if (fetchErr || !report) {
+      res.writeHead(404).end(JSON.stringify({ error: 'Relatório não encontrado' }))
+      return
+    }
+
+    // Garantir que o usuário é do mesmo tenant (isolamento multi-tenant)
+    const { data: userProfile } = await supabaseAdmin
+      .from('tenants')
+      .select('id')
+      .eq('id', report.tenant_id)
+      .single()
+
+    // Validar se o usuário pertence ao mesmo tenant do relatório
+    if (auth.tenantId !== report.tenant_id) {
+      res.writeHead(403).end(JSON.stringify({ error: 'Acesso negado' }))
+      return
+    }
+
+    // Remover PDF do Supabase Storage (extrai o path relativo da URL pública)
+    if (report.pdf_url) {
+      try {
+        const urlObj = new URL(report.pdf_url)
+        // URL pública: .../storage/v1/object/public/reports/<path>
+        const pathMatch = urlObj.pathname.match(/\/storage\/v1\/object\/public\/reports\/(.+)/)
+        if (pathMatch?.[1]) {
+          await supabaseAdmin.storage.from('reports').remove([decodeURIComponent(pathMatch[1])])
+        }
+      } catch (storageErr) {
+        console.warn('[reports-delete] Falha ao remover do Storage (prosseguindo):', storageErr)
+      }
+    }
+
+    // Excluir registro da tabela
+    const { error: delErr } = await supabaseAdmin
+      .from('reports')
+      .delete()
+      .eq('id', reportId)
+
+    if (delErr) throw delErr
+
+    res.writeHead(200).end(JSON.stringify({ ok: true }))
+  } catch (err: any) {
+    console.error('[reports-delete] Erro:', err)
+    res.writeHead(500).end(JSON.stringify({ error: 'Erro ao excluir relatório' }))
+  }
+}
+
 async function handleAnalyzeReview(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   setCors(req, res, 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
@@ -2432,6 +2494,16 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/reports/generate' && req.method === 'POST') {
     handleGenerateReport(req, res).catch(err => {
       console.error('[reports-gen] Erro:', err)
+      if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
+    })
+    return
+  }
+
+  // DELETE /api/reports/:id — exclui relatório do Storage + tabela
+  const reportDeleteMatch = url.match(/^\/api\/reports\/([a-zA-Z0-9_-]+)$/)
+  if (reportDeleteMatch && req.method === 'DELETE') {
+    handleDeleteReport(req, res, reportDeleteMatch[1]!).catch(err => {
+      console.error('[reports-delete] Erro:', err)
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ error: 'Erro interno' })) }
     })
     return

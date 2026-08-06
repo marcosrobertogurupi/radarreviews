@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { FileText, Download, Calendar, RefreshCw, AlertCircle, FileSearch, CheckCircle2 } from 'lucide-react'
+import { FileText, Download, Calendar, RefreshCw, AlertCircle, FileSearch, CheckCircle2, Trash2 } from 'lucide-react'
 import { format, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { API_URL } from '../lib/utils'
@@ -12,6 +12,8 @@ interface Props {
 export default function Reports({ tenantId }: Props) {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)        // id do relatório sendo excluído
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // id aguardando confirmação
   const [history, setHistory] = useState<any[]>([])
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
@@ -75,6 +77,29 @@ export default function Reports({ tenantId }: Props) {
       setStatus({ type: 'error', msg: 'Erro ao conectar com o serviço de relatórios.' })
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleDelete(reportId: string) {
+    setDeleting(reportId)
+    setConfirmDelete(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_URL}/api/reports/${reportId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      })
+      if (res.ok) {
+        setStatus({ type: 'success', msg: 'Relatório excluído com sucesso.' })
+        setHistory(prev => prev.filter(r => r.id !== reportId))
+      } else {
+        const result = await res.json()
+        setStatus({ type: 'error', msg: result.error || 'Falha ao excluir relatório.' })
+      }
+    } catch {
+      setStatus({ type: 'error', msg: 'Erro ao conectar com o serviço.' })
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -229,7 +254,7 @@ export default function Reports({ tenantId }: Props) {
               </thead>
               <tbody>
                 {history.map(report => (
-                  <tr key={report.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={report.id} style={{ borderBottom: '1px solid var(--border)', opacity: deleting === report.id ? 0.5 : 1, transition: 'opacity 0.2s' }}>
                     <td style={{ padding: '16px 20px', fontSize: 14, fontWeight: 600, textTransform: 'capitalize' }}>
                       {report.month_year.includes('_') 
                         ? (() => {
@@ -240,18 +265,55 @@ export default function Reports({ tenantId }: Props) {
                       }
                     </td>
                     <td style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text-secondary)' }}>
-                      {format(new Date(report.created_at), 'dd/MM/yyyy HH:mm')}
+                      {format(
+                        new Date(new Date(report.created_at).toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })),
+                        'dd/MM/yyyy HH:mm'
+                      )}
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>(Brasília)</span>
                     </td>
                     <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                      <a 
-                        href={report.pdf_url} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="btn-icon" 
-                        style={{ display: 'inline-flex', padding: 8, background: 'rgba(99,102,241,0.1)', borderRadius: 8 }}
-                      >
-                        <Download size={16} color="var(--accent)" />
-                      </a>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {confirmDelete === report.id ? (
+                          // Confirmação inline
+                          <>
+                            <span style={{ fontSize: 12, color: '#ef4444', marginRight: 4 }}>Confirmar exclusão?</span>
+                            <button
+                              onClick={() => handleDelete(report.id)}
+                              disabled={deleting === report.id}
+                              style={{ padding: '4px 10px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Sim, excluir
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              style={{ padding: '4px 10px', background: 'var(--bg-darker)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          // Botões normais
+                          <>
+                            <a 
+                              href={report.pdf_url} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="btn-icon" 
+                              style={{ display: 'inline-flex', padding: 8, background: 'rgba(99,102,241,0.1)', borderRadius: 8 }}
+                            >
+                              <Download size={16} color="var(--accent)" />
+                            </a>
+                            <button
+                              onClick={() => setConfirmDelete(report.id)}
+                              disabled={deleting === report.id}
+                              title="Excluir relatório"
+                              style={{ display: 'inline-flex', padding: 8, background: 'rgba(239,68,68,0.1)', borderRadius: 8, border: 'none', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={16} color="#ef4444" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
