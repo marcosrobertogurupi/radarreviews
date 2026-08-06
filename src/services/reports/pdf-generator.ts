@@ -188,12 +188,14 @@ export async function processMonthlyReport(tenantId: string, monthYear: string, 
       : format(new Date(`${monthYear}-01T12:00:00Z`), "MMMM 'de' yyyy", { locale: ptBR })
 
     // 2. Coletar reviews e KPIs
+    // Filtra por collected_at (data de ingestão pelo Reputei), não published_at
+    // (data original na plataforma), garantindo consistência com o dashboard.
     const { data: reviews } = await supabaseAdmin
       .from('reviews')
       .select('*')
       .eq('tenant_id', tenantId)
-      .gte('published_at', startAt)
-      .lt('published_at', endAt)
+      .gte('collected_at', startAt)
+      .lt('collected_at', endAt)
 
     if (!reviews || reviews.length === 0) {
       logger.info(`[reports] Sem reviews para o tenant ${tenantId} em ${monthYear}`)
@@ -206,7 +208,7 @@ export async function processMonthlyReport(tenantId: string, monthYear: string, 
       neutral: reviews.filter(r => r.sentiment === 'neutral').length,
       negative: reviews.filter(r => r.sentiment === 'negative').length,
       critical: reviews.filter(r => r.sentiment === 'critical').length,
-      avgScore: reviews.reduce((acc, r) => acc + (r.dissatisfaction_score || 0), 0) / reviews.length
+      avgScore: Math.round(reviews.reduce((acc, r) => acc + (r.dissatisfaction_score || 0), 0) / reviews.length)
     }
 
     // 3. Gerar PDF
@@ -219,7 +221,7 @@ export async function processMonthlyReport(tenantId: string, monthYear: string, 
         .filter(r => ['negative', 'critical'].includes(r.sentiment))
         .slice(0, 5)
         .map(r => ({
-          author: r.author || 'Anônimo',
+          author: r.author_name || 'Anônimo',
           channel: r.channel,
           body: r.body || '',
           rating: r.rating || 0,
